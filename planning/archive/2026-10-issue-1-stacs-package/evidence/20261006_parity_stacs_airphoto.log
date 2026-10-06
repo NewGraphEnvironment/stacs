@@ -1,0 +1,15 @@
+collection : stac-airphoto-bc
+mode       : verify
+asset audit: none (no require_asset / forbid_assets declared)
+fetching published collection.json ...
+published  : 10100
+fetching 10100 item JSON(s) with 20 workers ...
+fetched    : 10100 of 10100 (0 failed)
+comparing every body with the API ...
+published  : 10100
+registered : 10100
+missing    : 0
+orphaned   : 0
+changed    : 0
+collection : same
+IN SYNC: 10100 published, all registered with the published body, no orphans

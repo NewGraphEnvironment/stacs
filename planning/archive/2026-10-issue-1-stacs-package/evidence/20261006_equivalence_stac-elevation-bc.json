@@ -1,0 +1,18 @@
+{
+  "collection": "stac-elevation-bc",
+  "published": 102460,
+  "served": 102460,
+  "in_both": 102460,
+  "old_vs_jcs_verdict_disagreements": 0,
+  "disagreement_examples": [],
+  "changed_old": 0,
+  "changed_jcs": 0,
+  "links_only_differs_but_old_equal": 160,
+  "of_which_jcs_equal": 160,
+  "distinct_published_jcs_digests": 102460,
+  "published_scan": {
+    "nan_inf": 0,
+    "beyond_2_53": 0,
+    "backslash": 0
+  }
+}

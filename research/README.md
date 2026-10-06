@@ -7,9 +7,9 @@ Naming: `<topic>.md`, revised in place, from 2026-10-06.
 
 | file | covers |
 |---|---|
+| [`pgstac_round_trip.md`](pgstac_round_trip.md) | what pgstac changes about a STAC body between load and serve, what the digest canonicalises, and why RFC 8785 |
 
 ## Related work
 
 - [`stac_dem_bc/research/pgstac_round_trip.md`](https://github.com/NewGraphEnvironment/stac_dem_bc/blob/main/research/pgstac_round_trip.md):
-  how pgstac changes a STAC body between load and serve, and what a content comparison
-  must canonicalise. Moves here with the verification code.
+  the original measurement (2026-09-29), which `pgstac_round_trip.md` here continues.
