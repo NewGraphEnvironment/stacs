@@ -34,10 +34,35 @@ rather than copied:
 - **An unread body is an error, never "unchanged".**
 - **Secrets through the environment, never argv**, so they do not appear in `ps`.
 
+## The remote script
+
+`register.remote_script` runs on a host whose shell and env file are the caller's. Two
+traps found while porting it, both of which passed a load that never ran:
+
+- On bash 3.2, an expansion error or a failed `.` under an armed `EXIT` trap exits **0**.
+  Success is a flag set on the last line and a `STACS_LOADED <n> <kind>` line Python
+  requires on stdout -- never the exit status alone.
+- `( ... ) || exit 1` suspends `set -e` for everything inside the subshell. The subshell
+  that sources the env file runs untested; the parent's `-e` carries its failure.
+
+Change the script only with `tests/test_register.py` running it for real (its ssh stub
+executes the script locally against a fake pypgstac).
+
+## Tests
+
+The suite runs offline: `tests/conftest.py` refuses every DNS lookup and connection outside
+loopback for the whole session. Proxy variables are not enough -- urllib3's `PoolManager`,
+which pystac uses for schema fetches, ignores them. A guard added here gets a mutation
+check (remove it, watch a test fail); a covered line is not a tested one.
+
 ## Versioning
 
 `pyproject.toml` `version` and `NEWS.md` move together, and a git tag `vX.Y.Z` marks each
-release. Consumers pin by tag in `[tool.uv.sources]`.
+release. Consumers pin by tag in `[tool.uv.sources]`. After the bump run `uv lock`: the
+lockfile records this package's version and CI runs `uv sync --locked`. `/gh-pr-merge`'s
+release gate reads a repo with `NEWS.md` and no `DESCRIPTION` as a catalogue whose tag is
+cut elsewhere, so release this one by hand: bump, rename `## Unreleased`, `uv lock`,
+commit, tag.
 
 <!-- BEGIN SOUL CONVENTIONS — DO NOT EDIT BELOW THIS LINE -->
 
