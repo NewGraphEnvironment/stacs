@@ -3,7 +3,7 @@
 Versions track the package. A tag is a release consumers can pin with
 `tag = "vX.Y.Z"` in `[tool.uv.sources]`; `pyproject.toml` carries the same version.
 
-## Unreleased
+## 0.1.0
 
 The registration and verification layer from
 [`stac_dem_bc`](https://github.com/NewGraphEnvironment/stac_dem_bc), packaged (#1).
