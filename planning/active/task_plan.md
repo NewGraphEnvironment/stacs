@@ -72,13 +72,13 @@ stdin not argv.
 - [x] Record numbers by collection (API as `$API`) in findings and the archive README; any disagreement explained and fixed before proceeding
 
 ## Phase 7: Hand-off
-- [ ] File adoption issues (pin `v0.1.0` once tagged): stac_dem_bc (catalogue_register.sh, register scripts, `update.yml` audit calls; which validators stay build-side), stac_airphoto_bc (drop the `cd`; `--all` then `verify`; its "--drift never refreshes" note is stale since stac_dem_bc#45), stac_uav_bc, stac_orthophoto_bc, stac_floodplains_bc (`stacs load`)
-- [ ] Edit #1's body: work list reflects the split, links the new issues
+- [x] File adoption issues (pin `v0.1.0` once tagged): stac_dem_bc (catalogue_register.sh, register scripts, `update.yml` audit calls; which validators stay build-side), stac_airphoto_bc (drop the `cd`; `--all` then `verify`; its "--drift never refreshes" note is stale since stac_dem_bc#45), stac_uav_bc, stac_orthophoto_bc, stac_floodplains_bc (`stacs load`)
+- [x] Edit #1's body: work list reflects the split, links the new issues
 
 ## Validation
 
-- [ ] Tests pass
-- [ ] `/code-check` clean on each commit
-- [ ] PWF checkboxes match landed work
-- [ ] No real host/bucket/collection in `src/` (structural + text guard)
+- [x] Tests pass
+- [x] `/code-check` clean on each commit
+- [x] PWF checkboxes match landed work
+- [x] No real host/bucket/collection in `src/` (structural + text guard)
 - [ ] `/planning-archive` on completion
