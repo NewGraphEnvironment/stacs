@@ -226,6 +226,39 @@ Nothing in the set yields a false "in sync" or "unchanged". Spend: 1 plan review
 
 Ended on a clean round 3 with no inside-a-fix finding.
 
+## Phase 3 code-check: terminated by enumeration (2026-10-06)
+
+| Round | Findings | Fixed | Accepted | Inside previous fix? |
+|---|---|---|---|---|
+| 1 | 2 bugs (non-object `assets` satisfied `require` by substring/membership; empty `collection_id` matched items with none) + 4 fragile (`require_asset=""` disabled the check; relaxed defaults predicate; network guard bypassable by loopback proxy / session fixtures; pystac schema fetch has no timeout) | 5 | 1 (pystac timeout: upstream, `validate` is opt-in) | — |
+| 2 | 2 bugs (`Item.from_dict().validate()` validates pystac's rewrite, not the body; zero items returned the success value) + 5 fragile (empty forbid keys, null asset values, missing ids, UDP/legacy-lookup guard gaps, classmethod/partial defaults) | 7 | 0 | **y** -- the empty-forbid case is the class round 1's "every way of passing nothing refuses" fix claimed to close |
+
+**Mechanism** (round 2): Python's polymorphic `in`, `!=`, truthiness and `set()` answer
+for any input shape, so an input whose type or emptiness is not pinned reads as "matches"
+or "nothing to check", and the result reads ok.
+
+**Enumeration** -- every input and operator site in `validate.py`:
+
+| site | unpinned input | status |
+|---|---|---|
+| `collection_id` | None / "" / non-str | raises |
+| `require_asset` | "" / whitespace / non-str | raises; None = no rule |
+| `forbid_assets` | "" / "," / empty element / non-str-or-list | raises; None or [] = no rule |
+| body | non-object | unreadable |
+| body `id` | missing / "" / non-str | unreadable (so `expect_ids` with None cannot match) |
+| body `assets` | non-object | unreadable; null = {} as in the source |
+| required asset value | null / string / no href | missing_asset |
+| forbidden key `in assets` | assets pinned to dict | dict membership; a forbidden key with a null value still counts (fails closed) |
+| body `collection` `!=` | non-str | wrong_collection (fails closed) |
+| `expect` | bool / float | benign: still a numeric comparison |
+| `expect_ids` | a string | `set()` of characters, mismatch (fails closed) |
+| `paths` | a single string | iterates characters, each unreadable (fails closed) |
+| zero items, audit | — | failure |
+| zero items, validate | — | raises |
+| validate target | pystac's model | raw dict via `validate_dict` |
+
+Nothing in the set reads ok for a wrong item. Mutation table for both rounds' guards: all red.
+
 ## Errors Encountered
 
 | Error | Resolution |

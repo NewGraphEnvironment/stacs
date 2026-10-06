@@ -12,3 +12,5 @@
   rounds (`review-p1-round{1..4}.md`), the fourth finding a defect inside round 3's fix,
   ended by enumerating every absence-producing point (findings.md). 101 tests.
 - Phase 2: `body_digest` over RFC 8785 (`canonical_json`, `DigestError`); 3 code-check rounds (`review-p2-round{1..3}.md`). 118 tests.
+- Phase 3: `stacs.validate` (audit, pystac validation of the raw body); suite-wide loopback-only network guard in conftest.py; 2 code-check rounds ended by enumeration (`review-p3-round{1,2}.md`). 187 tests.
+- Phase 6 reference run started in the background (stac_dem_bc `register_manifest.py`, read-only).

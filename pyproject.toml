@@ -13,6 +13,7 @@ authors = [
 requires-python = ">=3.11"
 # Runtime dependencies arrive with the code that needs them, not before.
 dependencies = [
+    "pystac[validation]>=1.12",
     "requests>=2.31",
     "rfc8785>=0.1.4",
 ]

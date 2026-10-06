@@ -47,10 +47,10 @@ stdin not argv.
 - [x] Confirm in code and note in findings: digests computed fresh both sides every run, nothing stored, so no migration
 
 ## Phase 3: `stacs.validate`
-- [ ] `audit_items` plus the `audit-items` branch guards: zero items fails, forbid list parsed with empty keys dropped, rules printed as APPLIED, `expect` as a set gate where ids are known, directory mode excludes `collection.json`
-- [ ] Port the audit tests from stac_dem_bc `tests/test_item_migrate.py` (217-283, 531-565)
-- [ ] pystac `Item.from_dict(...).validate()` per item (`pystac[validation]` dependency), collecting failures rather than stopping at the first; not called from `register` (parity: the shell never validated)
-- [ ] Offline tests: 1.1.0 items without extensions (the schemas pystac bundles), under a proxy that refuses every fetch; a schema that cannot be fetched is a failure, not a pass
+- [x] `audit_items` plus the `audit-items` branch guards: zero items fails, forbid list parsed with empty keys dropped, rules printed as APPLIED, `expect` as a set gate where ids are known, directory mode excludes `collection.json`
+- [x] Port the audit tests from stac_dem_bc `tests/test_item_migrate.py` (217-283, 531-565)
+- [x] pystac `Item.from_dict(...).validate()` per item (`pystac[validation]` dependency), collecting failures rather than stopping at the first; not called from `register` (parity: the shell never validated)
+- [x] Offline tests: 1.1.0 items without extensions (the schemas pystac bundles), under a proxy that refuses every fetch; a schema that cannot be fetched is a failure, not a pass
 
 ## Phase 4: `stacs.register` — port of `catalogue_register.sh` and the two register scripts
 - [ ] `Target` dataclass (api, collection_id, bucket_url, ssh fields, asset rules, page/chunk sizes, fetch workers) so Phase 4 runs in-process and Phase 5 only maps TOML + flags onto it
