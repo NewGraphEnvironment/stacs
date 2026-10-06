@@ -148,6 +148,25 @@ def ndjson_write(paths, out, expect_collection: str | None = None) -> int:
     `expect_collection` is the last checkpoint before pgstac. pgstac routes each item by
     its OWN `collection` field, so an item whose body still names the previous
     collection upserts into the previous collection SUCCESSFULLY, with no error anywhere.
+
+    Examples:
+        >>> import json, os, tempfile
+        >>> tmp = tempfile.TemporaryDirectory()
+        >>> item = os.path.join(tmp.name, "a.json")
+        >>> with open(item, "w") as f:
+        ...     json.dump({"id": "a", "collection": "old-collection"}, f, indent=2)
+        >>> out = os.path.join(tmp.name, "items.ndjson")
+        >>> ndjson_write([item], out)
+        1
+        >>> open(out).read()
+        '{"id":"a","collection":"old-collection"}\\n'
+        >>> ndjson_write([item], out, expect_collection="my-collection")
+        Traceback (most recent call last):
+        ...
+        stacs.register.RegisterError: ...a.json names collection 'old-collection', expected
+        'my-collection'. Loading it would register the item into 'old-collection' without
+        erroring.
+        >>> tmp.cleanup()
     """
     n = 0
     with open(out, "w", encoding="utf-8") as fh:
@@ -330,6 +349,16 @@ def _read_ids_file(path) -> list[str]:
 
 
 def describe_rules(target: Target) -> str:
+    """The asset rules a target applies, as a register run reports them.
+
+    Examples:
+        >>> target = Target(api="https://stac.example.invalid",
+        ...                 collection_id="my-collection",
+        ...                 bucket_url="https://bucket.example.invalid",
+        ...                 require_asset="data", forbid_assets=["legacy"])
+        >>> describe_rules(target)
+        'require=data forbid=legacy'
+    """
     forbid = parse_asset_keys(target.forbid_assets)
     if target.require_asset or forbid:
         return f"require={target.require_asset or '-'} forbid={','.join(forbid) or '-'}"

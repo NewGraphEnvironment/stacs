@@ -50,10 +50,14 @@ executes the script locally against a fake pypgstac).
 
 ## Tests
 
-The suite runs offline: `tests/conftest.py` refuses every DNS lookup and connection outside
-loopback for the whole session. Proxy variables are not enough -- urllib3's `PoolManager`,
-which pystac uses for schema fetches, ignores them. A guard added here gets a mutation
-check (remove it, watch a test fail); a covered line is not a tested one.
+The suite runs offline: the root `conftest.py` refuses every DNS lookup and connection
+outside loopback for the whole session. Proxy variables are not enough -- urllib3's
+`PoolManager`, which pystac uses for schema fetches, ignores them. A guard added here gets a
+mutation check (remove it, watch a test fail); a covered line is not a tested one.
+
+Docstring examples are collected with the tests (`--doctest-modules`, `testpaths` includes
+`src`). The guard sits at the root, not in `tests/`, so `pytest src/...` alone is guarded
+too; `tests/test_harness.py` pins both.
 
 ## Versioning
 

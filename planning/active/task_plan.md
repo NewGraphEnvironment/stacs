@@ -13,12 +13,16 @@ chooses.
 - [x] README title line carries the logo top-right
 
 ## Phase 2: Runnable docstring examples, executed in CI
-- [ ] `[tool.pytest.ini_options]`: `testpaths = ["tests", "src"]`, `addopts = "--doctest-modules"`
-- [ ] Harness test: doctests from `src/stacs` are collected, and a lookup inside one is
+- [x] `[tool.pytest.ini_options]`: `testpaths = ["tests", "src"]`, `addopts = "--doctest-modules"`
+- [x] Harness test: doctests from `src/stacs` are collected, and a lookup inside one is
       refused by the guard; mutation-check it (drop `src` from testpaths / the guard → red)
-- [ ] `>>>` examples on the offline-pure public functions listed in Context (temp files via
+      — *corrected in flight:* a lookup probe run in-process cannot fail (the session's
+      sockets are already patched), and `pytest src/...` alone never loaded
+      `tests/conftest.py`. The guard moved to a root `conftest.py`; the harness pins the
+      config and, by subprocess, that a `src`-only run registers the guard
+- [x] `>>>` examples on the offline-pure public functions listed in Context (temp files via
       `tempfile` where a path is needed); fake values only
-- [ ] `uv run pytest` green; CI `test.yml` unchanged (it already runs `uv run pytest`)
+- [x] `uv run pytest` green; CI `test.yml` unchanged (it already runs `uv run pytest`)
 
 ## Phase 3: MkDocs site
 - [ ] `docs` dependency group: `mkdocs>=1.6,<2`, `mkdocs-material`, `mkdocstrings[python]`; `uv lock`

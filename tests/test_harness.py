@@ -1,6 +1,10 @@
 """The suite's own guards, pinned so they cannot silently stop guarding."""
 
+import os
 import socket
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 import requests
@@ -60,3 +64,60 @@ def test_udp_cannot_leave_loopback():
 def test_legacy_lookups_are_refused(fn):
     with pytest.raises(OSError, match="network disabled in tests"):
         fn("example.invalid")
+
+
+# =============================================================================
+# Docstring examples -- collected with the tests, and under the same guard
+# =============================================================================
+
+REPO = Path(__file__).resolve().parent.parent
+
+
+def test_docstring_examples_are_collected():
+    """A bare `pytest` at the root (what CI runs) collects the examples of every module
+    that has them. Asserted on what a child run collects, not on this session's
+    settings: `testpaths`, `--doctest-modules` and any `collect_ignore` all decide it,
+    and the examples would otherwise stop running with nothing failing."""
+    out = subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider"],
+        cwd=REPO, capture_output=True, text=True, timeout=120)
+    assert out.returncode == 0, out.stdout + out.stderr
+    for module in ("verify", "catalogue", "validate", "register"):
+        assert f"src/stacs/{module}.py::stacs.{module}." in out.stdout, module
+
+
+# Loaded into the child run with -p. It tries a lookup once collection is done, so it
+# sees whatever guard that run installed -- or none.
+_PROBE = """
+import socket
+
+def pytest_collection_finish(session):
+    try:
+        socket.getaddrinfo("example.invalid", 80)
+    except OSError as e:
+        if "network disabled in tests" in str(e):
+            print("STACS_GUARD_ACTIVE")
+            return
+        raise
+    raise RuntimeError("a lookup outside loopback was allowed")
+"""
+
+
+# Each kind of invocation loads a different set of conftests: a path loads those on it
+# and above it, a bare run those of every testpath. Only the root is above all of them.
+@pytest.mark.parametrize("args", [["src/stacs/verify.py"], ["tests/test_harness.py"], []],
+                         ids=["src-only", "tests-only", "bare"])
+def test_the_guard_loads_however_pytest_is_invoked(tmp_path, args):
+    """A guard in tests/ is absent from `pytest src/...`, and one in src/ from
+    `pytest tests/...`. Asserted by behaviour, in a child process: this session's
+    sockets are already patched, so an in-process probe would pass with the guard
+    anywhere, and a check on which conftest registered would pass with any file there."""
+    (tmp_path / "stacs_guard_probe.py").write_text(_PROBE)
+    path = os.pathsep.join(filter(None, [str(tmp_path), os.environ.get("PYTHONPATH")]))
+    env = {**os.environ, "PYTHONPATH": path}
+    out = subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider",
+         "-p", "stacs_guard_probe", *args],
+        cwd=REPO, env=env, capture_output=True, text=True, timeout=120)
+    assert out.returncode == 0, out.stdout + out.stderr
+    assert "STACS_GUARD_ACTIVE" in out.stdout, out.stdout + out.stderr

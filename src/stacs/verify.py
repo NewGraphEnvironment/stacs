@@ -165,6 +165,15 @@ def search_body(ids, collection_id: str, ids_only: bool = True) -> dict:
 
     `ids_only=False` drops the `fields` include, for a caller comparing content: the
     digest of an id-only stub matches no real body.
+
+    Examples:
+        >>> search_body(["a", "b"], "my-collection")
+        {'collections': ['my-collection'], 'ids': ['a', 'b'], 'limit': 2,
+         'fields': {'include': ['id']}}
+        >>> search_body(["a"], "")
+        Traceback (most recent call last):
+        ...
+        ValueError: collection_id is required: an unscoped /search answers about every ...
     """
     ids = list(ids)
     if not collection_id:
@@ -218,6 +227,12 @@ def ids_diff(published, registered) -> tuple[list[str], list[str]]:
     Set equality is the only sound check here: a /search on a list of ids returns the
     ones that exist and silently omits the rest, so asserting on the returned *count*
     passes vacuously.
+
+    Examples:
+        Equal counts, unequal sets:
+
+        >>> ids_diff(["a", "b"], ["b", "c"])
+        (['a'], ['c'])
     """
     p, r = set(published), set(registered)
     return sorted(p - r), sorted(r - p)
@@ -281,6 +296,12 @@ def canonical_json(doc) -> bytes:
     reuse these leaf hashes. Nothing stores a digest -- both sides are recomputed from
     the published bodies and the API on every run -- so the form can change with no
     migration.
+
+    Examples:
+        Keys sorted, `links` gone, a null member dropped, `1.0` written as `1`:
+
+        >>> canonical_json({"id": "a", "links": [{"rel": "self"}], "b": None, "a": 1.0})
+        b'{"a":1,"id":"a"}'
     """
     if not isinstance(doc, dict):
         raise TypeError(f"expected a JSON object, got {type(doc).__name__}")
@@ -300,6 +321,16 @@ def body_digest(doc) -> str:
     round-trips through pgstac apart from the differences `_canonical` absorbs.
 
     Refuses anything but an object. A None that hashed would equal every other None.
+
+    Examples:
+        >>> body_digest({"id": "a"})
+        '8489a5deb454a360345c7868bca8672de92b446caf3d3b014af6a56e3d549d30'
+        >>> body_digest({"id": "a", "links": []}) == body_digest({"id": "a"})
+        True
+        >>> body_digest(None)
+        Traceback (most recent call last):
+        ...
+        TypeError: expected a JSON object, got NoneType
     """
     return hashlib.sha256(canonical_json(doc)).hexdigest()
 
@@ -309,6 +340,14 @@ def content_diff(published: dict, registered: dict) -> tuple[list, list, list]:
 
     `changed` = in both, digests differ. An empty or None digest on EITHER side raises:
     it means a body was never read, and two unread bodies must not compare equal.
+
+    Examples:
+        >>> content_diff({"a": "d1", "b": "d2"}, {"b": "d3", "c": "d4"})
+        (['a'], ['c'], ['b'])
+        >>> content_diff({"a": ""}, {"a": ""})
+        Traceback (most recent call last):
+        ...
+        ValueError: 1 published id(s) have no body digest, e.g. ['a']: a body was not read
     """
     for side, d in (("published", published), ("registered", registered)):
         bad = sorted(k for k, v in d.items() if not isinstance(v, str) or not v)

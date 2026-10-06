@@ -87,6 +87,22 @@ hexSticker warns `font family 'Helvetica' not found, will use 'sans'` on this ma
 render matches stac_dem_bc's committed `man/figures/logo.png` (same layout, same sans
 lettering), so the sibling stickers were evidently made with the same fallback.
 
+## Doctests and the network guard (2026-10-06)
+
+- `pytest src/stacs/catalogue.py --trace-config` registered no conftest at all: pytest loads
+  conftests for the given paths and their parents only, so the guard in `tests/` never ran
+  for a src-only run. Moved to the root (`git mv`); confirmed registered after.
+- `validate_items` works offline for STAC 1.1.0 (bundled core schemas) but not 1.0.0, which
+  pystac fetches from schemas.stacspec.org — probed with lookups blocked. Its example uses
+  1.1.0 and shows only `[]` and the empty-input error, since jsonschema's messages vary.
+- Examples use `example.invalid` (the suite's convention), which fails closed if a run
+  were ever unguarded; `example.org` resolves.
+- No example on the functions that need a live API or ssh (`ids_registered`, `bodies_*`,
+  `collection_state`, `fetch_bodies`, `probe`, `load`, `run`): an example that never runs
+  is rot. Their usage is the CLI page.
+- `doctest_optionflags = ELLIPSIS, NORMALIZE_WHITESPACE` so long outputs wrap and a temp
+  path can be elided.
+
 ## Errors Encountered
 
 | Error | Resolution |

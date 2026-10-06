@@ -59,6 +59,19 @@ def collection_item_links(path) -> list[tuple[str, str]]:
       neither registered nor reported
     - two links resolving to one id (`…/2018/x.json` and `…/2019/x.json`): an id set
       collapses them, and the id comparison would read in sync
+
+    Examples:
+        >>> import json, os, tempfile
+        >>> tmp = tempfile.TemporaryDirectory()
+        >>> path = os.path.join(tmp.name, "collection.json")
+        >>> links = [{"rel": "self", "href": "https://example.invalid/collection.json"},
+        ...          {"rel": "item", "href": "items/a%20b.json"},
+        ...          {"rel": "item", "href": "items/c.json"}]
+        >>> with open(path, "w") as f:
+        ...     json.dump({"id": "my-collection", "links": links}, f)
+        >>> collection_item_links(path)
+        [('a b', 'items/a%20b.json'), ('c', 'items/c.json')]
+        >>> tmp.cleanup()
     """
     with open(path, encoding="utf-8") as f:
         collection = json.load(f)
@@ -84,7 +97,12 @@ def collection_item_links(path) -> list[tuple[str, str]]:
 
 def fetch_key(url: str) -> str:
     """The fetch file's basename for a URL -- md5 of the URL, so ids with spaces and
-    parentheses need no quoting anywhere downstream."""
+    parentheses need no quoting anywhere downstream.
+
+    Examples:
+        >>> fetch_key("https://example.invalid/items/a b.json")
+        '1af97db74cefffe0d9b97fe9da8c267f'
+    """
     return hashlib.md5(url.encode()).hexdigest()
 
 
@@ -201,7 +219,18 @@ def published_digests(links, fetch_dir) -> dict[str, str]:
 
 
 def read_hrefs(path) -> list[tuple[str, str]]:
-    """[(id, href)] from a tab-separated id/href file."""
+    """[(id, href)] from a tab-separated id/href file.
+
+    Examples:
+        >>> import os, tempfile
+        >>> tmp = tempfile.TemporaryDirectory()
+        >>> path = os.path.join(tmp.name, "hrefs.tsv")
+        >>> with open(path, "w") as f:
+        ...     _ = f.write("a b\\thttps://example.invalid/items/a%20b.json\\n")
+        >>> read_hrefs(path)
+        [('a b', 'https://example.invalid/items/a%20b.json')]
+        >>> tmp.cleanup()
+    """
     out = []
     with open(path, encoding="utf-8") as fh:
         for line in fh:

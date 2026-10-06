@@ -31,6 +31,14 @@ dev = [
     "pytest-cov>=5",
 ]
 
+[tool.pytest.ini_options]
+# Docstring examples are collected with the tests. The network guard is the root
+# conftest.py, so it covers them for any path pytest is given here (not under
+# --noconftest, -c or --confcutdir); tests/test_harness.py pins both halves of that.
+testpaths = ["tests", "src"]
+addopts = ["--doctest-modules"]
+doctest_optionflags = ["ELLIPSIS", "NORMALIZE_WHITESPACE"]
+
 [build-system]
 requires = ["uv_build>=0.11.11,<0.12.0"]
 build-backend = "uv_build"
