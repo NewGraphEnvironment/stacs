@@ -306,3 +306,100 @@ def test_a_body_the_fetch_accepts_is_one_the_digest_can_read(tmp_path):
     links = [("a", src.as_uri())]
     assert c.fetch_bodies([src.as_uri()], out, backoff=0) == []
     assert c.published_digests(links, out) == {"a": body_digest(_body("a"))}
+
+
+
+# =============================================================================
+# Over HTTP (loopback), and an interrupted fetch
+# =============================================================================
+
+@pytest.fixture
+def http_bucket(tmp_path):
+    """A plain HTTP server on loopback serving tmp_path/www -- the requests path of
+    `_read_url`, which every file:// test above skips."""
+    import functools
+    import threading
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+    root = tmp_path / "www"
+    root.mkdir()
+
+    class Quiet(SimpleHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            # An error status whose body IS a JSON object -- an API's error document --
+            # so only the status check can refuse it.
+            if self.path == "/err.json":
+                data = b'{"code": "ServerError", "id": "a"}'
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            super().do_GET()
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0),
+                                 functools.partial(Quiet, directory=str(root)))
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05},
+                     daemon=True).start()
+    yield root, f"http://127.0.0.1:{server.server_address[1]}"
+    server.shutdown()
+    server.server_close()
+
+
+def test_fetch_bodies_over_http(tmp_path, http_bucket):
+    root, base = http_bucket
+    (root / "a.json").write_text(json.dumps(_body("a")))
+    out = tmp_path / "items"
+    out.mkdir()
+    gone, err = f"{base}/gone.json", f"{base}/err.json"
+    failed = c.fetch_bodies([f"{base}/a.json", gone, err], out, workers=2, backoff=0)
+    assert failed == [gone, err], "an error status is a failed fetch, whatever the body"
+    assert not (out / f"{c.fetch_key(err)}.json").exists()
+    doc = json.loads((out / f"{c.fetch_key(base + '/a.json')}.json").read_text())
+    assert doc["id"] == "a"
+
+
+def test_an_interrupted_fetch_returns_without_waiting_for_fetches_in_flight(
+        tmp_path, monkeypatch):
+    """Ctrl-C arrives in the MAIN thread while it waits on results. `Executor.map`
+    cancels the queued fetches by itself; what `fetch_bodies` adds is not waiting for the
+    ones already in flight -- here, one held open for 5 s."""
+    import _thread
+    import signal
+    import threading
+    import time
+    release = threading.Event()
+    calls = []
+
+    def slow(url, timeout):
+        calls.append(url)
+        if url.endswith("/0.json"):
+            time.sleep(0.2)                 # let the main thread finish submitting
+            _thread.interrupt_main()
+        elif url.endswith("/1.json"):
+            release.wait(5)                 # in flight when Ctrl-C lands
+        time.sleep(0.02)
+        # A body, not an error: a failure would print after this test has ended, into
+        # the next test's captured stderr.
+        return b'{"id": "x"}'
+
+    monkeypatch.setattr(c, "_read_url", slow)
+    out = tmp_path / "items"
+    out.mkdir()
+    urls = [f"file:///x/{i}.json" for i in range(200)]
+    # interrupt_main() does nothing while SIGINT is ignored, which a process started in
+    # the background inherits; install the default handler for this test only.
+    previous = signal.signal(signal.SIGINT, signal.default_int_handler)
+    t0 = time.monotonic()
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            c.fetch_bodies(urls, out, workers=2, retries=1, backoff=0)
+        assert time.monotonic() - t0 < 2, "waited for the fetch in flight"
+    finally:
+        release.set()
+        signal.signal(signal.SIGINT, previous)
+    assert len(calls) < 20, f"{len(calls)} of {len(urls)} fetched after the interrupt"

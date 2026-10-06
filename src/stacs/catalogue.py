@@ -157,7 +157,11 @@ def fetch_bodies(urls, out_dir, workers: int = 32, retries: int = 3,
     try:
         results = list(ex.map(one, urls))
     except BaseException:
-        # Ctrl-C would otherwise wait for every queued fetch -- ~100k of them.
+        # On Ctrl-C, raise at once rather than wait here for the fetches in flight.
+        # `Executor.map` already cancels the queued ones when its iterator is abandoned
+        # (measured, 3.11/3.12); this cancels explicitly rather than rely on that. The
+        # interpreter still joins the workers at exit, so the process ends only when the
+        # in-flight fetches do -- each bounded by `timeout` and `retries`.
         ex.shutdown(wait=False, cancel_futures=True)
         raise
     ex.shutdown()

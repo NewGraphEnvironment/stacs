@@ -409,3 +409,88 @@ def test_a_transport_value_of_the_wrong_type_is_refused(tmp_path, line, captured
                    + "".join(f"{k} = {v}\n" for k, v in base.items()))
     assert cli.main(["register", "--config", str(cfg), "--mode", "all"]) == 2
     assert "[transport]" in capsys.readouterr().err and captured_run == []
+
+
+
+# =============================================================================
+# Paths the tests above do not reach
+# =============================================================================
+
+def test_a_config_table_that_is_not_a_table_is_refused(tmp_path, capsys):
+    p = tmp_path / "stacs.toml"
+    p.write_text('catalogue = "x"\n')
+    assert cli.main(["verify", "--config", str(p)]) == 2
+    assert "catalogue must be a table" in capsys.readouterr().err
+
+
+def test_host_and_db_flags_override_the_config(cfg_file, captured_run):
+    assert cli.main(["register", "--config", str(cfg_file), "--mode", "all",
+                     "--host", "other@h.example.invalid", "--db", "otherdb"]) == 0
+    t = captured_run[0][0].transport
+    assert (t.host, t.db) == ("other@h.example.invalid", "otherdb")
+    assert t.password_env == "PG_PASSWORD_VAR", "the rest still comes from the config"
+
+
+def test_load_collection_dryrun_succeeds_for_the_declared_collection(tmp_path, cfg_file,
+                                                                     capsys):
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({"type": "Collection", "id": "any-collection"}))
+    assert cli.main(["load", "collection", "--config", str(cfg_file), str(p),
+                     "--dryrun"]) == 0
+    assert "[dryrun] nothing sent" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("content", [None, "{trunc", "[]"])
+def test_load_collection_refuses_an_unreadable_file(tmp_path, cfg_file, capsys, content):
+    p = tmp_path / "c.json"
+    if content is not None:
+        p.write_text(content)
+    assert cli.main(["load", "collection", "--config", str(cfg_file), str(p),
+                     "--dryrun"]) == 1
+    assert "cannot read" in capsys.readouterr().err
+
+
+def test_a_refused_load_is_exit_1_with_its_reason(tmp_path, cfg_file, monkeypatch,
+                                                  capsys):
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({"type": "Collection", "id": "any-collection"}))
+
+    def refuse(*a, **k):
+        raise cli.RegisterError("cannot reach the host")
+
+    monkeypatch.setattr(cli, "load", refuse)
+    assert cli.main(["load", "collection", "--config", str(cfg_file), str(p)]) == 1
+    assert "ERROR: cannot reach the host" in capsys.readouterr().err
+
+
+def _stac_item(item_id, **props):
+    return {"type": "Feature", "stac_version": "1.1.0", "stac_extensions": [],
+            "id": item_id, "geometry": None,
+            "properties": {"datetime": "2020-01-01T00:00:00Z", **props},
+            "links": [], "assets": {}}
+
+
+def test_validate_passes_valid_items(tmp_path, capsys):
+    (tmp_path / "a.json").write_text(json.dumps(_stac_item("a")))
+    assert cli.main(["validate", "--dir", str(tmp_path)]) == 0
+    assert "validated 1 item(s), 0 invalid" in capsys.readouterr().err
+
+
+def test_validate_names_each_invalid_item(tmp_path, capsys):
+    (tmp_path / "a.json").write_text(json.dumps(_stac_item("a")))
+    bad = _stac_item("b")
+    bad["properties"]["datetime"] = "2020-01-01T00:00:00"      # naive
+    (tmp_path / "b.json").write_text(json.dumps(bad))
+    assert cli.main(["validate", "--dir", str(tmp_path)]) == 1
+    err = capsys.readouterr().err
+    assert "INVALID:" in err and "b.json" in err and "a.json" not in err.split(
+        "validated")[0]
+    assert "validated 2 item(s), 1 invalid" in err
+
+
+def test_the_module_runs_as_a_script():
+    import subprocess
+    import sys
+    r = subprocess.run([sys.executable, "-m", "stacs.cli", "--version"],
+                       capture_output=True, text=True)
+    assert r.returncode == 0 and r.stdout.startswith("stacs ")

@@ -90,15 +90,14 @@ def merge_asset_rules(cfg: dict, require_flag, forbid_flag):
         require = require_flag
     try:
         forbid = parse_asset_keys(assets.get("forbid"))
-        # A flag that parses to nothing ("$UNSET", ",") is refused, not read as "none".
+        # A flag that parses to nothing ("$UNSET", ",") is refused by parse_asset_keys,
+        # not read as "none".
         added = []
         for value in (forbid_flag if isinstance(forbid_flag, list) else
                       [] if forbid_flag is None else [forbid_flag]):
             added += parse_asset_keys(value)
     except ValueError as e:
         raise ConfigError(f"forbid: {e}") from e
-    if forbid_flag is not None and not added:
-        raise ConfigError("--forbid-asset is empty")
     for key in added:
         if key not in forbid:
             forbid.append(key)

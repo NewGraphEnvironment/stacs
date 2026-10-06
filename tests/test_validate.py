@@ -283,3 +283,17 @@ def test_a_repeated_id_fails_the_audit_whoever_calls_it(tmp_path):
     r = val.audit_items([a, b], NEW)
     assert not r.ok and any("appear more than once" in f for f in r.failures)
     assert not val.audit_items([a, a], NEW, expect=2).ok
+
+
+def test_blank_paths_are_skipped_not_read(tmp_path):
+    p = _write(tmp_path, _item("a"))
+    r = val.audit_items(["", p + "\n", "\n"], NEW)
+    assert r.ok and r.checked == 1
+
+
+@pytest.mark.parametrize("payload", ["[]", "null", '"x"'])
+def test_validate_reports_json_that_is_not_an_object(tmp_path, payload):
+    p = tmp_path / "odd.json"
+    p.write_text(payload)
+    bad = val.validate_items([str(p)])
+    assert len(bad) == 1 and "not a JSON object" in bad[0][1]

@@ -41,6 +41,7 @@ FAKE_PYPGSTAC = r"""#!/bin/bash
 # fake_pypgstac load <kind> <file> --method upsert
 [ "$1" = "load" ] && [ "$4" = "--method" ] && [ "$5" = "upsert" ] || { echo "bad args: $*" >&2; exit 2; }
 n=$(wc -l < "$3" | tr -d ' ')
+if [ -n "${FAKE_PYPGSTAC_SAY:-}" ]; then echo "$FAKE_PYPGSTAC_SAY"; fi
 head=$(head -c 12 "$3" | tr -d ' \n')
 echo "$2 $n db=${PGDATABASE:-} pw=${PGPASSWORD:+set} head=$head" >> "$SSH_LOG"
 exit "${FAKE_PYPGSTAC_RC:-0}"
@@ -71,6 +72,7 @@ class _StubAPI:
         self.searches = []
         self.on_load = None      # fn(api), run once after a collection load is logged
         self.load_log = None
+        self.fail = {}           # path -> HTTP status to answer instead
 
     def sync(self):
         if self.on_load and self.load_log and self.load_log.exists() and \
@@ -94,6 +96,9 @@ def _handler(api):
 
         def do_GET(self):
             api.sync()
+            if self.path in api.fail:
+                self._send(api.fail[self.path], {"code": "ServerError"})
+                return
             if self.path == "/collections":
                 self._send(200, {"collections": []})
                 return
@@ -111,6 +116,9 @@ def _handler(api):
                 return
             body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             api.sync()
+            if self.path in api.fail:
+                self._send(api.fail[self.path], {"code": "ServerError"})
+                return
             api.searches.append(body)
             docs = [d for d in api.items.values()
                     if d.get("collection") in body.get("collections", [])]
@@ -156,7 +164,8 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setenv("SSH_LOG", str(tmp_path / "loads.log"))
     monkeypatch.setenv("SSH_CMDS", str(tmp_path / "ssh_cmds.log"))
-    for k in ("SSH_PROBE_RC", "SSH_TRUNCATE", "SSH_SILENT_SUCCESS", "FAKE_PYPGSTAC_RC"):
+    for k in ("SSH_PROBE_RC", "SSH_TRUNCATE", "SSH_SILENT_SUCCESS", "FAKE_PYPGSTAC_RC",
+              "FAKE_PYPGSTAC_SAY"):
         monkeypatch.delenv(k, raising=False)
     # Set for every test, so a test aimed at something else cannot pass because the
     # password check refused first.
@@ -923,3 +932,83 @@ def test_an_api_that_does_not_answer_is_refused_before_any_write(env, monkeypatc
     r = _run(env, "all", "http://127.0.0.1:9", items=_items(2))
     assert r.rc == 1 and "does not answer" in r.err
     assert r.writes == 0 and "fetching 2" not in r.out
+
+
+
+# =============================================================================
+# Paths the end-to-end tests above do not reach
+# =============================================================================
+
+@pytest.fixture
+def no_retry_sleep(monkeypatch):
+    from stacs import verify
+    monkeypatch.setattr(verify.time, "sleep", lambda s: None)
+
+
+def test_a_search_that_keeps_failing_is_a_refusal_not_a_traceback(env, api,
+                                                                   no_retry_sleep):
+    items = _items(2)
+    _in_sync(api, items)
+    api.fail["/search"] = 503
+    r = _run(env, "verify", api.url, items, transport=None)
+    assert r.rc == 1 and r.err.startswith("ERROR:") and "failed after" in r.err
+    assert "IN SYNC" not in r.out
+
+
+def test_a_collection_read_that_keeps_failing_is_a_refusal(env, api, no_retry_sleep):
+    items = _items(2)
+    _in_sync(api, items)
+    api.fail["/collections/any-collection"] = 503
+    r = _run(env, "verify", api.url, items, transport=None)
+    assert r.rc == 1 and "could not compare the registered collection" in r.err
+
+
+def test_an_unexpected_collection_state_is_refused(env, api, monkeypatch):
+    items = _items(1)
+    _in_sync(api, items)
+    monkeypatch.setattr(reg, "collection_state", lambda *a, **k: "perhaps")
+    r = _run(env, "verify", api.url, items, transport=None)
+    assert r.rc == 1 and "unexpected collection state 'perhaps'" in r.err
+
+
+def test_a_collection_json_that_is_not_an_object_is_refused(env):
+    r = _run(env, "verify", items=_items(1),
+             before=lambda b: (b / "collection.json").write_text("[]"))
+    assert r.rc == 1 and "is not a JSON object" in r.err
+
+
+@pytest.mark.parametrize("kw, match", [
+    (dict(api=""), "api must be"),
+    (dict(collection_id="  "), "collection_id must be"),
+    (dict(bucket_url=None), "bucket_url must be"),
+])
+def test_target_check_refuses_empty_catalogue_settings(kw, match):
+    t = reg.Target(**{**dict(api="http://127.0.0.1:9", collection_id="c",
+                             bucket_url="file:///x"), **kw})
+    with pytest.raises(reg.RegisterError, match=match):
+        t.check()
+
+
+@pytest.mark.parametrize("mode, ids_file, match", [
+    ("bogus", None, "unknown mode 'bogus'"),
+    ("ids", None, "needs an ids file"),
+])
+def test_run_refuses_a_bad_mode_when_called_directly(env, mode, ids_file, match):
+    r = _run(env, mode, items=_items(1), ids_file=ids_file)
+    assert r.rc == 1 and match in r.err and "fetching" not in r.out
+
+
+def test_remote_script_refuses_an_unknown_kind():
+    with pytest.raises(ValueError, match="unknown load kind"):
+        reg.remote_script(_transport(), "catalogs", 1)
+
+
+def test_the_hosts_own_output_is_relayed_and_the_mark_is_not(env, monkeypatch):
+    monkeypatch.setenv("FAKE_PYPGSTAC_SAY", "pypgstac: 1 row upserted")
+    p = env / "c.json"
+    p.write_text(json.dumps(_collection()))
+    said = []
+    reg.load(_transport(), "collections", [str(p)], log=said.append)
+    assert "pypgstac: 1 row upserted" in said
+    assert not any(line.startswith(reg.LOADED_MARK) for line in said)
+    assert "loaded   : 1 collections" in said
