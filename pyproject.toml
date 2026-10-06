@@ -1,0 +1,26 @@
+[project]
+name = "stacs"
+version = "0.0.0"
+description = "Register STAC catalogues into pgstac and verify they arrived, by id set and body digest."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Allan Irvine", email = "al@newgraphenvironment.com" }
+]
+# 3.11, matching stac_floodplains_bc: a consumer cannot depend on a package whose floor is
+# above its own. CI runs the floor, so the floor is exercised rather than aspirational.
+requires-python = ">=3.11"
+# Runtime dependencies arrive with the code that needs them, not before.
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/NewGraphEnvironment/stacs"
+Issues = "https://github.com/NewGraphEnvironment/stacs/issues"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["uv_build>=0.11.11,<0.12.0"]
+build-backend = "uv_build"
