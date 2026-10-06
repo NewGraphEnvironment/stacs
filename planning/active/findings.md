@@ -259,9 +259,39 @@ or "nothing to check", and the result reads ok.
 
 Nothing in the set reads ok for a wrong item. Mutation table for both rounds' guards: all red.
 
+## Phase 4 code-check: terminated by enumeration (2026-10-06)
+
+Before review, a mutation table over 22 guards in `register.py` left 4 survivors (the
+post-write collection check, `ndjson_write(expect_collection)`, one-collection-per-load,
+an unreachable payload count); each got a test that kills it.
+
+| Round | Findings | Fixed | Accepted | Inside previous fix? |
+|---|---|---|---|---|
+| 1 | 1 bug: on bash 3.2 a failed `.` (missing `env_file`) or any expansion error under the EXIT trap exits 0, so `load()` reported a load that never ran -- the class of the `${VAR:?}` fix, which had covered one instance. Every shell guard from the three scripts confirmed ported | 1 (success flag + `STACS_LOADED <n> <kind>` sentinel required on stdout) | 0 | — |
+| 2 | 2 bugs: the env file is sourced into the shell that prints the sentinel, so `set +e` in it hides a failed pypgstac, and assigning `t` redirects the load and deletes another file; 1 fragile: "one transaction" is false for items (pypgstac commits per chunk) | 3 | 0 | **y** |
+| own | the isolation subshell was written `( ... ) \|\| exit 1`, and bash suspends `set -e` for everything inside a tested list -- a failed `cd` let pypgstac run. Caught by `test_options_are_reasserted_after_the_env_file` | 1 (plain `( ... )`) | 0 | **y** |
+
+**Mechanism** (round 2): the process that does the work also produces the proof of it, and
+caller-supplied code runs inside that process.
+
+**Enumeration** -- every subprocess or remote result `register.py` trusts:
+
+| result | trusted for | now verified by |
+|---|---|---|
+| `probe` ssh exit 0 | host reachable | claims no work; any failure refuses (fails closed) |
+| remote line count | complete transfer | computed by the receiver from the bytes it holds |
+| pypgstac exit 0 | the load ran | `\|\| exit 1` and `-e` reasserted in the subshell after the env file; pypgstac exits 1 on a failed load (measured by review); `kind` is validated, so the `load <unknown>` exit-0 path is unreachable |
+| `STACS_LOADED <n> <kind>` | the load ran | printed inside the subshell after pypgstac returned 0; an env file's `exit 0` or `set +e` cannot produce it. A deliberately forged line from the env file could -- it is the caller's own trusted code, and `run()` does not rely on it alone (next row) |
+| any write inside `run()` | the API serves what was sent | an independent read back through the API: collection state, then the whole catalogue or `bodies_serving` over the to-do set |
+| `fetch_bodies` return | bodies fetched | the gate is the set of files on disk, in a directory that had to be empty |
+| `audit_items` | items fit | in-process, pinned inputs (Phase 3 enumeration) |
+
+Standalone `stacs load` (no `run()`) rests on the remote's confirmation; documented.
+
 ## Errors Encountered
 
 | Error | Resolution |
 |-------|------------|
 | Write/heredoc tooling decoded `\uXXXX` escapes inside a file being written (RFC 8785 sample vector came out with a literal `"`) | build test strings from `chr()` codes |
+| `( ... ) \|\| exit 1` around the load: bash suspends `set -e` inside any list whose status is tested, so the reasserted `-e` did nothing | run the subshell untested; the parent's `-e` and the success flag carry the failure |
 | bash 3.2: `: "${VAR:?msg}"` under an `EXIT` trap exits **0** (the trap's status), so a remote guard written that way passes. Found by the Phase 4 harness running the remote script for real | explicit `if [ -z "${VAR:-}" ]; then echo ... >&2; exit 1; fi` |

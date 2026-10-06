@@ -14,3 +14,5 @@
 - Phase 2: `body_digest` over RFC 8785 (`canonical_json`, `DigestError`); 3 code-check rounds (`review-p2-round{1..3}.md`). 118 tests.
 - Phase 3: `stacs.validate` (audit, pystac validation of the raw body); suite-wide loopback-only network guard in conftest.py; 2 code-check rounds ended by enumeration (`review-p3-round{1,2}.md`). 187 tests.
 - Phase 6 reference run started in the background (stac_dem_bc `register_manifest.py`, read-only).
+- Phase 4: `stacs.register` (Transport, Target, load, run); harness runs the remote script for real against a fake pypgstac; 2 code-check rounds + 1 self-found defect, ended by enumeration (`review-p4-round{1,2}.md`). 256 tests.
+- Phase 6 reference + equivalence runs complete (findings to be recorded in Phase 6).
