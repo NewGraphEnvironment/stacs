@@ -1,5 +1,7 @@
 # stacs <img src="docs/assets/logo.png" align="right" height="139" alt="stacs logo" />
 
+**Documentation:** <https://newgraphenvironment.github.io/stacs/>
+
 <!-- --8<-- [start:home] -->
 Register a STAC catalogue into [pgstac](https://github.com/stac-utils/pgstac) and prove it
 arrived.

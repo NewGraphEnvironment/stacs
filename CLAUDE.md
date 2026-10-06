@@ -59,6 +59,19 @@ Docstring examples are collected with the tests (`--doctest-modules`, `testpaths
 `src`). The guard sits at the root, not in `tests/`, so `pytest src/...` alone is guarded
 too; `tests/test_harness.py` pins both.
 
+## The documentation site
+
+`mkdocs.yml` builds the site from `docs/`; the pages pull their prose from `README.md` by
+section marker (`<!-- --8<-- [start:home] -->`) and include `NEWS.md` whole, so the README
+stays the one source. Keep the markers when editing it (`tests/test_docs.py` checks each
+start has its end: snippets runs an unclosed section to the end of the file, and strict
+does not notice), and keep a README link absolute or outside the markers: a relative one
+resolves against `docs/`, and the strict build fails on it. Raw HTML (`<img>`, `<a>`) is
+never checked, so it stays outside the markers, as the logo does. A snippet can include
+any file in the repo (`base_path: ["."]`), so `CLAUDE.md`, `planning/` and `research/`
+reach the site only if a page or a docstring names them: don't. Never pass `-q` to a
+strict build: it hides the warnings strict counts, so a dead link passes.
+
 ## Versioning
 
 `pyproject.toml` `version` and `NEWS.md` move together, and a git tag `vX.Y.Z` marks each

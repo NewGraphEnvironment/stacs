@@ -3,6 +3,19 @@
 Versions track the package. A tag is a release consumers can pin with
 `tag = "vX.Y.Z"` in `[tool.uv.sources]`; `pyproject.toml` carries the same version.
 
+## Unreleased
+
+- A documentation site, <https://newgraphenvironment.github.io/stacs/> (#3): MkDocs with
+  Material, reference pages generated from the docstrings, the README's sections as its
+  home, configuration and command-line pages, and this file as its changelog. Built strict
+  on every pull request; deployed to GitHub Pages from `main`.
+- Runnable examples in the docstrings of the module-level functions on the API reference
+  pages (`verify`, `catalogue`, `validate`, `register`) that work offline, run with the
+  tests (`--doctest-modules`). The seven that need a live API or ssh have none.
+- A black-and-white hexsticker, `data-raw/make_hexsticker.R`.
+- The test suite's network guard moved from `tests/conftest.py` to the root `conftest.py`,
+  so a run of `src/` alone is guarded too.
+
 ## 0.1.0
 
 The registration and verification layer from

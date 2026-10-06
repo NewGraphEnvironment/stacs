@@ -41,19 +41,19 @@ chooses.
 - [x] `.gitignore` the `site/` build output
 
 ## Phase 4: Workflow, homepage, release notes
-- [ ] `.github/workflows/docs.yml`: build `--strict` on PRs; on push to `main`, build and
+- [x] `.github/workflows/docs.yml`: build `--strict` on PRs; on push to `main`, build and
       `mkdocs gh-deploy --force` (`permissions: contents: write`, job-level concurrency,
       no matrix)
-- [ ] README links the site (https://newgraphenvironment.github.io/stacs/)
-- [ ] `NEWS.md` `## Unreleased` entry; CLAUDE.md note: docs live under `docs/`, doctests
+- [x] README links the site (https://newgraphenvironment.github.io/stacs/)
+- [x] `NEWS.md` `## Unreleased` entry; CLAUDE.md note: docs live under `docs/`, doctests
       share the network guard
 - [ ] After merge (outside this PR): enable Pages on `gh-pages`, set repo homepage, check
       deploy provenance
 
 ## Validation
 
-- [ ] Tests pass (`uv run pytest`, including doctests)
+- [x] Tests pass (`uv run pytest`, including doctests)
 - [ ] `mkdocs build --strict` passes locally and in the PR's docs run
-- [ ] `/code-check` clean on each commit
-- [ ] PWF checkboxes match landed work
+- [x] `/code-check` clean on each commit
+- [x] PWF checkboxes match landed work
 - [ ] `/planning-archive` on completion

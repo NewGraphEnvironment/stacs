@@ -29,3 +29,8 @@
   Ended by enumeration: MkDocs' complete validation set, every public module-level function's
   example coverage, every scope claim in the staged prose (9, each measured or fixed), and
   the marker shapes (missing start raises; lost/misspelt/unclosed/duplicate end now red).
+- Phase 4: `.github/workflows/docs.yml` (strict build on PRs and pushes; deploy job on main
+  runs `mkdocs gh-deploy --force`, contents: write on that job only), README site link,
+  NEWS `## Unreleased`, CLAUDE.md "The documentation site". Reviewed with Phase 3 (above).
+  Agent spend for the issue: 1 plan review + 9 code-check rounds.
+- Next: archive, PR; after merge enable Pages on gh-pages, set the homepage, check provenance.

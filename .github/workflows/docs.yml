@@ -1,0 +1,44 @@
+name: docs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0  # no floating major tag is published (v8 onward)
+        with:
+          python-version: "3.12"
+      - run: uv sync --locked --group docs
+      # Strict (mkdocs.yml), and never -q: quiet raises the log level past WARNING, and
+      # strict counts warnings, so a quiet strict build passes a dead link.
+      - run: uv run --group docs mkdocs build
+
+  deploy:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: docs-deploy
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: "3.12"
+      - run: uv sync --locked --group docs
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      # Commits "Deployed <sha> with MkDocs version: <v>" to gh-pages: <sha> is the
+      # provenance to compare with main's HEAD.
+      - run: uv run --group docs mkdocs gh-deploy --force
