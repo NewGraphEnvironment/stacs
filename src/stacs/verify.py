@@ -20,6 +20,7 @@ import time
 import urllib.parse
 
 import requests
+import rfc8785
 
 # Transient-failure retries on API reads. The verifier runs AFTER an upsert has already
 # succeeded, so an unretried 5xx would turn a completed registration into a traceback.
@@ -226,8 +227,18 @@ def ids_diff(published, registered) -> tuple[list[str], list[str]]:
 # Content -- the ids match and the bodies do not
 # =============================================================================
 
+# JCS treats every JSON number as an IEEE double, and `rfc8785` refuses a Python int
+# outside the range a double holds exactly rather than round it.
+_SAFE_INT = 2**53 - 1
+
+
+class DigestError(ValueError):
+    """A body that has no canonical form: NaN or Infinity, a number beyond a double,
+    or a string that is not valid Unicode. Raised with the item's id, never compared."""
+
+
 def _canonical(x):
-    """The form both sides of the comparison are reduced to before hashing.
+    """The form both sides of the comparison are reduced to before serialising.
 
     Two things pgstac's round trip does not preserve, each measured on a live
     catalogue, and each of which would otherwise report items "changed" forever and
@@ -237,37 +248,60 @@ def _canonical(x):
       `"proj:epsg": null` is served with the key absent. Like Postgres'
       `jsonb_strip_nulls`, this removes object FIELDS and never array elements -- a
       null in an array is positional
-    - an integral float comes back as an integer. JSON has one number type, and
-      PostGIS rebuilds geometry: `-126.0` is served as `-126`. The same rule covers
-      `-0.0` (numeric has no negative zero) and floats of 1e16 and up (numeric emits
-      them as integers). `bool` is left alone -- it is an int in Python, not a float,
-      and `true` is not `1`.
+    - an integral float comes back as an integer. PostGIS rebuilds geometry, so
+      `-126.0` is served as `-126`; `-0.0` comes back `0`; a float of 1e16 and up comes
+      back as an integer of its exact value. JCS absorbs all of these by itself: it
+      writes every number as the double it denotes, so `-126.0` and `-126` serialise
+      alike. What it does not do is accept an int a double cannot hold exactly, so
+      those -- `type(x) is int` only, since `bool` is an int and `true` is not `1` --
+      become the double they denote, which is JCS's own model of a JSON number.
+
+    A consequence, decided rather than overlooked: two distinct integers beyond 2^53
+    that round to one double digest equal. JSON readers that parse numbers as doubles
+    (JavaScript, and RFC 8785 itself) cannot tell them apart either.
     """
     if isinstance(x, dict):
         return {k: _canonical(v) for k, v in x.items() if v is not None}
     if isinstance(x, list):
         return [_canonical(v) for v in x]
-    if isinstance(x, float) and x.is_integer():
-        return int(x)
+    if type(x) is int and not -_SAFE_INT <= x <= _SAFE_INT:
+        try:
+            return float(x)
+        except OverflowError:
+            raise DigestError(f"integer of {len(str(abs(x)))} digits is beyond "
+                              f"a double") from None
     return x
 
 
-def body_digest(doc) -> str:
-    """sha256 of a STAC object's canonical JSON: `links` removed, null members dropped
-    and integral floats written as integers (see `_canonical`), keys sorted.
+def canonical_json(doc) -> bytes:
+    """The bytes a STAC object's digest is taken over: RFC 8785 (JCS) serialisation of
+    the object with `links` removed and the round-trip differences canonicalised.
 
-    `links` is the one member the API rewrites: it replaces the published `collection`
-    link with its own self/root/parent/collection set on its own host. Everything else
-    round-trips through pgstac apart from the two differences `_canonical` absorbs.
-
-    Refuses anything but an object. A None that hashed would equal every other None.
+    RFC 8785 because stacchain's Merkle tooling hashes JCS, so a later Merkle layer can
+    reuse these leaf hashes. Nothing stores a digest -- both sides are recomputed from
+    the published bodies and the API on every run -- so the form can change with no
+    migration.
     """
     if not isinstance(doc, dict):
         raise TypeError(f"expected a JSON object, got {type(doc).__name__}")
-    canon = _canonical({k: v for k, v in doc.items() if k != "links"})
-    return hashlib.sha256(
-        json.dumps(canon, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+    try:
+        return rfc8785.dumps(_canonical({k: v for k, v in doc.items() if k != "links"}))
+    # UnicodeError too: a lone surrogate in a KEY fails in rfc8785's key sort, before
+    # its own serialiser can raise CanonicalizationError.
+    except (DigestError, rfc8785.CanonicalizationError, UnicodeError) as e:
+        raise DigestError(f"body of {doc.get('id')!r} has no canonical form: {e}") from e
+
+
+def body_digest(doc) -> str:
+    """sha256 of `canonical_json(doc)`.
+
+    `links` is the one member the API rewrites: it replaces the published `collection`
+    link with its own self/root/parent/collection set on its own host. Everything else
+    round-trips through pgstac apart from the differences `_canonical` absorbs.
+
+    Refuses anything but an object. A None that hashed would equal every other None.
+    """
+    return hashlib.sha256(canonical_json(doc)).hexdigest()
 
 
 def content_diff(published: dict, registered: dict) -> tuple[list, list, list]:

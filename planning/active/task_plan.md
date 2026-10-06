@@ -40,11 +40,11 @@ stdin not argv.
 - [x] Plan review folded in (`review-plan.md`); explicit `encoding="utf-8"` on every open
 
 ## Phase 2: RFC 8785 canonicalisation
-- [ ] `body_digest` serialises with JCS (`rfc8785`, added to pyproject/lock); keep `links` removal and null-member stripping; drop the float→int step
-- [ ] Only `type(x) is int` values beyond ±(2^53−1) become doubles (JCS's model: every number is an IEEE double). Pin as a decision: distinct ints above 2^53 that round to one double digest equal. Overflow, NaN/Infinity and lone surrogates raise a named error naming the problem, never a bare library exception
-- [ ] Tests: every existing digest case still holds (`-126.0`/`-126`, `-0.0`/`0`, `1e16`/int, bool ≠ 1, nulls); an RFC 8785 Appendix vector; non-ASCII; non-BMP key order; 1.5e300 vs its served integer
-- [ ] Benchmark digest cost on a realistic item (~205k digests per whole-catalogue verify); record in findings
-- [ ] Confirm in code and note in findings: digests computed fresh both sides every run, nothing stored, so no migration
+- [x] `body_digest` serialises with JCS (`rfc8785`, added to pyproject/lock); keep `links` removal and null-member stripping; drop the float→int step
+- [x] Only `type(x) is int` values beyond ±(2^53−1) become doubles (JCS's model: every number is an IEEE double). Pin as a decision: distinct ints above 2^53 that round to one double digest equal. Overflow, NaN/Infinity and lone surrogates raise a named error naming the problem, never a bare library exception
+- [x] Tests: every existing digest case still holds (`-126.0`/`-126`, `-0.0`/`0`, `1e16`/int, bool ≠ 1, nulls); an RFC 8785 Appendix vector; non-ASCII; non-BMP key order; 1.5e300 vs its served integer
+- [x] Benchmark digest cost on a realistic item (~205k digests per whole-catalogue verify); record in findings
+- [x] Confirm in code and note in findings: digests computed fresh both sides every run, nothing stored, so no migration
 
 ## Phase 3: `stacs.validate`
 - [ ] `audit_items` plus the `audit-items` branch guards: zero items fails, forbid list parsed with empty keys dropped, rules printed as APPLIED, `expect` as a set gate where ids are known, directory mode excludes `collection.json`

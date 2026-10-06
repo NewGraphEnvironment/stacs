@@ -169,6 +169,14 @@ Relates to NewGraphEnvironment/stac_dem_bc#27, NewGraphEnvironment/stac_dem_bc#2
 - Digest cost (synthetic 2.7 KB item, 20k reps): old `json.dumps` 54 µs, `rfc8785` 139 µs.
   ~205k digests per whole-catalogue verify: 11 s → 28 s, on a ~6 min run.
 
+- `pypgstac` 0.10.0 `load.read_json` (load.py:142-167) parses NDJSON line by line and does
+  not look at the file extension, so the remote temp file needs no `.ndjson` suffix (BSD
+  `mktemp` would not randomise X's followed by a suffix). It also rewrites every line with
+  `.replace("\\\\", "\\")` (twice) **before** parsing: a JSON string holding an escaped
+  backslash (`"a\\b"`, i.e. `a\b`) is loaded as `"a\b"` -- a backspace -- or fails to parse.
+  Upstream defect, not worked around: `stacs verify` reports any such item as `changed`
+  every run, which is the right signal. Phase 6 scans the live bodies for backslashes.
+
 ## Phase 1 code-check: terminated by enumeration (2026-10-06)
 
 | Round | Findings | Fixed | Accepted | Inside previous fix? |
@@ -208,8 +216,19 @@ from a grep of each `return`, `.get(…, default)`, `if not` and `404`:
 
 Nothing in the set yields a false "in sync" or "unchanged". Spend: 1 plan review + 4 rounds.
 
+## Phase 2 code-check (2026-10-06)
+
+| Round | Findings | Fixed | Accepted | Inside previous fix? |
+|---|---|---|---|---|
+| 1 | 1 fragile: a lone surrogate in a KEY escaped as UnicodeEncodeError (rfc8785's UTF-16 key sort runs before its own serialiser). Also: JCS number output byte-identical to V8 `JSON.stringify` over 303,066 doubles | 1 | 0 | — |
+| 2 | 1 test gap: the negative bound of the int→double conversion (`-1e16`) untested; 19-mutant table, 4 survivors all equivalent | 1 | 0 | n |
+| 3 | Clean: no parser difference between `json.loads(bytes)` and `requests .json()` yields a false equal or a permanent false different; Postgres jsonb keeps the last duplicate key, as Python does (measured in postgres:16) | — | — | n |
+
+Ended on a clean round 3 with no inside-a-fix finding.
+
 ## Errors Encountered
 
 | Error | Resolution |
 |-------|------------|
 | Write/heredoc tooling decoded `\uXXXX` escapes inside a file being written (RFC 8785 sample vector came out with a literal `"`) | build test strings from `chr()` codes |
+| bash 3.2: `: "${VAR:?msg}"` under an `EXIT` trap exits **0** (the trap's status), so a remote guard written that way passes. Found by the Phase 4 harness running the remote script for real | explicit `if [ -z "${VAR:-}" ]; then echo ... >&2; exit 1; fi` |

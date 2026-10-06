@@ -471,3 +471,85 @@ def test_post_raises_on_a_server_error_with_a_json_body(monkeypatch):
     with pytest.raises(RuntimeError, match="failed after 3 attempts"):
         v.ids_registered("c", api="http://api.example.invalid", session=S())
     assert S.n == v.RETRIES
+
+
+# =============================================================================
+# RFC 8785 (JCS) -- the canonical form, against the RFC's own vector
+# =============================================================================
+#
+# Strings are built from chr() codes: an escape typed into this file is a second
+# parser between the RFC and the test.
+
+BS, DQ = chr(92), chr(34)
+
+
+def test_canonical_json_matches_the_rfc_8785_sample():
+    """RFC 8785 section 3.2.3: numbers, string escaping and key order in one object.
+    Self-consistency cannot show the form is JCS; the RFC's output can."""
+    string = chr(0x20AC) + "$" + chr(0x0F) + chr(0x0A) + "A'B" + DQ + BS + BS + DQ + "/"
+    doc = {"numbers": [333333333.33333329, 1e30, 4.50, 2e-3, 1e-27],
+           "string": string, "literals": [None, True, False]}
+    want = ('{"literals":[null,true,false],'
+            '"numbers":[333333333.3333333,1e+30,4.5,0.002,1e-27],'
+            '"string":"' + chr(0x20AC) + "$" + BS + "u000f" + BS + "nA'B"
+            + BS + DQ + BS + BS + BS + BS + BS + DQ + '/"}')
+    assert v.canonical_json(doc) == want.encode("utf-8")
+
+
+def test_canonical_json_orders_keys_by_utf16_code_unit():
+    """JCS sorts by UTF-16 code units, not code points: a key outside the BMP (a
+    surrogate pair, 0xD83D...) sorts BEFORE one at U+FF61. Python's sorted() is the
+    other way round, which is what made the old form not JCS."""
+    astral, high_bmp = chr(0x1F600), chr(0xFF61)
+    assert sorted([astral, high_bmp]) == [high_bmp, astral]
+    out = v.canonical_json({high_bmp: 1, astral: 2}).decode("utf-8")
+    assert out.index(astral) < out.index(high_bmp)
+
+
+def test_canonical_json_writes_non_ascii_as_utf8():
+    out = v.canonical_json({"title": "Bulkley " + chr(0xE9) + "t" + chr(0xE9)})
+    assert out == '{"title":"Bulkley été"}'.encode("utf-8")
+
+
+def test_canonical_json_drops_links_and_null_members():
+    out = v.canonical_json({"id": "a", "links": [{"rel": "self"}], "x": None,
+                            "y": [None]})
+    assert out == b'{"id":"a","y":[null]}'
+
+
+@pytest.mark.parametrize("published, served", [
+    (-126.0, -126),
+    (-0.0, 0),
+    (1e16, 10000000000000000),
+    (-1e16, -10000000000000000),  # the lower bound of the conversion
+    (1.5e300, int(1.5e300)),     # served as a 301-digit integer of the double's value
+])
+def test_an_integral_float_and_its_served_integer_digest_equal(published, served):
+    assert v.body_digest({"n": published}) == v.body_digest({"n": served})
+
+
+def test_distinct_integers_beyond_2_53_that_round_together_digest_equal():
+    """A decision, pinned so it is not rediscovered as a bug: JCS reads every number as
+    a double, and 2^53 and 2^53+1 are one double. Below 2^53 nothing collapses."""
+    assert v.body_digest({"n": 2**53}) == v.body_digest({"n": 2**53 + 1})
+    assert v.body_digest({"n": 2**53 - 1}) != v.body_digest({"n": 2**53 - 2})
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf"),
+                                   10**400, chr(0xD800)])
+def test_a_body_with_no_canonical_form_raises_a_named_error(value):
+    """json.loads accepts NaN, Infinity, huge integers and lone surrogates. None of them
+    has a JCS form; each is reported against its item, never compared."""
+    with pytest.raises(v.DigestError, match="'item-7'"):
+        v.body_digest({"id": "item-7", "properties": {"x": value}})
+
+
+def test_a_lone_surrogate_in_a_key_raises_a_named_error():
+    """Keys take a different path through rfc8785 (its UTF-16 sort) than values."""
+    with pytest.raises(v.DigestError, match="'item-7'"):
+        v.body_digest({"id": "item-7", "properties": {chr(0xD800): 1}})
+
+
+def test_a_digest_error_is_a_value_error():
+    """Callers that already refuse an unreadable body (ValueError) refuse this too."""
+    assert issubclass(v.DigestError, ValueError)

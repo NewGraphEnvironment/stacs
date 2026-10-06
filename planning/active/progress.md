@@ -11,3 +11,4 @@
 - Phase 1: `stacs.verify`, `stacs.catalogue` extracted; `api` required; four code-check
   rounds (`review-p1-round{1..4}.md`), the fourth finding a defect inside round 3's fix,
   ended by enumerating every absence-producing point (findings.md). 101 tests.
+- Phase 2: `body_digest` over RFC 8785 (`canonical_json`, `DigestError`); 3 code-check rounds (`review-p2-round{1..3}.md`). 118 tests.
