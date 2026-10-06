@@ -322,6 +322,38 @@ written per caller instead of in the shared producer. The repeated-id check now 
 Every accepted input is either applied where it is accepted or documented as not read by
 that command.
 
+## Phase 6: parity gate (live, read-only, 2026-10-06)
+
+API: the production STAC API (`$API`). Reference: stac_dem_bc `origin/main` 763f17d,
+`register_manifest.py hrefs-published | fetch-bodies | diff --*-out` + `collection-state`
+(the shell's `--verify` prints only five of each list). stacs: `stacs verify --config
+<toml> --out-dir`, configs kept outside the repo.
+
+| collection | items | reference (wall) | stacs (wall) | missing / changed / orphaned | collection | sets |
+|---|---|---|---|---|---|---|
+| stac-airphoto-bc | 10,100 | 67 s | 63 s | 0 / 0 / 0 both | same both | byte-identical |
+| stac-elevation-bc | 102,460 | 744 s | 760 s | 0 / 0 / 0 both | same both | byte-identical |
+
+**Positive control** (empty sets prove nothing on their own): a `file://` copy of the
+airphoto catalogue with one body edited (`properties["stacs:positive_control"] = 1` on item
+`1006039`), verified against the live API by both tools -- both report exactly
+`changed = [1006039]`, missing 0, orphaned 0.
+
+**Verdict equivalence** over the reference run's bodies and one API pass per collection,
+three digests per item (links-only, stac_dem_bc's `_canonical`, stacs' JCS):
+
+| collection | old vs JCS verdict disagreements | links-only differs but canonical equal | of which JCS equal | distinct published digests |
+|---|---|---|---|---|
+| stac-airphoto-bc | 0 / 10,100 | 0 | -- | 10,100 |
+| stac-elevation-bc | 0 / 102,460 | 160 (the null-member class) | 160 | 102,460 |
+
+The 29 integral-float items of 2026-09-29 no longer differ even with only `links` removed;
+that rule is pinned by tests. Scan of every published body: 0 NaN/Infinity, 0 integers
+beyond 2^53, 0 backslashes (so the pypgstac loader defect touches no live item).
+
+Wall time: stacs is within 2% of the reference on the 102k collection (760 s vs 744 s),
+including the ~17 s JCS costs.
+
 ## Errors Encountered
 
 | Error | Resolution |

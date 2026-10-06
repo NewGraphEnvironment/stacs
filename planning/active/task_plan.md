@@ -66,10 +66,10 @@ stdin not argv.
 - [x] `research/pgstac_round_trip.md` carried over with provenance to stac_dem_bc's, updated for JCS
 
 ## Phase 6: Parity gate (live, read-only)
-- [ ] Reference sets from stac_dem_bc `register_manifest.py diff --missing-out --orphaned-out --changed-out` + `collection-state` (the shell's `--verify` prints only five of each); `stacs verify` writes full lists; both for `stac-elevation-bc` and `stac-airphoto-bc`; compared set-for-set
-- [ ] Verdict equivalence item by item: old digest equal ⇔ JCS digest equal, over the same fetched bodies and served pages
-- [ ] Positive control (a `file://` collection with one body edited reads `changed` in both); the 29 float and 160 null items read `same`; NaN / huge-number scan; distinct-digest count; wall time
-- [ ] Record numbers by collection (API as `$API`) in findings and the archive README; any disagreement explained and fixed before proceeding
+- [x] Reference sets from stac_dem_bc `register_manifest.py diff --missing-out --orphaned-out --changed-out` + `collection-state` (the shell's `--verify` prints only five of each); `stacs verify` writes full lists; both for `stac-elevation-bc` and `stac-airphoto-bc`; compared set-for-set
+- [x] Verdict equivalence item by item: old digest equal ⇔ JCS digest equal, over the same fetched bodies and served pages
+- [x] Positive control (a `file://` collection with one body edited reads `changed` in both); the 29 float and 160 null items read `same`; NaN / huge-number scan; distinct-digest count; wall time
+- [x] Record numbers by collection (API as `$API`) in findings and the archive README; any disagreement explained and fixed before proceeding
 
 ## Phase 7: Hand-off
 - [ ] File adoption issues (pin `v0.1.0` once tagged): stac_dem_bc (catalogue_register.sh, register scripts, `update.yml` audit calls; which validators stay build-side), stac_airphoto_bc (drop the `cd`; `--all` then `verify`; its "--drift never refreshes" note is stale since stac_dem_bc#45), stac_uav_bc, stac_orthophoto_bc, stac_floodplains_bc (`stacs load`)
