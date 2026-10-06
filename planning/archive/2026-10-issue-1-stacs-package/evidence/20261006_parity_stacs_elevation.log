@@ -1,0 +1,15 @@
+collection : stac-elevation-bc
+mode       : verify
+asset audit: none (no require_asset / forbid_assets declared)
+fetching published collection.json ...
+published  : 102460
+fetching 102460 item JSON(s) with 20 workers ...
+fetched    : 102460 of 102460 (0 failed)
+comparing every body with the API ...
+published  : 102460
+registered : 102460
+missing    : 0
+orphaned   : 0
+changed    : 0
+collection : same
+IN SYNC: 102460 published, all registered with the published body, no orphans

@@ -1,0 +1,17 @@
+== stac-airphoto-bc start 2026-10-06T19:26:05Z
+fetched 10100 of 10100
+published  10100
+registered 10100
+missing    0
+orphaned   0
+changed    0
+== stac-airphoto-bc done in 67s: missing 0 changed 0 orphaned 0 collection same
+== stac-elevation-bc start 2026-10-06T19:27:12Z
+fetched 102460 of 102460
+published  102460
+registered 102460
+missing    0
+orphaned   0
+changed    0
+== stac-elevation-bc done in 744s: missing 0 changed 0 orphaned 0 collection same
+== all done 2026-10-06T19:39:36Z

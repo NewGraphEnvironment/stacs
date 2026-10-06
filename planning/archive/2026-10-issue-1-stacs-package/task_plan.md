@@ -81,4 +81,4 @@ stdin not argv.
 - [x] `/code-check` clean on each commit
 - [x] PWF checkboxes match landed work
 - [x] No real host/bucket/collection in `src/` (structural + text guard)
-- [ ] `/planning-archive` on completion
+- [x] `/planning-archive` on completion
