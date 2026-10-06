@@ -16,3 +16,4 @@
 - Phase 6 reference run started in the background (stac_dem_bc `register_manifest.py`, read-only).
 - Phase 4: `stacs.register` (Transport, Target, load, run); harness runs the remote script for real against a fake pypgstac; 2 code-check rounds + 1 self-found defect, ended by enumeration (`review-p4-round{1,2}.md`). 256 tests.
 - Phase 6 reference + equivalence runs complete (findings to be recorded in Phase 6).
+- Phase 5: `stacs` CLI + `stacs.toml`, README, NEWS, research/pgstac_round_trip.md; 2 code-check rounds ended by enumeration (`review-p5-round{1,2}.md`). 319 tests.

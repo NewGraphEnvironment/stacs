@@ -274,3 +274,12 @@ def test_validate_reports_an_unreadable_file(tmp_path):
     bad = tmp_path / "broken.json"
     bad.write_text("{not json")
     assert len(val.validate_items([str(bad)])) == 1
+
+
+def test_a_repeated_id_fails_the_audit_whoever_calls_it(tmp_path):
+    """In the audit itself, so no caller can forget it."""
+    a = _write(tmp_path, _item("a"))
+    b = _write(tmp_path, {**_item("a"), "properties": {"x": 1}}, name="b")
+    r = val.audit_items([a, b], NEW)
+    assert not r.ok and any("appear more than once" in f for f in r.failures)
+    assert not val.audit_items([a, a], NEW, expect=2).ok

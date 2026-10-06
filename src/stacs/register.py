@@ -72,6 +72,15 @@ class Transport:
     pypgstac: list[str] = field(default_factory=lambda: ["pypgstac"])
 
     def check(self) -> None:
+        # Types first: a value from a config file can be anything TOML can say.
+        for name in ("host", "db"):
+            if not isinstance(getattr(self, name), str):
+                raise RegisterError(f"{name} must be a string, got {getattr(self, name)!r}")
+        for name in ("env_file", "workdir", "path_prepend", "pg_host", "pg_user",
+                     "password_env"):
+            value = getattr(self, name)
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                raise RegisterError(f"{name} must be a non-empty string, got {value!r}")
         if not self.host or self.host.startswith("-"):
             # `-oProxyCommand=...` as a host is option injection.
             raise RegisterError(f"invalid ssh host: {self.host!r}")
@@ -80,10 +89,11 @@ class Transport:
         if self.password_env is not None and not _ENV_NAME.fullmatch(self.password_env):
             raise RegisterError(f"password_env must name a variable, got "
                                 f"{self.password_env!r}")
-        if self.pg_port is not None and not (isinstance(self.pg_port, int)
+        if self.pg_port is not None and not (type(self.pg_port) is int
                                              and 0 < self.pg_port < 65536):
             raise RegisterError(f"invalid pg_port: {self.pg_port!r}")
-        if not self.pypgstac or not all(isinstance(a, str) and a for a in self.pypgstac):
+        if (not isinstance(self.pypgstac, (list, tuple)) or not self.pypgstac
+                or not all(isinstance(a, str) and a for a in self.pypgstac)):
             raise RegisterError(f"pypgstac launcher must be a list of words: "
                                 f"{self.pypgstac!r}")
 
@@ -101,6 +111,28 @@ class Target:
     page_size: int = PAGE_SIZE
     chunk: int = 500
     fetch_workers: int = 20
+
+    def check(self) -> None:
+        """The local half of "refuse before writing": types and ranges, so a bad
+        `chunk` cannot first fail in the read-back AFTER the upsert. Whether the API
+        answers is checked separately, by `_api_probe`, before any write."""
+        for name in ("api", "collection_id", "bucket_url"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise RegisterError(f"{name} must be a non-empty string, got {value!r}")
+        for name in ("page_size", "chunk", "fetch_workers"):
+            value = getattr(self, name)
+            if type(value) is not int or value < 1:
+                raise RegisterError(f"{name} must be a positive integer, got {value!r}")
+        if self.require_asset is not None and (not isinstance(self.require_asset, str)
+                                               or not self.require_asset.strip()):
+            # An empty key would otherwise disable the requirement while reading as set.
+            raise RegisterError(f"require_asset must be an asset key or None, got "
+                                f"{self.require_asset!r}")
+        try:
+            parse_asset_keys(self.forbid_assets)
+        except ValueError as e:
+            raise RegisterError(f"forbid_assets: {e}") from e
 
 
 # =============================================================================
@@ -324,15 +356,7 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
         raise RegisterError(f"unknown mode {mode!r}; one of {', '.join(MODES)}")
     if mode == "ids" and not ids_file:
         raise RegisterError("mode 'ids' needs an ids file")
-    if target.require_asset is not None and (not isinstance(target.require_asset, str)
-                                             or not target.require_asset.strip()):
-        # An empty key would otherwise disable the requirement while reading as set.
-        raise RegisterError(f"require_asset must be an asset key or None, got "
-                            f"{target.require_asset!r}")
-    try:
-        parse_asset_keys(target.forbid_assets)
-    except ValueError as e:
-        raise RegisterError(f"forbid_assets: {e}") from e
+    target.check()
     writes = mode != "verify"
     if writes:
         if target.transport is None:
@@ -404,8 +428,11 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
                     log(f"  {i}\t{by_id[i]}")
                 return 0
 
-        # Before the expensive stage, in every mode that can write.
+        # Before the expensive stage, in every mode that can write: the host, and the
+        # API the write will be verified against. A wrong API URL would otherwise first
+        # surface in the read-back, after the upsert.
         if writes and not dryrun:
+            _api_probe(target)
             probe(target.transport)
 
         # --- fetch ------------------------------------------------------------
@@ -544,6 +571,21 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
                 "collection.json changed")
         log(f"DONE: {len(todo)} item(s) registered to {target.collection_id}")
         return 0
+
+
+def _api_probe(target) -> None:
+    """One read of each endpoint the post-write verification uses, before any write."""
+    import requests
+
+    from stacs.verify import _post
+    try:
+        _post(requests.Session(), f"{target.api.rstrip('/')}/search",
+              {"collections": [target.collection_id], "limit": 1,
+               "fields": {"include": ["id"]}})
+        root = requests.get(f"{target.api.rstrip('/')}/collections", timeout=60)
+        root.raise_for_status()
+    except (RuntimeError, requests.RequestException) as e:
+        raise RegisterError(f"the API at {target.api} does not answer: {e}") from e
 
 
 def _digests(links, fetch_dir):

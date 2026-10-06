@@ -288,6 +288,40 @@ caller-supplied code runs inside that process.
 
 Standalone `stacs load` (no `run()`) rests on the remote's confirmation; documented.
 
+## Phase 5 code-check: terminated by enumeration (2026-10-06)
+
+| Round | Findings | Fixed | Accepted | Inside previous fix? |
+|---|---|---|---|---|
+| 1 | 2 bugs (`load` ignored the declared collection and asset rules; `load items` exited 0 having loaded nothing) + 5 (`--dir ""` read stdin; repeated asset flags kept only the last; `[tuning]` unchecked so a bad `chunk` failed after the write; `[transport]` wrong types crashed or passed; a missing dir gave a traceback) | 7 | 0 | — |
+| 2 | 1 doc bug (README loaded items before the collection) + 4 (the audit copied onto `load` without its repeated-id check; `load collection` with no declared id checked nothing; `--ids-file` accepted and ignored outside ids mode; `all` mode never read the API before writing) | 5 | 0 | **y** -- the audit fix landed in one of two callers |
+
+**Mechanism** (round 2): an input accepted in one place and applied -- or dropped -- in
+another, with nothing mapping each accepted input to where it is applied; and a check
+written per caller instead of in the shared producer. The repeated-id check now lives in
+`audit_items`, so every caller has it.
+
+**Enumeration** -- every subcommand and the inputs it accepts:
+
+| command | input | applied / guarded |
+|---|---|---|
+| all | `--config` | unknown tables and keys refused; never implicit |
+| `verify` | `[catalogue]` / `--api --collection-id --bucket-url` | Target, `Target.check` |
+| `verify` | `[assets]`, asset flags | merged and validated (empty refused); not applied, because verify writes nothing -- the rules govern loads |
+| `verify` | `[transport]` | not read (verify writes nothing) |
+| `verify` | `[tuning]`, `--out-dir` | Target (checked); lists written |
+| `register` | everything above + `[transport]`, `--host --db` | `Transport.check` (types first), API probe and ssh probe before the fetch |
+| `register` | `--mode`, `--ids-file`, `--dryrun` | `--ids-file` refused outside ids; ids mode without it refused |
+| `load items` | `[catalogue].collection_id` / `--expect-collection` | required; audit + `ndjson_write(expect_collection)` |
+| `load items` | `[assets]` | audit before sending |
+| `load items` | `--dir` / stdin | `--dir ""` and missing dir refused; zero items exits 1; repeated ids refused (in the audit) |
+| `load items/collection` | `[catalogue].api`, `bucket_url`, `[tuning]` | not read: `load` sends local files and does not verify through the API (README says so) |
+| `load collection` | FILE, collection id | id must equal `--expect-collection` or the declared id; one is required |
+| `audit` | collection, asset rules, `--dir`/stdin, `--expect` | all applied; repeated ids refused |
+| `validate` | `--dir`/stdin | zero items exits 1; `--dir ""` refused |
+
+Every accepted input is either applied where it is accepted or documented as not read by
+that command.
+
 ## Errors Encountered
 
 | Error | Resolution |

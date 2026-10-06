@@ -18,6 +18,9 @@ dependencies = [
     "rfc8785>=0.1.4",
 ]
 
+[project.scripts]
+stacs = "stacs.cli:main"
+
 [project.urls]
 Repository = "https://github.com/NewGraphEnvironment/stacs"
 Issues = "https://github.com/NewGraphEnvironment/stacs/issues"

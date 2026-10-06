@@ -61,9 +61,9 @@ stdin not argv.
 - [x] Port the `tests/test_catalogue_register.py` harness in-process: `file://` bucket, stub API, ssh stub matching the new remote command shape and logging `(kind, lines)`, proxy-env network-proofing asserted on the proxy reason (not DNS); keep T4's properties; add the untested guards (id mismatch, zero published, ids guards, failed probe, remote truncation, db/host validation, paging no-token / repeated token, retries and 404 vs 5xx with injected sleep)
 
 ## Phase 5: CLI, config, docs
-- [ ] `stacs` console script (argparse): `verify`, `register --mode drift|all|ids [--dryrun]`, `load items` (paths on stdin) / `load collection FILE` for repos that register their own build output, `audit`, `validate`; `--config stacs.toml` (stdlib `tomllib`) with flag overrides under the asset-rule restriction above; secrets never accepted as flags or config values
-- [ ] Example `stacs.toml` with fake values in README; README usage, the boundary sentence first, the paging dialect (stac-fastapi next-link body) stated; NEWS Unreleased entries
-- [ ] `research/pgstac_round_trip.md` carried over with provenance to stac_dem_bc's, updated for JCS
+- [x] `stacs` console script (argparse): `verify`, `register --mode drift|all|ids [--dryrun]`, `load items` (paths on stdin) / `load collection FILE` for repos that register their own build output, `audit`, `validate`; `--config stacs.toml` (stdlib `tomllib`) with flag overrides under the asset-rule restriction above; secrets never accepted as flags or config values
+- [x] Example `stacs.toml` with fake values in README; README usage, the boundary sentence first, the paging dialect (stac-fastapi next-link body) stated; NEWS Unreleased entries
+- [x] `research/pgstac_round_trip.md` carried over with provenance to stac_dem_bc's, updated for JCS
 
 ## Phase 6: Parity gate (live, read-only)
 - [ ] Reference sets from stac_dem_bc `register_manifest.py diff --missing-out --orphaned-out --changed-out` + `collection-state` (the shell's `--verify` prints only five of each); `stacs verify` writes full lists; both for `stac-elevation-bc` and `stac-airphoto-bc`; compared set-for-set

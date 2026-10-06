@@ -203,10 +203,11 @@ def _run(tmp_path, mode, api_url="http://127.0.0.1:9", items=(), collection_id=C
          monkeypatch=None, **target):
     bucket = _publish(tmp_path, items, collection_id, before)
     out, err = [], []
+    target.setdefault("fetch_workers", 4)
     t = reg.Target(api=api_url, collection_id=target.pop("expect_id", collection_id),
                    bucket_url=bucket.as_uri(),
                    transport=_transport() if transport is True else transport,
-                   fetch_workers=4, **target)
+                   **target)
     rc = reg.run(t, mode, ids_file=ids_file, dryrun=dryrun, out_dir=out_dir,
                  log=lambda m: out.append(str(m)), warn=lambda m: err.append(str(m)))
     return Run(rc, "\n".join(out), "\n".join(err), tmp_path)
@@ -329,9 +330,9 @@ def test_a_writing_mode_needs_a_transport(env):
     assert r.rc == 1 and "no transport" in r.err
 
 
-def test_an_unreachable_host_is_refused_before_the_fetch(env, monkeypatch):
+def test_an_unreachable_host_is_refused_before_the_fetch(env, api, monkeypatch):
     monkeypatch.setenv("SSH_PROBE_RC", "255")
-    r = _run(env, "all", items=_items(2))
+    r = _run(env, "all", api.url, items=_items(2))
     assert r.rc == 1 and "cannot reach" in r.err
     assert "fetching 2 item" not in r.out and r.writes == 0
 
@@ -898,3 +899,27 @@ def test_a_collection_that_does_not_read_back_after_the_write_fails_the_run(env,
     assert [l[:2] for l in r.loads] == [("collections", "1")], r.all
     assert r.rc == 1 and "the collection reads 'changed'" in r.err
     assert "DONE" not in r.out
+
+
+
+@pytest.mark.parametrize("kw, match", [
+    (dict(chunk=0), "chunk"), (dict(chunk=-1), "chunk"), (dict(chunk="500"), "chunk"),
+    (dict(page_size=0), "page_size"), (dict(fetch_workers=True), "fetch_workers"),
+])
+def test_a_tuning_value_that_would_fail_after_the_write_is_refused_before_it(env, kw,
+                                                                            match):
+    """`chunk` is first used in the read-back AFTER the upsert, so it is checked first."""
+    r = _run(env, "all", items=_items(1), **kw)
+    assert r.rc == 1 and match in r.err
+    assert "fetching" not in r.out and r.writes == 0
+
+
+
+def test_an_api_that_does_not_answer_is_refused_before_any_write(env, monkeypatch):
+    """`all` writes before it ever compares, so the API it will verify against is read
+    first: a wrong URL would otherwise surface only after the upsert."""
+    from stacs import verify
+    monkeypatch.setattr(verify.time, "sleep", lambda s: None)
+    r = _run(env, "all", "http://127.0.0.1:9", items=_items(2))
+    assert r.rc == 1 and "does not answer" in r.err
+    assert r.writes == 0 and "fetching 2" not in r.out

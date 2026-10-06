@@ -162,6 +162,14 @@ def audit_items(paths, collection_id: str, require_asset: str | None = None,
         hits = getattr(r, kind)
         if hits:
             r.failures.append(f"{len(hits)} item(s) {label}, e.g. {hits[:3]}")
+    # In the audit, not in its callers: a batch naming one id twice is never right
+    # (pgstac upserts by id, so one body silently wins, or the load fails half way), and
+    # a check left to each caller was missing from the second one written.
+    repeated = sorted({i for i in r.ids if r.ids.count(i) > 1}) if \
+        len(set(r.ids)) != len(r.ids) else []
+    if repeated:
+        r.failures.append(f"{len(repeated)} id(s) appear more than once, e.g. "
+                          f"{repeated[:3]}")
     if expect is not None and r.checked != expect:
         r.failures.append(f"expected {expect} item(s), audited {r.checked}")
     if expect_ids is not None:
