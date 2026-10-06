@@ -6,11 +6,11 @@ built-in equivalent: a site is opt-in, generated from the docstrings by a tool t
 chooses.
 
 ## Phase 1: Hexsticker
-- [ ] `data-raw/make_hexsticker.R` adapted from stac_dem_bc's (`package_name <- "stacs"`,
+- [x] `data-raw/make_hexsticker.R` adapted from stac_dem_bc's (`package_name <- "stacs"`,
       outputs `docs/assets/logo.png` and `docs/assets/logo_small.png`), with
       `data-raw/nge-icon_white.png` committed
-- [ ] Render; commit the script and PNGs; eyeball the result (black fill, white border/text)
-- [ ] README title line carries the logo top-right
+- [x] Render; commit the script and PNGs; eyeball the result (black fill, white border/text)
+- [x] README title line carries the logo top-right
 
 ## Phase 2: Runnable docstring examples, executed in CI
 - [ ] `[tool.pytest.ini_options]`: `testpaths = ["tests", "src"]`, `addopts = "--doctest-modules"`

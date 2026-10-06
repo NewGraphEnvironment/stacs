@@ -81,6 +81,12 @@ What exploration found, and what shaped the phases:
 - Pin `mkdocs<2` in the docs group (MkDocs 2 is announced as plugin-breaking); verify at
   lock time.
 
+## Hexsticker (2026-10-06)
+
+hexSticker warns `font family 'Helvetica' not found, will use 'sans'` on this machine; the
+render matches stac_dem_bc's committed `man/figures/logo.png` (same layout, same sans
+lettering), so the sibling stickers were evidently made with the same fallback.
+
 ## Errors Encountered
 
 | Error | Resolution |

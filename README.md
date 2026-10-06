@@ -1,4 +1,4 @@
-# stacs
+# stacs <img src="docs/assets/logo.png" align="right" height="139" alt="stacs logo" />
 
 Register a STAC catalogue into [pgstac](https://github.com/stac-utils/pgstac) and prove it
 arrived.
