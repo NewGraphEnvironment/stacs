@@ -12,7 +12,9 @@ authors = [
 # above its own. CI runs the floor, so the floor is exercised rather than aspirational.
 requires-python = ">=3.11"
 # Runtime dependencies arrive with the code that needs them, not before.
-dependencies = []
+dependencies = [
+    "requests>=2.31",
+]
 
 [project.urls]
 Repository = "https://github.com/NewGraphEnvironment/stacs"

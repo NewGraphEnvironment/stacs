@@ -150,7 +150,66 @@ Relates to NewGraphEnvironment/stac_dem_bc#27, NewGraphEnvironment/stac_dem_bc#2
 - `stac_airphoto_bc/scripts/run_pipeline.sh` tells the operator `--drift registers only ids
   the API lacks` — stale since stac_dem_bc#45 made drift compare bodies.
 
+## Probes (2026-10-06)
+
+- `rfc8785` 0.1.4 (pure Python): `-126.0` → `-126`, `-0.0` → `0`, `1e16` (float) →
+  `10000000000000000`, `1e21` → `1e+21`, non-ASCII emitted as UTF-8, keys sorted by
+  UTF-16 code unit (`😀` before `｡`, the reverse of Python's code-point sort). **Any int
+  ≥ 2^53 raises `IntegerDomainError`** — including the `10000000000000000` pgstac serves
+  for a published `1e16`. So ints go to doubles before JCS, which is JCS's own model
+  (every JSON number is an IEEE double).
+- `pystac` 1.15.2 bundles only STAC **1.1.0** core + GeoJSON schemas. A 1.0.0 item, or
+  any `stac_extensions` entry, fetches its schema over the network. Offline tests use
+  1.1.0 items without extensions, under a proxy that refuses every fetch.
+- Relative item hrefs (`./x.json`), normal in self-contained catalogues, make every fetch
+  fail in the source (code-check P1 round 1, carried over unchanged, fails loudly).
+  The register/verify orchestrator knows the collection URL, so resolving them there is
+  a candidate for Phase 4.
+
+- Digest cost (synthetic 2.7 KB item, 20k reps): old `json.dumps` 54 µs, `rfc8785` 139 µs.
+  ~205k digests per whole-catalogue verify: 11 s → 28 s, on a ~6 min run.
+
+## Phase 1 code-check: terminated by enumeration (2026-10-06)
+
+| Round | Findings | Fixed | Accepted | Inside previous fix? |
+|---|---|---|---|---|
+| 1 | 0 (AST-compared every ported function with the source: 19/23 identical, 4 differ only by `api` losing its default) | 0 | — | — |
+| 2 | 6 test gaps (guards no test could trip) | 6 | 0 | n |
+| 3 | 1 bug + 5 fragile, all inherited from the source | 6 | 0 | n |
+| 4 | 1 bug + 3 fragile | 4 | 0 | **y** — the stale-body fix only covered URLs in the current call |
+
+**Mechanism** (round 4): the code concluded something was absent -- not served, missing, last
+page, unchanged, nothing published -- from not seeing it, and a failed, partial, stale or
+out-of-scope read looks identical. It recurred because each guard went into one caller rather
+than the shared producer (`ids_registered`/`bodies_registered`, `_search_pages`/`bodies_serving`,
+`fetch_bodies`/`published_digests`, `published_digests`/`collection_item_links`).
+
+**Enumeration** -- every point in `verify.py` and `catalogue.py` that yields an absence,
+from a grep of each `return`, `.get(…, default)`, `if not` and `404`:
+
+| point | absence produced | status |
+|---|---|---|
+| `collection_item_links` no links / no item links | empty published set | raises |
+| `collection_item_links` child link | items never listed | raises |
+| `collection_item_links` two hrefs → one id | id collapsed by a set | raises |
+| `fetch_bodies` leftover in out_dir | stale body read as this run's | refuses non-empty dir |
+| `fetch_bodies` non-object body | absent body counted present | failed URL |
+| `published_digests` file absent / unparseable / other id / repeat | absent digest | raises |
+| `_post` HTTP error | error body read as a page | raises after retries |
+| `_search_pages` no `features` | early last page | raises |
+| `_search_pages` no `links` | early last page | raises (added after round 4) |
+| `_search_pages` next without token / repeated token | early or looping end | raises |
+| `_search_pages` no next link | the normal end | inherent: a server that truncates without a next link is undetectable |
+| `ids_registered` / `bodies_registered` repeated id | overlap or skip hidden | raises |
+| `bodies_serving` no features / next link | ids read "not served" | raises |
+| `bodies_serving` no `links` key | could hide a truncation | loud direction only: unread ids read "not served" (false drift, never false sync) |
+| `content_diff` empty digest | unread body compared equal | raises |
+| `collection_state` 404 | "missing" | only if `{api}/collections` answers 2xx; a 2xx from a different API reads "missing" -- loud direction (a redundant upsert), never "same" |
+
+Nothing in the set yields a false "in sync" or "unchanged". Spend: 1 plan review + 4 rounds.
+
 ## Errors Encountered
 
 | Error | Resolution |
 |-------|------------|
+| Write/heredoc tooling decoded `\uXXXX` escapes inside a file being written (RFC 8785 sample vector came out with a literal `"`) | build test strings from `chr()` codes |
