@@ -1,0 +1,3 @@
+# stacs.catalogue
+
+::: stacs.catalogue

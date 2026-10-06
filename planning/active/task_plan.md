@@ -25,18 +25,20 @@ chooses.
 - [x] `uv run pytest` green; CI `test.yml` unchanged (it already runs `uv run pytest`)
 
 ## Phase 3: MkDocs site
-- [ ] `docs` dependency group: `mkdocs>=1.6,<2`, `mkdocs-material`, `mkdocstrings[python]`; `uv lock`
-- [ ] `mkdocs.yml`: Material, black/white palette (light + dark toggle), `logo`/`favicon`
+- [x] `docs` dependency group: `mkdocs>=1.6,<2`, `mkdocs-material`, `mkdocstrings[python]`; `uv lock`
+- [x] `mkdocs.yml`: Material, black/white palette (light + dark toggle), `logo`/`favicon`
       from `docs/assets/`, `repo_url`, `strict: true`, `pymdownx.snippets` with
       `base_path: ["."]` and `check_paths: true`; `docs_dir` stays `docs/`
-- [ ] README section markers; README's `research/` link made absolute
-- [ ] Pages: `index.md` (README intro, what it does, install, assumptions, development),
-      `configuration.md` (README Configure), `cli.md` (README Use), `changelog.md` (NEWS),
+- [x] README section markers; README's `research/` link made absolute
+- [x] Pages: `index.md` (README intro, what it does, install, development),
+      `configuration.md` (README Configure), `cli.md` (README Use, with its assumptions),
+      `changelog.md` (NEWS),
       `reference/{verify,catalogue,validate,register}.md` (`::: stacs.<module>`,
       private members filtered)
-- [ ] `uv run --group docs mkdocs build --strict` clean locally; a deliberately broken
-      reference fails it (then reverted)
-- [ ] `.gitignore` the `site/` build output
+- [x] `uv run --group docs mkdocs build --strict` clean locally; a deliberately broken
+      reference fails it (then reverted) — *done with a dead `.md` link instead:* a bad
+      `::: ref` aborts even without strict, so it proves nothing about strict
+- [x] `.gitignore` the `site/` build output
 
 ## Phase 4: Workflow, homepage, release notes
 - [ ] `.github/workflows/docs.yml`: build `--strict` on PRs; on push to `main`, build and

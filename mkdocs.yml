@@ -1,0 +1,86 @@
+# The documentation site: the Python counterpart of a pkgdown _pkgdown.yml.
+# Pages pull their prose from README.md and NEWS.md (pymdownx.snippets), so the README
+# stays the single source; the reference pages are the docstrings (mkdocstrings).
+# A snippet can include any file in the repo (base_path "."), so CLAUDE.md, planning/ and
+# research/ reach the site only if a page or a docstring names them: none may.
+site_name: stacs
+site_description: Register STAC catalogues into pgstac and verify they arrived.
+site_url: https://newgraphenvironment.github.io/stacs/
+repo_url: https://github.com/NewGraphEnvironment/stacs
+repo_name: NewGraphEnvironment/stacs
+# The pages are mostly includes; an edit link would open the stub, not the prose.
+edit_uri: ""
+strict: true
+# Every link check MkDocs has, at warn so strict counts it. The defaults leave a missing
+# heading, an extensionless relative link (`[LICENSE](LICENSE)`), an absolute path and a
+# page left out of nav at info level, where a strict build passes them. Raw HTML
+# (`<a href>`, `<img src>`) is never checked: keep it outside README's markers.
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+    absolute_links: warn
+  links:
+    not_found: warn
+    anchors: warn
+    absolute_links: warn
+    unrecognized_links: warn
+
+theme:
+  name: material
+  logo: assets/logo_small.png
+  favicon: assets/logo_small.png
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: black
+      accent: black
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: white
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - content.code.copy
+    - navigation.sections
+
+nav:
+  - Home: index.md
+  - Configuration: configuration.md
+  - Command line: cli.md
+  - API reference:
+      - stacs.verify: reference/verify.md
+      - stacs.catalogue: reference/catalogue.md
+      - stacs.validate: reference/validate.md
+      - stacs.register: reference/register.md
+  - Changelog: changelog.md
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: google
+            filters: ["!^_"]
+            members_order: source
+            show_root_heading: false
+            show_source: false
+            heading_level: 2

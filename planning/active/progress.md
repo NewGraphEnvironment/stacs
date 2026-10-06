@@ -19,3 +19,13 @@
   conftest locations {root, tests/, src/, src/stacs/, stub root} × invocations {src, tests,
   bare}, and collection deciders {testpaths, --doctest-modules, collect_ignore(_glob)} —
   every mutation red, unmutated green.
+- Phase 3: MkDocs site (Material, mkdocstrings over verify/catalogue/validate/register),
+  README as the single source by snippet markers, all seven MkDocs link-validation settings
+  at warn. Phases 3 and 4 reviewed together in one /code-check loop of 3 rounds: r1 a broken
+  anchor passed strict; r2 inside that fix, three more link classes passed, and NEWS and
+  CLAUDE.md claims were false; r3 named the mechanism (a scope stated from the cases in view,
+  a fact fixed in one of its copies) and found a stale copy in mkdocs.yml, the NEWS count
+  skipping cli and methods, and a lost `[end:x]` marker passing silently (tests/test_docs.py).
+  Ended by enumeration: MkDocs' complete validation set, every public module-level function's
+  example coverage, every scope claim in the staged prose (9, each measured or fixed), and
+  the marker shapes (missing start raises; lost/misspelt/unclosed/duplicate end now red).

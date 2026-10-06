@@ -208,6 +208,15 @@ def remote_script(t: Transport, kind: str, expected: int) -> str:
     Atomicity: a collection load is one row. An items load is NOT one transaction --
     pypgstac commits each chunk per partition -- so a failed items load can leave some
     of its items committed. Every load is an upsert, so re-running converges.
+
+    Examples:
+        >>> t = Transport(host="user@stac.example.invalid", db="pgstac",
+        ...               env_file="/srv/stac/.env")
+        >>> script = remote_script(t, "items", 2)
+        >>> [line.strip() for line in script.splitlines() if "pypgstac" in line]
+        ['pypgstac load items "$__stacs_tmp" --method upsert || exit 1']
+        >>> script.splitlines()[-1]
+        '__stacs_ok=1'
     """
     if kind not in ("items", "collections"):
         raise ValueError(f"unknown load kind: {kind!r}")

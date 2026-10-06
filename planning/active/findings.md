@@ -103,6 +103,39 @@ lettering), so the sibling stickers were evidently made with the same fallback.
 - `doctest_optionflags = ELLIPSIS, NORMALIZE_WHITESPACE` so long outputs wrap and a temp
   path can be elided.
 
+## The site build (2026-10-06)
+
+- Locked: mkdocs 1.6.1, mkdocs-material 9.7.7, mkdocstrings 1.0.6, mkdocstrings-python
+  2.0.9, pymdown-extensions 10.x. Material prints a boxed MkDocs-2.0 notice on every build;
+  it is not a logged warning, and the strict build passes with it.
+- **`mkdocs build --strict -q` passes a dead link.** `-q` raises the log level past WARNING
+  and strict counts warnings, so nothing is counted. Measured in a scratch copy: a link to
+  a missing `.md` — `-q`: rc 0; no `-q`, strict: "Aborted with 1 warnings", rc 1; no `-q`,
+  not strict: warning, rc 0. The workflow never passes `-q`; CLAUDE.md says so.
+- A misspelt snippet section (`README.md:usee`) raises `SnippetMissingError`, rc 1.
+- README is the single source: `<!-- --8<-- [start:x] -->` markers (invisible on GitHub)
+  for home / configure / use / development; the logo `<img>` and the site link sit outside
+  them. The one relative README link (`research/pgstac_round_trip.md`) is now absolute,
+  since inside `docs/` it would resolve to a page that does not exist.
+- ghp-import commits "Deployed <sha> with MkDocs version: <v>" to gh-pages, not pkgdown's
+  "Deploying to gh-pages from @ …"; the provenance check reads `<sha>` from it all the same.
+
+## Review of the site (2026-10-06)
+
+- Example coverage, enumerated from the modules rather than recalled: every public function
+  in verify/catalogue/validate/register has an example except the seven that need a live
+  API or ssh (`ids_registered`, `bodies_registered`, `bodies_serving`, `collection_state`,
+  `probe`, `load`, `run`). Round 2 had found `published_digests`, `remote_script` and
+  `fetch_bodies` (which reads `file://`) missed; added.
+- Link validation: MkDocs 1.6 has seven link-validation settings (nav: omitted_files,
+  not_found, absolute_links; links: not_found, anchors, absolute_links, unrecognized_links).
+  All seven are at warn; each mutation (extensionless `[LICENSE](LICENSE)`, `/stacs/nowhere/`,
+  a page left out of nav, a missing anchor, a missing page) aborts the strict build. Not
+  checked by any setting: raw HTML, and links inside docstrings that mkdocstrings renders
+  (none exist today).
+- `docs_dir: .` is refused by MkDocs 1.6 outright, so the way CLAUDE.md or planning/ could
+  reach the site is a snippet include (`base_path: ["."]`), not the docs dir.
+
 ## Errors Encountered
 
 | Error | Resolution |

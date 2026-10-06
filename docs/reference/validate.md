@@ -1,0 +1,3 @@
+# stacs.validate
+
+::: stacs.validate
