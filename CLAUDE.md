@@ -252,6 +252,291 @@ Before planning to re-run a workflow on a feature branch, check how it is trigge
 
 *1 line of evidence for this rule is in `conventions/ci-monitoring.md`, which `/code-check` reads in full.*
 
+## A commit pushed by the Actions token starts no workflow, so wait on the SHA you pushed
+Key a CI waiter on the SHA you pushed, never on the default branch's tip: a bot commit made with `GITHUB_TOKEN` (an `update-citation-cff` auto-commit, a docs regen) lands on top of yours and, by GitHub's design, triggers no workflow run, so a loop waiting for runs on the tip waits forever.
+
+The tip moves seconds after a release push, which is exactly when a waiter is started. The bot commit also needs no check of its own when it only touches a file the site does not publish; confirm the deploy provenance instead (the `gh-pages` subject names the SHA that was built).
+
+*1 line of evidence for this rule is in `conventions/ci-monitoring.md`, which `/code-check` reads in full.*
+
+# Code Check — R
+Traps in R: the language and base/utils behaviour, package internals (`R CMD build`, `.Rbuildignore`, roxygen, lintr, `data-raw/`, testthat, pak), and the DBI/duckdb/arrow data layer.
+
+*Index only: each rule's heading and first sentence. The full text is `~/Projects/repo/soul/conventions/code-check-r.md`; read it before writing or reviewing code in its area. `/code-check` loads it in full.*
+
+### Read-back shape must match write-back shape
+A script that reads a file, transforms it, and writes it **back to the same path** is idempotent only if the reader accepts the shape the writer produces.
+
+### Moving prose into a code chunk hides it from tools that scan the document
+- Tools that scan an R Markdown document for prose — citation detection, cross-references, spell-check, word counts — skip code chunks.
+
+### `fs::dir_ls(glob = )` matches the FULL path, so a bare filename pattern matches nothing
+- `fs::dir_ls(dir, glob = "form_*.gpkg")` returns **zero** for a directory full of `form_*.gpkg` files.
+
+### `glue()` trims common leading whitespace
+- `glue::glue()` strips the common indentation of its input, so a template whose output must preserve exact indentation (XML, YAML, Makefiles, Python) comes out subtly wrong — valid-looking, wrongly indented.
+
+### `f(g(x)) <- v` needs a `g<-`, not an evaluated `g(x)`
+- R parses **any** call on the left of `<-` as a replacement function, all the way down.
+
+### A replacement function on an `xml_missing` node is a silent no-op
+`xml2::xml_find_first()` returns an `xml_missing` object when nothing matches — not `NULL`, not an error.
+
+### `download.file(quiet = TRUE)` never tells you the HTTP status — read it from `curl`
+Read an HTTP status from `curl::curl_fetch_disk()`'s `status_code`, never from `download.file()` messages, whose first warning unwinds a `tryCatch` before the status arrives and whose quiet error omits it.
+
+### `on.exit()` at a script's top level never fires
+- `on.exit()` registers a handler on the *current frame*.
+
+### A `data-raw/` script must load the source tree, not the installed package
+- `requireNamespace("pkg")` succeeds whenever **any** version is installed, so a guard shaped like `if (!requireNamespace("pkg")) pkgload::load_all()` silently runs against the installed one.
+
+### `lintr` also resolves against the installed package, not the source tree
+A lint warning of `no visible binding` for a constant added on this branch is usually the installed package being stale; check `exists(name, asNamespace(pkg))` and reinstall before changing any code.
+
+### Regenerated binaries churn git even when nothing changed
+- Formats that embed a creation timestamp or other run-varying metadata produce a different file on every rebuild.
+
+### Tests that silently do not run
+`expect_snapshot()` **skips on CRAN**, and `testthat` treats a non-interactive run as CRAN by default.
+
+### A `skip_if_not()` skips only its own `test_that()` block
+Before blaming a failure, or its absence, on a skip, find the `test_that()` block the skip sits in.
+
+### `expect_gt()` and friends take no `info` argument
+`expect_true()`, `expect_false()` and `expect_equal()` accept `info =`; the comparison expectations — `expect_gt`, `expect_lt`, `expect_gte`, `expect_lte` — do not, and passing one is an **error**, not a warning:
+
+### pak Behavior
+- pak stops on first unresolvable package — all subsequent packages are skipped
+
+### Reproducibility
+- Branch pins (`pkg@branch`) are not reproducible — document why used; the fuller pin policy (no suffix by default, never a bare SHA) is under "Two repos pinning the same remote" below
+
+### A duplicate knitr chunk label fails the build, and reading the diff will not find it
+Chunk labels must be unique **within a document**.
+
+### `R CMD build` ships every top-level directory not in `.Rbuildignore`
+- Internal coordination directories — `comms/`, `research/`, `planning/`, `dev/` — land in the tarball and therefore in the library of anyone installing from GitHub.
+
+### `R CMD build` ships the `.git` FILE when you build from a worktree
+A package built from a `git worktree` ships `.git` (a file holding the developer's absolute path), because R excludes only a `.git` directory; list `^\.git$` in `.Rbuildignore`.
+
+### `.Rbuildignore` has no comment syntax — every line is a live regex
+`tools:::inRbuildignore` loops over every non-empty line and ORs `grepl()` of it against the file list.
+
+### Base name shadowing in formal args
+- Avoid `names`, `length`, `data`, `c`, `t`, `T`, `F`, etc. as formal argument names.
+
+### Cross-function consistency for label/string normalization
+- When two functions in the same package both decide whether a string is a "system value" (or any normalized form), they MUST use the same comparison.
+
+### `$` on a list partial-matches, so a longer sibling key answers for a missing one
+- `x$foo` on a list returns `x$foo_bar` when `foo` is absent and `foo_bar` is the only key with that prefix.
+
+### A database driver's value is not a base R type — and it fails twice
+A column fetched through DBI does not arrive as the base type its SQL type suggests.
+
+### arrow dplyr backend: no grouped slice — bridge to duckdb
+- arrow's dplyr backend errors on grouped `slice_max`/`slice_min` (`arrow_not_supported("Slicing grouped data")`).
+
+### as.POSIXct on a Date pins UTC midnight; on a character it uses the machine zone
+Construct instants explicitly: a `Date` always becomes UTC midnight whatever `tz =` says, and a character with no zone is read in the machine's zone, so pass `tz =` at parse time.
+
+### as.POSIXct on character infers ONE format for the whole vector
+- `as.POSIXct(x)` on a character vector picks a single format by finding the first candidate that parses **every** element — and `strptime` **ignores trailing characters**.
+
+### Inserting a helper between a roxygen block and its function rebinds `@export`
+- roxygen2 attaches a block to **whatever object follows it**.
+
+### open_dataset(unify_schemas = TRUE) requires aligned types
+- Cross-prefix/file schema unification only merges what types allow: `timestamp[us, tz=UTC]` will not merge with naked `timestamp[us]`, `Grade: string` not with `Grade: double`.
+
+### duckdb larger-than-memory dedup: shard the work — settings won't save you
+- duckdb's **window operator** (QUALIFY row_number ...) does not spill enough to survive big partitions (OOM'd an 8 GB limit on a ~124M-row input).
+
+### `nzchar(NA)` is TRUE — non-empty checks silently pass NA
+- `nzchar(NA)` returns `TRUE`, so the natural "is this cell filled in" test — `all(nzchar(trimws(x)))` — waves through a column full of `NA`.
+
+### A `for` loop that builds `aes()` captures the loop variable lazily
+`aes()` quotes its arguments, so `aes(fill = lab[i])` is not evaluated until the plot is drawn — by which time `i` holds its **last** value.
+
+### `paste()` with a zero-length argument returns length ONE, not zero
+`paste0("x", character(0))` is `"x"`, so a key built per element gains one phantom member when the vector is empty; guard the empty case before building keys.
+
+### `strsplit()` drops a trailing empty field, so a trailing separator vanishes
+Leading empties survive and trailing ones do not, which is what makes it hard to reason about from memory.
+
+### `identical()` on two reader results tests the reader, not the file
+`identical(read_csv(f), read_csv(f))` can be **FALSE** for the same unchanged bytes: readr tibbles carry a `problems` attribute — an external pointer — that differs between reads (readr 2.2.0; `spec` is identical, measured).
+
+### Under `R CMD check`, tests run from a temp dir against the INSTALLED package
+Two shapes, both green under `devtools::test()` and broken under `R CMD check`, `devtools::check()`, a tarball check, or an installed-tests run — the direction that costs the most time.
+
+### `dbConnect(SQLite(), path)` CREATES the file, so a read has a write side effect
+SQLite creates a database on connect.
+
+### CSV whitespace: `trim_ws` and `strip.white` do not do what the name suggests
+- `readr::read_csv()` defaults to **`trim_ws = TRUE`** and silently strips leading and trailing whitespace.
+
+### `R CMD check` rejects a filename containing a space
+- "checking for portable file names" fails on any file in the built package whose name has a space.
+
+### `sort()` and `order()` collate by `LC_COLLATE`, so a canonical form is locale-dependent
+Character sorting in R is locale-sensitive by default, which makes any *canonical* string built by sorting — an XML node with its attributes ordered, a joined key, a manifest — a function of the session's locale rather than of the data:
+
+### A library call that dispatches on a global option is not a pure function
+A function whose *units* or *algorithm* are chosen by a session-wide setting behaves differently depending on what the caller did before reaching your code.
+
+### `identical(-0, 0)` is TRUE in R, and the two still digest differently
+A hash over R's serialized bytes — which is what `digest::digest()` takes by default — separates positive and negative zero, even though every value comparison says they are the same.
+
+### Two repos pinning the same remote at different tags is an unsolvable install
+`Remotes:` pins are per-repo, but resolution is global.
+
+### `file(open = "wb", encoding = )` does not re-encode on write
+The `encoding` argument to `file()` governs how bytes coming *in* are interpreted.
+
+### A scalar helper called from `glue()` or `mutate()` recycles instead of erroring
+`glue()` vectorises over its inputs.
+
+### Never name a durable artifact by a hash the library reserves the right to change
+`rlang::hash()` carries **no cross-version stability guarantee**, and rlang says so in its own NEWS for 1.3.0:
+
+### `vapply(..., USE.NAMES = FALSE)` strips ALL dimnames, row names included
+A named `FUN.VALUE` looks like it guarantees row names on the returned matrix.
+
+### `source()`ing a config into the render environment leaks it into the next render
+`source(params$config)` inside an Rmd puts every config value into the environment `render()` evaluates in.
+
+### One very long table cell hangs paged.js, and it presents as a Chrome timeout
+A ~600-character free-text field in a `kable` cell wedged `pagedown::chrome_print` indefinitely.
+
+### `stats::aggregate()` has three separate silent behaviours, and each fails in a different direction
+All three measured on R 4.5, all three met inside one 800-line script (drift#67).
+
+### `deparse(body(f))` excludes formal defaults, so a body scan cannot see a default
+A guard that scans function bodies for a forbidden literal is blind to that literal in a **signature**.
+
+### `deparse()` re-encodes non-ASCII, so it answers about itself rather than the file
+Scan R source for non-ASCII the way `R CMD check` does (`tools:::.check_package_ASCII_code()`: raw lines, comments skipped), not through `parse()` and `deparse()`, which turn `\uXXXX` escapes into literal characters and back.
+
+### `package_version()` errors on a pre-release version string
+`package_version("3.9.0beta1")` raises rather than returning `NA`, so strip a pre-release suffix before asserting a version floor.
+
+### `tryCatch(warning = )` DISCARDS the value the expression produced
+A `warning =` handler is not a filter — it replaces the whole expression, so a call that **succeeded** and merely warned returns the handler's value and the result is thrown away.
+
+### `match()` treats NA as a matchable VALUE, so two unknowns join to each other
+`match(NA, c("1", NA))` is **2**.
+
+### `expect_message(expr, regexp)` checks only the FIRST condition, so a progress line hides the message under test
+testthat 3e captures the first message the expression emits and matches the regexp against **that one**.
+
+### `pak` refuses to install a package that needs no compiler
+`pak::pak()` routes through `pkgbuild::check_build_tools()`, which fails with *"Could not find tools necessary to compile a package"* whenever `xcode-select -p` points at `/Applications/Xcode.app/...` while the Command Line Tools are what is actually installed — **regardless of whether the package has any compiled code**.
+
+### `as.integer("NaN")` is `0`, and `as.integer(NaN)` is `NA`
+The string round trip is the bug.
+
+### `expect_false(identical(x, y))` cannot fail when the two are different types
+`identical()` is type-strict, so it is already `FALSE` for any pair that differs in storage mode — and an assertion that the defect would make *true* then cannot fire.
+
+### `unlist()` prefixes a `split()` group's name, so reassembling by name silently yields all-NA
+Putting per-group results back in input order by naming them looks right and returns nothing:
+
+### `tolerance` in testthat is RELATIVE, so it pins a published figure far more loosely than it looks
+`expect_equal(x, 12.529, tolerance = 2e-2)` accepts anything within **two percent** — so a figure published to three decimals survives drifting to `12.629`.
+
+### `cli` reads `{.name}` as a STYLE, not a variable, and a fold can swallow an interpolation
+Two ways a `cli` message loses a value.
+
+### `[[` on a named ATOMIC vector with an absent key is an error, not `NULL`
+A list returns `NULL` for a missing `[[` key.
+
+### `data.frame()` recycles a scalar against a zero-length column
+It does not yield a 0-row frame — it raises, because a length-1 column and a length-0 column cannot be recycled together:
+
+### A dot-prefixed column name can be swallowed by the verb's own formal
+`mutate(x, .d = expr)` does not create a column called `.d`.
+
+### `summarise()` and `mutate()` evaluate in order, so a later argument sees the summarised column
+Once `frames = sum(frames)` has run, `frames` inside the next argument is that one-row sum, not the group's vector.
+
+### `\<` and `\>` are word boundaries in R's default regex, not escaped `<` and `>`
+Leave `<` and `>` unescaped when you build a pattern from data.
+
+### `tempfile()` lives in the session tempdir, so a path printed in an error names a file R is about to delete
+R removes its session `tempdir()` on exit, including after `stop()`.
+
+### R's `yaml` returns a mixed int/float sequence as a list, not a numeric vector
+`yaml::read_yaml()` simplifies a sequence to a vector only when every element has the same type, so `[0.164, 9999]` comes back as `list(0.164, 9999L)` while `[0.0, 9999.0]` is `c(0, 9999)`.
+
+### testthat's failure snapshots land in `tests/` and ride in on `git add -A`
+testthat 3e writes `tests/testthat/_problems/*.R` and `tests/testthat/testthat-problems.rds` when tests fail.
+
+### A pick whose `ORDER BY` ends on a key that is not unique in the group returns an arbitrary row
+`DISTINCT ON (k) … ORDER BY k, a, b` is deterministic only if `(a, b)` is unique within each `k`.
+
+### `sprintf("%g", x)` writes `Inf` and `NA` into SQL as bare words, which Postgres reads as column names
+A numeric formatter such as `sprintf("%.10g", x)` has no SQL form for non-finite values, so an open-ended range (`c(min, Inf)`, typically a blank `max` filled with `Inf` by a params loader) produces `x <= Inf`, and Postgres fails with `column "inf" does not exist`.
+
+### An `information_schema` lookup by the literal table name misses what Postgres resolves
+`WHERE table_schema = 's' AND table_name = 'T'` compares the text you passed, but Postgres folds unquoted identifiers to lower case, puts temp tables in `pg_temp_N`, and resolves unqualified names through `search_path`.
+
+### Rscript reads a script as it runs, so never edit a script while a run of it is in flight
+Copy the script and run the copy (`cp scripts/x.R "$TMPDIR/x_frozen.R" && Rscript "$TMPDIR/x_frozen.R"`) for anything long-running, or leave the file alone until the run exits.
+
+### A range total taken as the difference of two large running totals loses the small ranges
+Sum a range directly (segment tree, per-range `sum()`, or grouped sums) rather than as `cumsum[hi] - cumsum[lo]` when ranges are small relative to the running total.
+
+### A `pkg::` call in a test passes `devtools::test()` and fails `R CMD check` if `pkg` is undeclared
+`R CMD check` warns "'::' or ':::' import not declared from" for any package a test reaches with `::` that `DESCRIPTION` does not list, and under `error-on: "warning"` that reddens every runner.
+
+### Inside a dplyr verb, a column named like a local variable wins
+Inject a local value into a data-masked verb with `!!x` or `.env$x`, never a bare `x`: `transmute(d, aoi_id = id)` inside `for (id in ids)` reads the frame's own `id` column whenever one exists, with no warning, and the result is well-typed and plausible.
+
+### `earthdatalogin`'s search and download calls overwrite the netrc when they find no Earthdata entry
+Call NASA's CMR search with `curl` and download with `curl` given the netrc directly (`netrc = 1, netrc_file = <path>, cookiefile = ""` follows the URS redirect), or check `earthdatalogin:::has_edl_netrc()` yourself first.
+
+### A fetcher's test helper must make the network fail, not just mock the reader
+When a test mocks a downloader's reader and supplies fixture files, also mock the search and download functions to `stop()` by default, and re-mock them only in the tests that exercise that path.
+
+### testthat 3e `expect_message()` returns the condition, not the expression's value
+Assign inside the call, `expect_message(h <- f(x), "msg")`, never `h <- expect_message(f(x), "msg")`.
+
+### `c()` dispatches on its first argument, so `c(NULL, <Date>)` is a plain number
+Put a Date first when `c()` combines an optional piece with Dates: `c(NULL, <Date>)` takes the default method and returns a bare day count.
+
+### `bind_rows()` of all-`NULL` is a 0 x 0 tibble, and a typed template must take its types from the rows' source
+Bind per-group results under a zero-row template so an all-dropped result keeps its columns, and build that template's key columns from the same object the rows are built from (`combos$variable[0]`, not `character()`).
+
+### `sample.int(prob =)` without replacement is not a probability-proportional draw, so weighting its result again double-counts
+Draw a subsample to be design-weighted **uniformly** (`sample.int(n, k)`), or keep every unit.
+
+### `system2(stdout = TRUE)` warns on a non-zero exit instead of raising, so a `tryCatch(error =)` around it never fires
+Read the exit status off the result: `st <- attr(out, "status")`, which is `NULL` on success.
+
+### Forked `parallel::mclapply()` workers segfault in `glm.fit` under macOS Accelerate BLAS
+Fit models in parallel on socket workers (`parallel::makeCluster()` with `parLapply()`), not forks: with R linked to Accelerate's vecLib, `mclapply` children segfault inside `glm.fit` (`address 0x110, cause 'invalid permissions'`), and `mclapply` returns try-errors with a warning rather than stopping.
+
+### `c(name = x)` keeps `x`'s own name, so a value from a named vector becomes `name.X`
+Strip the name before you label it: `c(axis = unname(v[1]))` or `c(axis = v[[1]])`.
+
+### `trace(exit =)` also fires when the function raises, and `returnValue()` then has no value
+Give `returnValue()` a default and check its length: `trace(f, exit = quote(rec(returnValue(NULL))))`, then treat anything not length 1 as "no value".
+
+### `Rscript -e` supplies `--args` itself, so adding your own shifts every argument by one
+Write `Rscript -e 'expr' a b`, not `Rscript -e 'expr' --args a b`.
+
+### `read.delim()` quotes by default, so a `"` in a field silently swallows rows
+Read a TSV you wrote unquoted with `quote = "", na.strings = character(), comment.char = ""`.
+
+### duckdb in R: the query that autoloads `icu` binds unreliably, so `LOAD icu` before it
+Run `LOAD icu` on the connection before any query that needs it (`epoch()`, `year()`, a cast to `DATE` on a `TIMESTAMPTZ`), or use a function that needs no extension (`epoch_ms()`).
+
+### `fs::path()` collapses the `//` after a URL scheme, so it cannot build URLs
+Join a URL with `paste(base, key, sep = "/")` or `file.path()`, never `fs::path()`: `fs::path("https://x.ca/b", "k.tif")` is `"https:/x.ca/b/k.tif"`, because fs normalises the doubled separator, and the result is not a valid URL.
+
 # Code Check — Shell
 Tool-level traps in bash, sed, git and `gh`, and in the host toolchain those commands depend on.
 
@@ -1073,7 +1358,7 @@ would, X is not evidence.
 When the user pushes back on an inference, re-derive rather than defend. The
 conclusion often survives; the reasoning that reaches it is usually different.
 
-*5 lines of evidence for this rule are in `conventions/karpathy.md`, which `/code-check` reads in full.*
+*9 lines of evidence for this rule are in `conventions/karpathy.md`, which `/code-check` reads in full.*
 
 ### Documents that share an ancestor corroborate nothing
 
