@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+         <loc>https://www.newgraphenvironment.com/stacs/</loc>
+         <lastmod>2026-10-07</lastmod>
+    </url>
+    <url>
+         <loc>https://www.newgraphenvironment.com/stacs/changelog/</loc>
+         <lastmod>2026-10-07</lastmod>
+    </url>
+    <url>
+         <loc>https://www.newgraphenvironment.com/stacs/cli/</loc>
+         <lastmod>2026-10-07</lastmod>
+    </url>
+    <url>
+         <loc>https://www.newgraphenvironment.com/stacs/configuration/</loc>
+         <lastmod>2026-10-07</lastmod>
+    </url>
+    <url>
+         <loc>https://www.newgraphenvironment.com/stacs/reference/catalogue/</loc>
+         <lastmod>2026-10-07</lastmod>
+    </url>
+    <url>
+         <loc>https://www.newgraphenvironment.com/stacs/reference/register/</loc>
+         <lastmod>2026-10-07</lastmod>
+    </url>
+    <url>
+         <loc>https://www.newgraphenvironment.com/stacs/reference/validate/</loc>
+         <lastmod>2026-10-07</lastmod>
+    </url>
+    <url>
+         <loc>https://www.newgraphenvironment.com/stacs/reference/verify/</loc>
+         <lastmod>2026-10-07</lastmod>
+    </url>
+</urlset>
