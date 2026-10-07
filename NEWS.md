@@ -3,9 +3,9 @@
 Versions track the package. A tag is a release consumers can pin with
 `tag = "vX.Y.Z"` in `[tool.uv.sources]`; `pyproject.toml` carries the same version.
 
-## Unreleased
+## 0.1.1
 
-- A documentation site, <https://newgraphenvironment.github.io/stacs/> (#3): MkDocs with
+- A documentation site, <https://www.newgraphenvironment.com/stacs/> (#3): MkDocs with
   Material, reference pages generated from the docstrings, the README's sections as its
   home, configuration and command-line pages, and this file as its changelog. Built strict
   on every pull request; deployed to GitHub Pages from `main`.

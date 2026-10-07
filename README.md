@@ -1,6 +1,6 @@
 # stacs <img src="docs/assets/logo.png" align="right" height="139" alt="stacs logo" />
 
-**Documentation:** <https://newgraphenvironment.github.io/stacs/>
+**Documentation:** <https://www.newgraphenvironment.com/stacs/>
 
 <!-- --8<-- [start:home] -->
 Register a STAC catalogue into [pgstac](https://github.com/stac-utils/pgstac) and prove it
@@ -41,10 +41,10 @@ Managed with [uv](https://docs.astral.sh/uv/). Install from git rather than PyPI
 
 ```toml
 [tool.uv.sources]
-stacs = { git = "https://github.com/NewGraphEnvironment/stacs", tag = "v0.1.0" }
+stacs = { git = "https://github.com/NewGraphEnvironment/stacs", tag = "v0.1.1" }
 ```
 
-Without uv: `pip install "stacs @ git+https://github.com/NewGraphEnvironment/stacs@v0.1.0"`.
+Without uv: `pip install "stacs @ git+https://github.com/NewGraphEnvironment/stacs@v0.1.1"`.
 
 <!-- --8<-- [end:home] -->
 

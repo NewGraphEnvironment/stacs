@@ -5,7 +5,7 @@
 # research/ reach the site only if a page or a docstring names them: none may.
 site_name: stacs
 site_description: Register STAC catalogues into pgstac and verify they arrived.
-site_url: https://newgraphenvironment.github.io/stacs/
+site_url: https://www.newgraphenvironment.com/stacs/
 repo_url: https://github.com/NewGraphEnvironment/stacs
 repo_name: NewGraphEnvironment/stacs
 # The pages are mostly includes; an edit link would open the stub, not the prose.
