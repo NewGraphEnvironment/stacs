@@ -1,5 +1,8 @@
-# stacs
+# stacs <img src="docs/assets/logo.png" align="right" height="139" alt="stacs logo" />
 
+**Documentation:** <https://newgraphenvironment.github.io/stacs/>
+
+<!-- --8<-- [start:home] -->
 Register a STAC catalogue into [pgstac](https://github.com/stac-utils/pgstac) and prove it
 arrived.
 
@@ -28,7 +31,7 @@ that is done to a published catalogue belongs here.
 
 Body digests are SHA-256 over [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785) (JCS)
 canonical JSON, with `links` removed (the API rewrites them) and null members dropped
-(pgstac strips them). [`research/pgstac_round_trip.md`](research/pgstac_round_trip.md)
+(pgstac strips them). [`research/pgstac_round_trip.md`](https://github.com/NewGraphEnvironment/stacs/blob/main/research/pgstac_round_trip.md)
 records what pgstac changes between load and serve, and why each rule exists.
 
 ## Install
@@ -43,8 +46,11 @@ stacs = { git = "https://github.com/NewGraphEnvironment/stacs", tag = "v0.1.0" }
 
 Without uv: `pip install "stacs @ git+https://github.com/NewGraphEnvironment/stacs@v0.1.0"`.
 
+<!-- --8<-- [end:home] -->
+
 ## Configure
 
+<!-- --8<-- [start:configure] -->
 The host, database, API and bucket are always the caller's. `stacs` has no defaults that
 point at any deployment, and reads a config only when one is named with `--config`.
 
@@ -86,8 +92,11 @@ adds keys. Pointing at another collection id does not drop them.
 named (`password_env`), never given. The config refuses unknown keys, so a `password`
 line is an error rather than a silently ignored secret.
 
+<!-- --8<-- [end:configure] -->
+
 ## Use
 
+<!-- --8<-- [start:use] -->
 ```bash
 stacs verify   --config stacs.toml --out-dir verify_report/   # changes nothing
 stacs register --config stacs.toml --mode drift               # what the API lacks or serves stale
@@ -126,8 +135,11 @@ re-compare the whole catalogue after writing for that reason.
   skipped.
 - The STAC host has bash and a `pypgstac` that can reach the database.
 
+<!-- --8<-- [end:use] -->
+
 ## Development
 
+<!-- --8<-- [start:development] -->
 ```bash
 uv sync
 uv run pytest
@@ -136,6 +148,8 @@ uv run pytest
 The tests run offline: a stub STAC API on loopback, a stub `ssh` that runs the remote
 script locally against a fake `pypgstac`, and a guard that refuses any DNS lookup outside
 loopback.
+
+<!-- --8<-- [end:development] -->
 
 ## License
 

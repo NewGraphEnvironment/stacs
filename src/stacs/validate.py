@@ -61,6 +61,16 @@ def parse_asset_keys(value) -> list[str]:
     A LIST, not a single key: a rename can retire more than one key, and a single-string
     parameter once meant a comma-joined value matched no real key and the check silently
     stopped checking anything.
+
+    Examples:
+        >>> parse_asset_keys("data, legacy,data")
+        ['data', 'legacy']
+        >>> parse_asset_keys(None)
+        []
+        >>> parse_asset_keys(",")
+        Traceback (most recent call last):
+        ...
+        ValueError: empty asset key in ','
     """
     if value is None:
         return []
@@ -82,7 +92,17 @@ def parse_asset_keys(value) -> list[str]:
 
 
 def item_paths_in_dir(directory) -> list[str]:
-    """Every item JSON in a directory: `*.json` except `collection.json`, sorted."""
+    """Every item JSON in a directory: `*.json` except `collection.json`, sorted.
+
+    Examples:
+        >>> import os, tempfile
+        >>> tmp = tempfile.TemporaryDirectory()
+        >>> for name in ("b.json", "a.json", "collection.json", "notes.txt"):
+        ...     open(os.path.join(tmp.name, name), "w").close()
+        >>> [os.path.basename(p) for p in item_paths_in_dir(tmp.name)]
+        ['a.json', 'b.json']
+        >>> tmp.cleanup()
+    """
     return sorted(
         os.path.join(directory, f) for f in os.listdir(directory)
         if f.endswith(".json") and f != "collection.json"
@@ -108,6 +128,27 @@ def audit_items(paths, collection_id: str, require_asset: str | None = None,
 
     Zero items is never a pass: a loop over an empty set reports nothing, which is
     indistinguishable from "everything checked out".
+
+    Examples:
+        >>> import json, os, tempfile
+        >>> tmp = tempfile.TemporaryDirectory()
+        >>> href = "https://example.invalid/x.tif"
+        >>> items = {"a": {"id": "a", "collection": "my-collection",
+        ...                "assets": {"data": {"href": href}}},
+        ...          "b": {"id": "b", "collection": "my-collection",
+        ...                "assets": {"legacy": {"href": href}}}}
+        >>> paths = []
+        >>> for item_id, body in items.items():
+        ...     paths.append(os.path.join(tmp.name, f"{item_id}.json"))
+        ...     with open(paths[-1], "w") as f:
+        ...         json.dump(body, f)
+        >>> audit = audit_items(paths, "my-collection", require_asset="data",
+        ...                     forbid_assets=["legacy"], expect_ids={"a", "b"})
+        >>> audit.ok
+        False
+        >>> [os.path.basename(p) for p in audit.missing_asset + audit.forbidden_asset]
+        ['b.json', 'b.json']
+        >>> tmp.cleanup()
     """
     # Every way of passing "nothing" refuses rather than disabling a check: an empty
     # collection id would match items with no collection, an empty require key
@@ -194,6 +235,27 @@ def validate_items(paths) -> list[tuple[str, str]]:
     schema that cannot be fetched (extension schemas, and core schemas for STAC versions
     pystac does not bundle, are fetched by URL) is a failure, not a pass. Zero items
     raises: an empty result is this function's success value.
+
+    Examples:
+        STAC 1.1.0 core schemas ship with pystac, so a 1.1.0 item validates offline:
+
+        >>> import json, os, tempfile
+        >>> tmp = tempfile.TemporaryDirectory()
+        >>> item = {"type": "Feature", "stac_version": "1.1.0", "id": "a",
+        ...         "geometry": {"type": "Point", "coordinates": [-126.0, 54.0]},
+        ...         "bbox": [-126.0, 54.0, -126.0, 54.0],
+        ...         "properties": {"datetime": "2020-01-01T00:00:00Z"},
+        ...         "links": [], "assets": {}}
+        >>> path = os.path.join(tmp.name, "a.json")
+        >>> with open(path, "w") as f:
+        ...     json.dump(item, f)
+        >>> validate_items([path])
+        []
+        >>> tmp.cleanup()
+        >>> validate_items([])
+        Traceback (most recent call last):
+        ...
+        ValueError: no item JSONs to validate
     """
     import pystac.validation
 

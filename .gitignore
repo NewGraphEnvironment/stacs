@@ -17,3 +17,6 @@ build/
 # Secrets
 .env
 *.tfvars
+
+# MkDocs build output
+site/

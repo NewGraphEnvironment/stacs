@@ -59,6 +59,19 @@ def collection_item_links(path) -> list[tuple[str, str]]:
       neither registered nor reported
     - two links resolving to one id (`…/2018/x.json` and `…/2019/x.json`): an id set
       collapses them, and the id comparison would read in sync
+
+    Examples:
+        >>> import json, os, tempfile
+        >>> tmp = tempfile.TemporaryDirectory()
+        >>> path = os.path.join(tmp.name, "collection.json")
+        >>> links = [{"rel": "self", "href": "https://example.invalid/collection.json"},
+        ...          {"rel": "item", "href": "items/a%20b.json"},
+        ...          {"rel": "item", "href": "items/c.json"}]
+        >>> with open(path, "w") as f:
+        ...     json.dump({"id": "my-collection", "links": links}, f)
+        >>> collection_item_links(path)
+        [('a b', 'items/a%20b.json'), ('c', 'items/c.json')]
+        >>> tmp.cleanup()
     """
     with open(path, encoding="utf-8") as f:
         collection = json.load(f)
@@ -84,7 +97,12 @@ def collection_item_links(path) -> list[tuple[str, str]]:
 
 def fetch_key(url: str) -> str:
     """The fetch file's basename for a URL -- md5 of the URL, so ids with spaces and
-    parentheses need no quoting anywhere downstream."""
+    parentheses need no quoting anywhere downstream.
+
+    Examples:
+        >>> fetch_key("https://example.invalid/items/a b.json")
+        '1af97db74cefffe0d9b97fe9da8c267f'
+    """
     return hashlib.md5(url.encode()).hexdigest()
 
 
@@ -124,6 +142,24 @@ def fetch_bodies(urls, out_dir, workers: int = 32, retries: int = 3,
     fetched it", which holds only if nothing else wrote there: a body left by an earlier
     run would be digested as current, and an item the publisher rebuilt would read
     unchanged.
+
+    Examples:
+        `file://` URLs read without any network:
+
+        >>> import json, os, pathlib, tempfile
+        >>> tmp = tempfile.TemporaryDirectory()
+        >>> bucket = pathlib.Path(tmp.name, "bucket")
+        >>> bucket.mkdir()
+        >>> _ = (bucket / "a.json").write_text(json.dumps({"id": "a"}))
+        >>> urls = [(bucket / "a.json").as_uri(), (bucket / "gone.json").as_uri()]
+        >>> fetch_dir = pathlib.Path(tmp.name, "fetched")
+        >>> fetch_dir.mkdir()
+        >>> failed = fetch_bodies(urls, fetch_dir, retries=1)
+        >>> [os.path.basename(u) for u in failed]
+        ['gone.json']
+        >>> sorted(os.listdir(fetch_dir)) == [fetch_key(urls[0]) + ".json"]
+        True
+        >>> tmp.cleanup()
     """
     out_dir = Path(out_dir)
     urls = list(urls)
@@ -178,6 +214,22 @@ def published_digests(links, fetch_dir) -> dict[str, str]:
     parseable, or naming a different id than its link (which would compare the wrong
     pair) -- and so does an id with two links, which a dict would otherwise collapse to
     whichever came last.
+
+    Examples:
+        >>> import json, pathlib, tempfile
+        >>> from stacs.verify import body_digest
+        >>> tmp = tempfile.TemporaryDirectory()
+        >>> href = "https://example.invalid/items/a.json"
+        >>> body = {"id": "a"}
+        >>> fetched = pathlib.Path(tmp.name, fetch_key(href) + ".json")
+        >>> _ = fetched.write_text(json.dumps(body))
+        >>> published_digests([("a", href)], tmp.name) == {"a": body_digest(body)}
+        True
+        >>> published_digests([("b", href)], tmp.name)
+        Traceback (most recent call last):
+        ...
+        ValueError: link for 'b' fetched a body that names id 'a' (...)
+        >>> tmp.cleanup()
     """
     fetch_dir = Path(fetch_dir)
     out: dict[str, str] = {}
@@ -201,7 +253,18 @@ def published_digests(links, fetch_dir) -> dict[str, str]:
 
 
 def read_hrefs(path) -> list[tuple[str, str]]:
-    """[(id, href)] from a tab-separated id/href file."""
+    """[(id, href)] from a tab-separated id/href file.
+
+    Examples:
+        >>> import os, tempfile
+        >>> tmp = tempfile.TemporaryDirectory()
+        >>> path = os.path.join(tmp.name, "hrefs.tsv")
+        >>> with open(path, "w") as f:
+        ...     _ = f.write("a b\\thttps://example.invalid/items/a%20b.json\\n")
+        >>> read_hrefs(path)
+        [('a b', 'https://example.invalid/items/a%20b.json')]
+        >>> tmp.cleanup()
+    """
     out = []
     with open(path, encoding="utf-8") as fh:
         for line in fh:

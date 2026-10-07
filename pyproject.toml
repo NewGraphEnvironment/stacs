@@ -30,6 +30,21 @@ dev = [
     "pytest>=8",
     "pytest-cov>=5",
 ]
+# The documentation site (mkdocs.yml), kept out of the runtime dependencies. MkDocs 2 is
+# announced as breaking plugins, so the major is capped.
+docs = [
+    "mkdocs>=1.6,<2",
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.26",
+]
+
+[tool.pytest.ini_options]
+# Docstring examples are collected with the tests. The network guard is the root
+# conftest.py, so it covers them for any path pytest is given here (not under
+# --noconftest, -c or --confcutdir); tests/test_harness.py pins both halves of that.
+testpaths = ["tests", "src"]
+addopts = ["--doctest-modules"]
+doctest_optionflags = ["ELLIPSIS", "NORMALIZE_WHITESPACE"]
 
 [build-system]
 requires = ["uv_build>=0.11.11,<0.12.0"]

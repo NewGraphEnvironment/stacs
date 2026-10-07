@@ -7,6 +7,10 @@ does not. So the line is drawn at the socket: a lookup of any non-loopback name 
 refused, and so is a connection to any non-loopback address. Installed for the whole
 session in `pytest_configure`, so session- and module-scoped fixtures are covered too.
 
+At the repository root rather than in `tests/`: pytest loads a conftest only for the
+paths it is given and their parents, so in `tests/` the guard was absent from
+`pytest src/stacs/verify.py` -- a run of the docstring examples alone.
+
 Proxy variables are removed and NO_PROXY set to `*`, or a client could reach the
 internet THROUGH a loopback proxy without ever resolving the target.
 

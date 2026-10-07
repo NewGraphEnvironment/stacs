@@ -1,0 +1,3 @@
+# stacs.register
+
+::: stacs.register
