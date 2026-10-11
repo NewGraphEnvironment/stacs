@@ -142,7 +142,8 @@ class Target:
         except ValueError as e:
             raise RegisterError(f"forbid_assets: {e}") from e
         try:
-            parse_queryables(self.queryables)
+            # Normalised, so a library caller's None reads as "none declared" below.
+            self.queryables = parse_queryables(self.queryables)
         except QueryablesError as e:
             raise RegisterError(f"queryables: {e}") from e
 
@@ -371,7 +372,9 @@ def load_queryables(t: Transport, collection_id: str, declared: dict,
         payload.write_text(json.dumps(queryables_document(declared),
                                       separators=(",", ":")) + "\n", encoding="utf-8")
         log(f"queryables: {', '.join(sorted(declared))} for {collection_id}")
-        _send(t, "queryables", payload, 1, dryrun, log, collection_id=collection_id)
+        if not _send(t, "queryables", payload, 1, dryrun, log,
+                     collection_id=collection_id):
+            return 0
     return len(declared)
 
 

@@ -85,6 +85,16 @@ attempted. Enumerated exits: RegisterError from the load (caught); any other exc
 message no longer promises nothing was loaded. The after-load read failure has its own
 wording. Eight mutations caught (two re-run after the first attempt was malformed).
 
+## /code-check round 3 (review-round3.md): no instance of the mechanism
+
+Mechanism named by the reviewer: the guard's scope and trigger came from stacs' account of
+the load (what it meant to send, whether the collection existed, which exit it believed it
+took), not from what the load can change in the database. Every place it reaches was
+enumerated and is covered (matches the round 2 enumeration). Two library-path findings
+fixed: `Target(queryables=None)` is normalised in `check()`; `load_queryables` returns 0
+on a dryrun. The one mutation that survived its reviewer (`changed` arm of
+`_others_damage`) is now pinned by a unit test and caught.
+
 ## Errors Encountered
 
 | Error | Resolution |

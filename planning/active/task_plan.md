@@ -111,6 +111,6 @@ Revised after the plan review (`review-plan.md`; dispositions in `findings.md`).
 ## Validation
 
 - [x] Tests pass
-- [ ] `/code-check` clean (each commit, or once over the branch with `/code-check branch`)
-- [ ] PWF checkboxes match landed work
+- [x] `/code-check` clean (each commit, or once over the branch with `/code-check branch`)
+- [x] PWF checkboxes match landed work
 - [ ] `/planning-archive` on completion

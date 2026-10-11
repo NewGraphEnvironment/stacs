@@ -1118,7 +1118,8 @@ def test_queryables_load_for_the_collection_alone_and_never_delete(env):
 
 def test_queryables_dryrun_sends_nothing(env):
     said = []
-    reg.load_queryables(_transport(), COLL, QUERYABLES, dryrun=True, log=said.append)
+    assert reg.load_queryables(_transport(), COLL, QUERYABLES, dryrun=True,
+                               log=said.append) == 0
     assert "[dryrun] nothing sent" in said
     assert not (env / "loads.log").exists() and not (env / "ssh_cmds.log").exists()
 
@@ -1562,3 +1563,24 @@ def test_a_load_that_raises_something_else_still_reports_the_loss(env, api, monk
     assert r.rc == 1, r.all
     assert "OSError: connection reset" in r.err
     assert "stac-other-a (lidarbc:delivery lost)" in r.err
+
+
+def test_a_library_target_with_queryables_none_declares_none(env, api):
+    items = _items(1)
+    _in_sync(api, items)
+    r = _run(env, "verify", api.url, items, queryables=None)
+    assert r.rc == 0, r.all
+    assert "queryables : none declared" in r.out
+
+
+def test_a_definition_another_collection_still_serves_but_changed_is_reported(
+        monkeypatch):
+    """pgstac 0.9.x could serve a name to one collection from its own row merged with a
+    global one, so taking the global row changes the definition rather than removing it."""
+    t = reg.Target(api="https://api.example.invalid", collection_id=COLL,
+                   bucket_url="https://bucket.example.invalid", queryables=QUERYABLES)
+    monkeypatch.setattr(reg, "_others_queryables",
+                        lambda target, names: {"stac-other-a": {"lidarbc:delivery": "d2"}})
+    msg = reg._others_damage(t, {"stac-other-a": {"lidarbc:delivery": "d1"}})
+    assert "stac-other-a (lidarbc:delivery changed)" in msg
+    assert reg._others_damage(t, {"stac-other-a": {"lidarbc:delivery": "d2"}}) is None

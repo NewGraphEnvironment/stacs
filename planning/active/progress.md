@@ -22,3 +22,7 @@
 - Phase 4: README configure/use/assumes, NEWS Unreleased, docs/reference/queryables.md +
   nav; `mkdocs build --strict` clean (no WARNING lines). 460 tests pass.
 - Next: /code-check branch, archive, PR.
+- /code-check branch: 3 rounds. Round 1: 2 bugs + 1 fragile, fixed. Round 2: 3 paths
+  inside round 1's fix + 2 fragile, fixed structurally (queryables one step, last,
+  others checked on every exit). Round 3: no instance of the mechanism; ended by
+  enumeration; 2 minor library-path findings fixed. 472 tests pass.
