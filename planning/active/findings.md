@@ -60,6 +60,24 @@ host compare refused all of them first, so it never bit. `_send` now decodes std
 and splits on `\n` alone; relayed lines drop a trailing `\r`. Three mark cases plus a CRLF
 relay test, red under `splitlines()` / without the `rstrip`.
 
+## Review round 3 (2026-10-11): clean, by enumeration
+
+`review-round3.md`. Mechanism behind R1 and R2: a value compared or shown after a layer has
+re-framed it (a tty's `\r`, `$( )` stripping trailing `\n`, universal newlines /
+`splitlines()`, a terminal hiding `\r`) is taken for the value the producer emitted. 14
+places enumerated, from `Transport.db` validation through the real fire/pypgstac producer,
+the host capture, compare, `%q` and echo, the ssh transport, the decode, split, compare and
+relay; all safe. Residuals, each fail-closed or contrived: `$( )` strips trailing newlines
+from the name; a forced ssh tty (`RequestTTY force`) breaks the payload as it already did;
+output ending in a lone `\r` would run into the mark and refuse a good load (pypgstac writes
+nothing to stdout, so nothing known produces it).
+
+| Round | Findings | Fixed | Accepted | Inside previous fix? |
+|-------|----------|-------|----------|----------------------|
+| 1 | 1 fragile + 2 notes | 2 | 1 (pooler aliasing -> NEWS, user's call) | — |
+| 2 | 1 fragile | 1 | 0 | n (original Python check) |
+| 3 | 0 (enumeration, 14 places) | 0 | 3 residuals | n |
+
 ## Errors Encountered
 
 | Error | Resolution |
