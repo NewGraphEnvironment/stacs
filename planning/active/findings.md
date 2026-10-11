@@ -36,6 +36,21 @@ Each guard removed from `register.py` in turn; the 57 tests matching
 | M3 | `|| exit 1` after the query | **survives behaviourally**: the subshell reasserts `set -euo pipefail` after the env file, so a failed assignment exits, and an empty name fails the compare anyway. Kept for symmetry with the load line. (The fire test failed only because its slice anchors on that text.) |
 | M4 | mark echoes `t.db` instead of the name read | **survives, equivalent**: the host compare makes the read name equal `t.db` whenever the mark is reached. M1 + M4 together would remove the protection; M1 alone is caught |
 
+## Review round 1 (2026-10-11)
+
+0 bugs; 1 fragile, 2 notes. `review-round1.md`.
+
+- Pooler aliasing (pgbouncer `stacdb = dbname=pgstac_prod`): `db` is both `PGDATABASE` and
+  the expected `current_database()`, so such a deployment is now refused on every load and
+  no setting fixes it. Fails closed. A separate expected name would be a new config key
+  (schema), so it is the user's call, raised in the PR; NEWS states the limit. pypgstac
+  sets `search_path` per session, so it works only through a session-mode pooler anyway.
+- NEWS overstated the guard: a name comparison cannot see the same name on another server.
+  Reworded.
+- A CRLF launcher (`docker exec -t`) read "reached 'stacdb', expected 'stacdb'". The FATAL
+  line now prints the name with `printf %q` (bash 3.2 gives `$'stacdb\r'` too); three
+  cases pinned, all red with `%q` removed.
+
 ## Errors Encountered
 
 | Error | Resolution |

@@ -306,9 +306,11 @@ def remote_script(t: Transport, kind: str, expected: int,
         sub.append(f'export PGPASSWORD="${{{t.password_env}}}"')
     launcher = " ".join(q(a) for a in t.pypgstac)
     sub.append(f"__stacs_db=$({launcher} _db query_one {q(_DB_QUERY)}) || exit 1")
+    # `%q`, so a name the eye cannot tell from `db` (a `\r` from a launcher with a tty)
+    # does not read as "reached stacdb, expected stacdb".
     sub.append(f'if [ "$__stacs_db" != {q(t.db)} ]; then echo "FATAL: pypgstac reached '
-               f"database '$__stacs_db', expected '{t.db}' -- nothing loaded\" >&2; "
-               f"exit 1; fi")
+               f'database $(printf %q "$__stacs_db"), expected {t.db} -- nothing loaded" '
+               f'>&2; exit 1; fi')
     if kind == "queryables":
         # pypgstac is a `fire` CLI, which reads a list argument as a Python literal.
         # The flag and its value are one shell word, so fire cannot take the value for

@@ -492,8 +492,23 @@ def test_a_launcher_that_reaches_another_database_is_refused_before_it_loads(env
     r = _run(env, "all", api.url, items)
     assert r.rc == 1, r.all
     # The host's stderr is the terminal's, as for every remote refusal.
-    assert "reached database 'otherdb', expected 'stacdb'" in capfd.readouterr().err
+    assert "reached database otherdb, expected stacdb" in capfd.readouterr().err
     assert r.loads == [], "nothing may be loaded into a database that is not `db`"
+
+
+@pytest.mark.parametrize("got, shown", [("stacdb\r", "$'stacdb\\r'"), ("", "''"),
+                                        ("stacdb extra", "stacdb\\ extra")])
+def test_a_name_that_only_looks_like_db_is_refused_and_shown_as_it_is(env, monkeypatch,
+                                                                      capfd, got, shown):
+    """A launcher with a tty ends its line with CRLF. Refused, and the message shows
+    the `\r` rather than claiming `stacdb` is not `stacdb`."""
+    monkeypatch.setenv("FAKE_PYPGSTAC_DB", got)
+    p = env / "c.json"
+    p.write_text(json.dumps(_collection()))
+    with pytest.raises(reg.RegisterError, match="failed on"):
+        reg.load(_transport(), "collections", [str(p)])
+    assert f"reached database {shown}, expected stacdb" in capfd.readouterr().err
+    assert not (env / "loads.log").exists()
 
 
 def test_a_database_query_that_fails_loads_nothing(env, api, monkeypatch):
