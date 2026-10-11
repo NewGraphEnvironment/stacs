@@ -33,6 +33,11 @@ rather than copied:
   `/search` with no `limit` returns 10 features.
 - **An unread body is an error, never "unchanged".**
 - **Secrets through the environment, never argv**, so they do not appear in `ps`.
+- **A queryables load can take rows other collections serve.** pypgstac replaces every
+  row of the name served on this collection, a global or shared row included. So
+  `register` loads queryables last, only for names that differ, and re-reads every other
+  collection on every way out after the attempt, failures included: a load can commit
+  and still report failure. `research/pgstac_queryables.md` has the source.
 
 ## The remote script
 
