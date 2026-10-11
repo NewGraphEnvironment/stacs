@@ -3,6 +3,17 @@
 Versions track the package. A tag is a release consumers can pin with
 `tag = "vX.Y.Z"` in `[tool.uv.sources]`; `pyproject.toml` carries the same version.
 
+## Unreleased
+
+- Every load names the database it reached (#6). Before writing, the host asks its pypgstac
+  launcher for `current_database()` over the connection the load will use, and refuses
+  anything but `db`; the success line is now `STACS_LOADED <n> <kind> <db>`, and `register`
+  requires it. A launcher that does not pass `PGDATABASE` on (a container, a wrapper with
+  its own DSN) used to load into another database unnoticed whenever that database already
+  served the same bodies. It compares the name only: it cannot tell whether `db` itself is
+  the right name (that stays the caller's value), nor a database of the same name on
+  another server. A pooler that maps `db` to a different server-side name is refused.
+
 ## 0.1.2
 
 - A catalogue declares its queryables in `stacs.toml`, one JSON Schema fragment per item

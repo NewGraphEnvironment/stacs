@@ -9,7 +9,8 @@ How it runs offline:
     other call RUNS the remote script locally, as a remote login shell would, so the
     receiving-side line count, the PG* exports and the trap are exercised for real
   - the remote launcher is a fake `pypgstac` that logs `<kind> <lines> db=<PGDATABASE>
-    pw=<set|unset>` and exits $FAKE_PYPGSTAC_RC
+    pw=<set|unset>` and exits $FAKE_PYPGSTAC_RC. Asked for `current_database()` it prints
+    $FAKE_PYPGSTAC_DB (default $PGDATABASE) and exits $FAKE_PYPGSTAC_DB_RC
   - conftest.py refuses every lookup and connection outside loopback
 """
 
@@ -43,6 +44,14 @@ fi
 FAKE_PYPGSTAC = r"""#!/bin/bash
 # fake_pypgstac load <kind> <file> --method upsert
 # fake_pypgstac load_queryables <file> --collection_ids=<python list literal>
+# fake_pypgstac _db query_one 'SELECT current_database()'
+if [ "$1" = "_db" ]; then
+  [ "$#" -eq 3 ] && [ "$2" = "query_one" ] && [ "$3" = "SELECT current_database()" ] \
+    || { echo "bad args: $*" >&2; exit 2; }
+  echo "db=${PGDATABASE:-}" >> "$SSH_LOG.dbq"
+  echo "${FAKE_PYPGSTAC_DB-${PGDATABASE:-}}"
+  exit "${FAKE_PYPGSTAC_DB_RC:-0}"
+fi
 if [ "$1" = "load_queryables" ]; then
   [ "$#" -eq 3 ] && [ "${3#--collection_ids=}" != "$3" ] || { echo "bad args: $*" >&2; exit 2; }
   n=$(wc -l < "$2" | tr -d ' ')
@@ -248,7 +257,8 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("SSH_LOG", str(tmp_path / "loads.log"))
     monkeypatch.setenv("SSH_CMDS", str(tmp_path / "ssh_cmds.log"))
     for k in ("SSH_PROBE_RC", "SSH_TRUNCATE", "SSH_SILENT_SUCCESS", "FAKE_PYPGSTAC_RC",
-              "FAKE_PYPGSTAC_SAY", "FAKE_PYPGSTAC_QUERYABLES_RC"):
+              "FAKE_PYPGSTAC_SAY", "FAKE_PYPGSTAC_QUERYABLES_RC", "FAKE_PYPGSTAC_DB",
+              "FAKE_PYPGSTAC_DB_RC"):
         monkeypatch.delenv(k, raising=False)
     # Set for every test, so a test aimed at something else cannot pass because the
     # password check refused first.
@@ -468,6 +478,101 @@ def test_a_remote_that_exits_0_without_loading_is_a_failure(env, monkeypatch):
     p.write_text(json.dumps(_collection()))
     with pytest.raises(reg.RegisterError, match="without confirming"):
         reg.load(_transport(), "collections", [str(p)])
+
+
+def test_a_launcher_that_reaches_another_database_is_refused_before_it_loads(env, api,
+                                                                          monkeypatch,
+                                                                          capfd):
+    """A launcher that does not pass PGDATABASE on (a container, a wrapper with its own
+    DSN) connects somewhere else. The read-back cannot tell when that database already
+    serves the same bodies, so the host refuses before pypgstac writes anything."""
+    monkeypatch.setenv("FAKE_PYPGSTAC_DB", "otherdb")
+    items = _items(2)
+    _in_sync(api, items)
+    r = _run(env, "all", api.url, items)
+    assert r.rc == 1, r.all
+    # The host's stderr is the terminal's, as for every remote refusal.
+    assert "reached database otherdb, expected stacdb" in capfd.readouterr().err
+    assert r.loads == [], "nothing may be loaded into a database that is not `db`"
+
+
+@pytest.mark.parametrize("got, shown", [("stacdb\r", "$'stacdb\\r'"), ("", "''"),
+                                        ("stacdb extra", "stacdb\\ extra")])
+def test_a_name_that_only_looks_like_db_is_refused_and_shown_as_it_is(env, monkeypatch,
+                                                                      capfd, got, shown):
+    """A launcher with a tty ends its line with CRLF. Refused, and the message shows
+    the `\r` rather than claiming `stacdb` is not `stacdb`."""
+    monkeypatch.setenv("FAKE_PYPGSTAC_DB", got)
+    p = env / "c.json"
+    p.write_text(json.dumps(_collection()))
+    with pytest.raises(reg.RegisterError, match="failed on"):
+        reg.load(_transport(), "collections", [str(p)])
+    assert f"reached database {shown}, expected stacdb" in capfd.readouterr().err
+    assert not (env / "loads.log").exists()
+
+
+def test_a_database_query_that_fails_loads_nothing(env, api, monkeypatch):
+    monkeypatch.setenv("FAKE_PYPGSTAC_DB_RC", "1")
+    items = _items(1)
+    r = _run(env, "all", api.url, items)
+    assert r.rc == 1 and "failed on" in r.err, r.all
+    assert r.loads == []
+
+
+@pytest.mark.parametrize("mark", ["STACS_LOADED 1 collections",
+                                  "STACS_LOADED 1 collections otherdb",
+                                  "STACS_LOADED 1 collections stacdb extra",
+                                  "STACS_LOADED 1 collections stacdb\r",
+                                  "STACS_LOADED 1 collections stacdb\x1cother",
+                                  "STACS_LOADED 1 collections stacdb\u0085"])
+def test_a_mark_that_does_not_name_the_database_is_not_a_load(env, monkeypatch, mark):
+    """Python's half of the check, with the host's taken away: the mark must name
+    exactly `db`. A line separator Python knows and the shell does not (`\r`, `\x1c`,
+    `\x85`) must not cut a longer name down to `db`."""
+    monkeypatch.setattr(reg, "remote_script",
+                        lambda *a, **k: f"cat > /dev/null; printf '%s\\n' '{mark}'\n")
+    p = env / "c.json"
+    p.write_text(json.dumps(_collection()))
+    with pytest.raises(reg.RegisterError, match="without confirming"):
+        reg.load(_transport(), "collections", [str(p)])
+
+
+def test_a_load_says_which_database_it_reached(env):
+    p = env / "c.json"
+    p.write_text(json.dumps(_collection()))
+    said = []
+    assert reg.load(_transport(), "collections", [str(p)], log=said.append) == 1
+    assert "reached  : stacdb" in said
+    assert (env / "loads.log.dbq").read_text().split() == ["db=stacdb"]
+
+
+def test_the_real_fire_reaches_the_database_query_and_prints_the_bare_name(capsys):
+    """pypgstac's CLI keeps its connection as `_db`, a `PgstacDB`, and fire resolves
+    private members. Run fire itself over the words the remote shell would pass, against
+    a stub with that shape: the query arrives as one string and the name prints alone."""
+    import shlex
+
+    import fire
+
+    asked = []
+
+    class StubDB:
+        def query_one(self, query):
+            asked.append(query)
+            return "stacdb"
+
+    class StubCLI:
+        def __init__(self):
+            self._db = StubDB()
+
+    script = reg.remote_script(_transport(), "collections", 1)
+    line = next(l for l in script.splitlines() if "query_one" in l)
+    words = shlex.split(line[line.index("$(") + 2:line.rindex(") || exit 1")])
+    assert words[0] == "fake_pypgstac"
+    capsys.readouterr()
+    fire.Fire(StubCLI, command=words[1:])
+    assert asked == ["SELECT current_database()"]
+    assert capsys.readouterr().out == "stacdb\n"
 
 
 @pytest.mark.parametrize("shell", ["/bin/bash", "bash"])
@@ -1095,6 +1200,15 @@ def test_the_hosts_own_output_is_relayed_and_the_mark_is_not(env, monkeypatch):
     assert "pypgstac: 1 row upserted" in said
     assert not any(line.startswith(reg.LOADED_MARK) for line in said)
     assert "loaded   : 1 collections" in said
+
+
+def test_a_hosts_crlf_output_is_relayed_without_the_cr(env, monkeypatch):
+    monkeypatch.setenv("FAKE_PYPGSTAC_SAY", "pypgstac: 1 row upserted\r")
+    p = env / "c.json"
+    p.write_text(json.dumps(_collection()))
+    said = []
+    reg.load(_transport(), "collections", [str(p)], log=said.append)
+    assert "pypgstac: 1 row upserted" in said
 
 
 # =============================================================================
