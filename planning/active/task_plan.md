@@ -54,16 +54,16 @@ anything is written.
 
 ## Phase 2: Implementation (`src/stacs/register.py`)
 
-- [ ] `remote_script`: after the exports, add
+- [x] `remote_script`: after the exports, add
       `__stacs_db=$(<launcher> _db query_one 'SELECT current_database()') || exit 1`, then
       `if [ "$__stacs_db" != <q(db)> ]; then echo "FATAL: pypgstac reached database
       '$__stacs_db', expected '<db>' -- nothing loaded" >&2; exit 1; fi`, then the load.
       The mark becomes `echo "STACS_LOADED $__stacs_n <kind> $__stacs_db"`.
-- [ ] `_send`: require `f"{LOADED_MARK} {lines} {kind} {t.db}"` exactly, and log
+- [x] `_send`: require `f"{LOADED_MARK} {lines} {kind} {t.db}"` exactly, and log
       `reached  : <db>` after `loaded`.
-- [ ] Docstrings: the `remote_script` text and its doctest (now one extra `pypgstac` line),
+- [x] Docstrings: the `remote_script` text and its doctest (now one extra `pypgstac` line),
       the `LOADED_MARK` comment, and the module docstring sentence on writes.
-- [ ] Mutation table in `findings.md`. Remove the host compare: test 2 fails on
+- [x] Mutation table in `findings.md`. Remove the host compare: test 2 fails on
       `loads == []`. Remove the Python db check: test 4 fails. Drop the `|| exit 1`, or
       break the query: test 3 fails.
 

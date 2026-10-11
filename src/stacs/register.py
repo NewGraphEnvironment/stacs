@@ -12,7 +12,8 @@ declared, and another collection's queryable it changed fails the run.
 
 Writes go over ssh to the STAC host, which runs `pypgstac load` there: the database
 password never leaves the host, and a STAC API without the transaction extension cannot
-be written through anyway. The host, database, environment file and launcher are all the
+be written through anyway. Each load first asks the host's connection which database it
+reached, and refuses anything but the one named. The host, database, environment file and launcher are all the
 caller's (`Transport`); nothing here names a deployment.
 
 Modes:
@@ -46,9 +47,16 @@ from stacs.verify import (PAGE_SIZE, bodies_registered, bodies_serving, collecti
 
 MODES = ("verify", "drift", "all", "ids")
 
-# The remote script's last act. `load` requires this exact line on stdout, so a remote
-# shell that exits 0 without loading -- whatever the reason -- reads as a failure.
+# The remote script's last act: `STACS_LOADED <n> <kind> <db>`. `load` requires this exact
+# line on stdout, naming the database the host's connection reached, so a remote shell
+# that exits 0 without loading -- whatever the reason -- reads as a failure, and so does
+# a load into any database but `Transport.db`.
 LOADED_MARK = "STACS_LOADED"
+
+# Asked of the database through the caller's own pypgstac launcher. pypgstac's CLI is a
+# `fire` class that keeps its connection as `_db` (0.9.6 to 0.10.0), and fire resolves a
+# private member like any other, so this opens the connection the load opens.
+_DB_QUERY = "SELECT current_database()"
 
 # Interpolated into a remote shell, so restricted rather than quoted alone.
 _DB_NAME = re.compile(r"[A-Za-z0-9_]+")
@@ -218,11 +226,16 @@ def remote_script(t: Transport, kind: str, expected: int,
     The caller's environment file is the caller's code, so it runs in a SUBSHELL with the
     load, never in the shell that holds this script's state. It cannot turn `-e` off for
     the parent, nor reassign the payload path (`readonly`, and namespaced). The success
-    line `STACS_LOADED <n> <kind>` is printed inside that subshell only after pypgstac
-    returns 0, so neither an `exit 0` nor `set +e` in the environment file can produce it.
+    line `STACS_LOADED <n> <kind> <db>` is printed inside that subshell only after
+    pypgstac returns 0, so neither an `exit 0` nor `set +e` in the environment file can
+    produce it.
 
     The PG* exports come AFTER the environment file is sourced, so the database
-    validated here is the one loaded, whatever the file sets.
+    validated here is the one asked for, whatever the file sets. Before the load, the
+    launcher is asked which database its connection reaches (`current_database()`), and
+    anything but `t.db` is refused before pypgstac writes: a launcher that does not pass
+    `PGDATABASE` on connects elsewhere, and a read-back cannot see it where that database
+    already serves the same bodies. The name read is the `<db>` of the success line.
 
     Atomicity: a collection load is one row. An items load is NOT one transaction --
     pypgstac commits each chunk per partition -- so a failed items load can leave some
@@ -232,8 +245,10 @@ def remote_script(t: Transport, kind: str, expected: int,
         >>> t = Transport(host="user@stac.example.invalid", db="pgstac",
         ...               env_file="/srv/stac/.env")
         >>> script = remote_script(t, "items", 2)
-        >>> [line.strip() for line in script.splitlines() if "pypgstac" in line]
-        ['pypgstac load items "$__stacs_tmp" --method upsert || exit 1']
+        >>> [line.strip() for line in script.splitlines()
+        ...  if line.strip().startswith(("pypgstac", "__stacs_db="))]
+        ["__stacs_db=$(pypgstac _db query_one 'SELECT current_database()') || exit 1",
+         'pypgstac load items "$__stacs_tmp" --method upsert || exit 1']
         >>> script.splitlines()[-1]
         '__stacs_ok=1'
         >>> import shlex
@@ -290,6 +305,10 @@ def remote_script(t: Transport, kind: str, expected: int,
                    f'"FATAL: {t.password_env} is not set on the host" >&2; exit 1; fi')
         sub.append(f'export PGPASSWORD="${{{t.password_env}}}"')
     launcher = " ".join(q(a) for a in t.pypgstac)
+    sub.append(f"__stacs_db=$({launcher} _db query_one {q(_DB_QUERY)}) || exit 1")
+    sub.append(f'if [ "$__stacs_db" != {q(t.db)} ]; then echo "FATAL: pypgstac reached '
+               f"database '$__stacs_db', expected '{t.db}' -- nothing loaded\" >&2; "
+               f"exit 1; fi")
     if kind == "queryables":
         # pypgstac is a `fire` CLI, which reads a list argument as a Python literal.
         # The flag and its value are one shell word, so fire cannot take the value for
@@ -298,7 +317,7 @@ def remote_script(t: Transport, kind: str, expected: int,
         sub.append(f'{launcher} load_queryables "$__stacs_tmp" {ids} || exit 1')
     else:
         sub.append(f'{launcher} load {kind} "$__stacs_tmp" --method upsert || exit 1')
-    sub.append(f'echo "{LOADED_MARK} $__stacs_n {kind}"')
+    sub.append(f'echo "{LOADED_MARK} $__stacs_n {kind} $__stacs_db"')
     lines += ["  " + l for l in sub]
     # A plain `( ... )`, never `( ... ) || exit 1`: bash suspends `set -e` for every
     # command inside a list whose status is tested, so `||` here would let a failed
@@ -405,10 +424,11 @@ def _send(t: Transport, kind: str, payload: Path, lines: int, dryrun: bool, log,
                "It is one transaction, but a failure reported after its commit (a "
                "dropped connection) leaves it loaded; re-running is safe."
                if kind == "queryables" else "Nothing was loaded."))
-    if f"{LOADED_MARK} {lines} {kind}" not in out_lines:
+    if f"{LOADED_MARK} {lines} {kind} {t.db}" not in out_lines:
         raise RegisterError(f"load of {lines} {kind} on {t.host} exited 0 without "
-                            f"confirming it loaded; treat it as failed")
+                            f"confirming it loaded into {t.db}; treat it as failed")
     log(f"loaded   : {lines} {kind}")
+    log(f"reached  : {t.db}")
     return lines
 
 

@@ -481,7 +481,8 @@ def test_a_remote_that_exits_0_without_loading_is_a_failure(env, monkeypatch):
 
 
 def test_a_launcher_that_reaches_another_database_is_refused_before_it_loads(env, api,
-                                                                          monkeypatch):
+                                                                          monkeypatch,
+                                                                          capfd):
     """A launcher that does not pass PGDATABASE on (a container, a wrapper with its own
     DSN) connects somewhere else. The read-back cannot tell when that database already
     serves the same bodies, so the host refuses before pypgstac writes anything."""
@@ -490,7 +491,8 @@ def test_a_launcher_that_reaches_another_database_is_refused_before_it_loads(env
     _in_sync(api, items)
     r = _run(env, "all", api.url, items)
     assert r.rc == 1, r.all
-    assert "reached database 'otherdb', expected 'stacdb'" in r.all
+    # The host's stderr is the terminal's, as for every remote refusal.
+    assert "reached database 'otherdb', expected 'stacdb'" in capfd.readouterr().err
     assert r.loads == [], "nothing may be loaded into a database that is not `db`"
 
 
@@ -546,7 +548,7 @@ def test_the_real_fire_reaches_the_database_query_and_prints_the_bare_name(capsy
 
     script = reg.remote_script(_transport(), "collections", 1)
     line = next(l for l in script.splitlines() if "query_one" in l)
-    words = shlex.split(line[line.index("$(") + 2:line.index(")")])
+    words = shlex.split(line[line.index("$(") + 2:line.rindex(") || exit 1")])
     assert words[0] == "fake_pypgstac"
     capsys.readouterr()
     fire.Fire(StubCLI, command=words[1:])

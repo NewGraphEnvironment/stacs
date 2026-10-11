@@ -23,7 +23,21 @@ resolves any name in `dir(component)`, private ones included. So
 (`dsn=""`, libpq reading PG*) and prints the name. 0.10.0 read from the uv cache;
 0.9.6 and 0.9.8 via the GitHub contents API at those tags (2026-10-11).
 
+## Mutation table (2026-10-11)
+
+Each guard removed from `register.py` in turn; the 57 tests matching
+`-k "database or mark or reached"` run against each.
+
+| mutant | guard removed | caught by |
+|---|---|---|
+| M1 | host-side `[ "$__stacs_db" != db ]` refusal | `test_a_launcher_that_reaches_another_database_is_refused_before_it_loads` (the load ran: `loads != []`) |
+| M2 | Python accepts a mark naming any database | all three `test_a_mark_that_does_not_name_the_database_is_not_a_load` cases |
+| M2b | Python accepts a mark that only starts with the expected line | the `stacdb extra` case |
+| M3 | `|| exit 1` after the query | **survives behaviourally**: the subshell reasserts `set -euo pipefail` after the env file, so a failed assignment exits, and an empty name fails the compare anyway. Kept for symmetry with the load line. (The fire test failed only because its slice anchors on that text.) |
+| M4 | mark echoes `t.db` instead of the name read | **survives, equivalent**: the host compare makes the read name equal `t.db` whenever the mark is reached. M1 + M4 together would remove the protection; M1 alone is caught |
+
 ## Errors Encountered
 
 | Error | Resolution |
 |-------|------------|
+| Mutation run printed nothing: `-k database_or_mark_or_reached` matched no test | `-k "database or mark or reached"` |
