@@ -405,10 +405,12 @@ def _send(t: Transport, kind: str, payload: Path, lines: int, dryrun: bool, log,
     log(f"{kind:<8}: {lines}")
     log(f"payload : {payload.stat().st_size} bytes")
     log(f"target  : {t.db} db on {t.host}")
+    # The probe is read-only, so a dryrun runs it too: it is everything but the write.
+    probe(t)
     if dryrun:
+        log(f"[dryrun] reached {t.host}")
         log("[dryrun] nothing sent")
         return 0
-    probe(t)
     with open(payload, "rb") as fh:
         r = subprocess.run(_ssh(t, "bash -c " + shlex.quote(
             remote_script(t, kind, lines, collection_id))), stdin=fh,
@@ -481,7 +483,8 @@ def run(target: Target, mode: str, ids_file=None, dryrun: bool = False,
     """Run one mode against one catalogue. Returns the exit status.
 
     Every refusal is a RegisterError, raised before the first write wherever the check
-    allows; it is printed and returns 1.
+    allows; it is printed and returns 1. `dryrun` still probes the API and the host
+    (both read-only) and stops before the fetch (`all`, `ids`) or the audit (`drift`).
     """
     warn = warn or (lambda m: print(m, file=sys.stderr))
     try:
@@ -561,27 +564,28 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
         if len(set(hrefs)) != len(hrefs):
             raise RegisterError("two item links share one href")
 
-        if mode in ("all", "ids"):
-            log(f"to register: {len(todo)}")
-            if dryrun:
-                log(f"[dryrun] would fetch {len(todo)} item(s) and upsert them"
-                    + (f", and queryables {', '.join(sorted(target.queryables))} "
-                       f"where they are not served as declared"
-                       if target.queryables else ""))
-                for i in todo[:3]:
-                    log(f"  {i}\t{by_id[i]}")
-                return 0
-
-        # Before the expensive stage, in every mode that can write: the host, and the
-        # API the write will be verified against. A wrong API URL would otherwise first
-        # surface in the read-back, after the upsert.
-        if writes and not dryrun:
+        # Before the expensive stage, in every mode that can write, dryrun included:
+        # the host, and the API the write will be verified against. A wrong API URL
+        # would otherwise first surface in the read-back, after the upsert, and a dryrun
+        # that skipped them would pass as a connectivity check that never ran.
+        if writes:
             _api_probe(target)
             probe(target.transport)
             if mode in ("all", "ids") and target.queryables:
                 q_missing, q_changed = _queryables_drift(
                     target, _collection_state(coll_file, target) != "missing")
                 log(f"queryables : {len(q_missing)} missing, {len(q_changed)} changed")
+
+        if mode in ("all", "ids"):
+            log(f"to register: {len(todo)}")
+            if dryrun:
+                _say_reached(target, log)
+                log(f"[dryrun] would fetch {len(todo)} item(s) and upsert them"
+                    + (f", and queryables {', '.join(q_missing + q_changed)}"
+                       if target.queryables and (q_missing or q_changed) else ""))
+                for i in todo[:3]:
+                    log(f"  {i}\t{by_id[i]}")
+                return 0
 
         # --- fetch ------------------------------------------------------------
         fetch_dir = work / "items"
@@ -663,6 +667,7 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
         if mode == "drift":
             log(f"to register: {len(todo)}")
             if dryrun:
+                _say_reached(target, log)
                 log(f"[dryrun] would upsert {len(todo)} item(s) (collection: "
                     f"{coll_state})"
                     + (f" and queryables {', '.join(q_missing + q_changed)}"
@@ -788,6 +793,11 @@ def _register_queryables(target, log) -> None:
     if problems:
         raise RegisterError("; ".join(problems))
     log(f"OK: {len(target.queryables)} declared queryable(s) served as declared")
+
+
+def _say_reached(target, log) -> None:
+    log(f"[dryrun] reached {target.api} and {target.transport.host}; the write, and the "
+        f"database check before it, did not run")
 
 
 def _api_probe(target) -> None:

@@ -6,3 +6,7 @@
 - Created branch `5-register-dryrun-skips-the-api-and-ssh-pr` off main
 - Scaffolded PWF baseline from issue #5 with approved phases
 - Next: start Phase 1
+
+- Phases 1-3: new dryrun tests written first (12 failing), probes moved ahead of every
+  dryrun return, offline dryrun tests given the stub API, CLI probe stubbed. Plan review
+  folded in (findings.md). Mutation table in findings.md. Full suite 498 passed.

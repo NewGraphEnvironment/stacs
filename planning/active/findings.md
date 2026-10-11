@@ -29,6 +29,23 @@ Found adopting stacs in stac_airphoto_bc#42 (2026-10-07): the plan used `--mode 
   so it probes but never runs the remote script. Only a real load exercises the env file,
   pypgstac and the database check.
 
+## Plan review (2026-10-11, Plan agent)
+
+Folded in: B1 (a dryrun still skips the fetch/audit and the remote script, so the README
+names what each mode skips, not "everything but the write"); G1 (autouse probe stub in
+test_cli, since conftest's socket guard cannot see the ssh subprocess); G2 (dead-API
+dryrun tests take `no_retry_sleep`, else ~6 s each); G3 (probe moved in `_send`, not
+added); G4 (an all/ids dryrun with queryables now reads `/collections/<id>` and its
+queryables, and names only what it would load); G5; O1 (`test_ids_mode_refuses_a_missing_or_empty_file`
+stays on the dead API: it pins the ids-file check ahead of the probes); A1 (the "smallest
+real load" is a no-op only when `verify` reports the collection `same`); A2 (a CI preview
+with no ssh keys or known_hosts now exits 1); S2 (NEWS states it as a behaviour change);
+S3 (`run` docstring).
+
+Mutations, each in a scratch copy (each turned tests red): dryrun skipping the probes (9
+failed), no `_api_probe` (3), no ssh probe in `_run` (6), no probe in `_send` (5), no
+"reached" line (2), the dryrun naming every declared queryable (1).
+
 ## Errors Encountered
 
 | Error | Resolution |
