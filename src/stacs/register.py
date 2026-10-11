@@ -538,12 +538,13 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
         # Before the expensive stage, in every mode that can write: the host, and the
         # API the write will be verified against. A wrong API URL would otherwise first
         # surface in the read-back, after the upsert.
+        q_registered = True
         if writes and not dryrun:
             _api_probe(target)
             probe(target.transport)
             if mode in ("all", "ids") and target.queryables:
-                q_missing, q_changed = _queryables_drift(
-                    target, _collection_state(coll_file, target) != "missing")
+                q_registered = _collection_state(coll_file, target) != "missing"
+                q_missing, q_changed = _queryables_drift(target, q_registered)
                 log(f"queryables : {len(q_missing)} missing, {len(q_changed)} changed")
 
         # --- fetch ------------------------------------------------------------
@@ -575,7 +576,8 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
                 log(f"{label:<10} : {len(ids)}")
             coll_state = _collection_state(coll_file, target)
             log(f"collection : {coll_state}")
-            q_missing, q_changed = _queryables_drift(target, coll_state != "missing")
+            q_registered = coll_state != "missing"
+            q_missing, q_changed = _queryables_drift(target, q_registered)
             if target.queryables:
                 log(f"queryables : {len(q_missing)} missing, {len(q_changed)} changed")
             todo = sorted(set(missing) | set(changed))
@@ -657,7 +659,13 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
         # served, which may be a global or shared row other collections serve too; the
         # API cannot say which. Only a name served here already can be such a row, so
         # only those are read from the other collections, now, before the first write.
-        others = _others_queryables(target, q_changed) if load_q and q_changed else {}
+        # A collection not yet registered cannot be asked, and a global row serves
+        # whatever registers next, so then every declared name is at risk.
+        others = {}
+        if load_q:
+            at_risk = q_changed if q_registered else sorted(target.queryables)
+            if at_risk:
+                others = _others_queryables(target, at_risk)
 
         # pgstac.items.collection REFERENCES collections(id): items with no collection
         # row fail outright. pgstac refuses a queryable for a collection it lacks too.
@@ -667,8 +675,16 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
             load(target.transport, "items", todo_paths,
                  expect_collection=target.collection_id, log=log)
         if load_q:
-            load_queryables(target.transport, target.collection_id, target.queryables,
-                            log=log)
+            # Asked again now that the collection is registered: a global row may
+            # already serve a name as declared, and loading it would take that row
+            # from every other collection. Only what differs is sent.
+            q_missing, q_changed = _queryables_drift(target, True)
+            send = {n: target.queryables[n] for n in q_missing + q_changed}
+            if send:
+                load_queryables(target.transport, target.collection_id, send, log=log)
+            else:
+                log("queryables : served as declared once the collection was "
+                    "registered; nothing to load")
 
         # --- verify -----------------------------------------------------------
         log("verifying by set equality and content ...")
@@ -678,13 +694,21 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
                                 f"not 'same'")
         log("OK: the collection is served with the published body")
         if load_q:
+            # Both checks run before either raises: a failure here alone would hide
+            # another collection's loss, and the next run's snapshot no longer holds it.
+            problems = []
             q_missing, q_changed = _queryables_drift(target, True)
             if q_missing or q_changed:
-                raise RegisterError(
-                    f"after registering, declared queryable(s) are not served "
-                    f"{q_missing} or served with a different definition {q_changed}")
+                problems.append(f"after registering, declared queryable(s) are not "
+                                f"served {q_missing} or served with a different "
+                                f"definition {q_changed}")
+            try:
+                _check_others(target, others)
+            except RegisterError as e:
+                problems.append(str(e))
+            if problems:
+                raise RegisterError("; ".join(problems))
             log(f"OK: {len(target.queryables)} declared queryable(s) served as declared")
-            _check_others(target, others)
 
         # pgstac serves items hydrated against their collection, so a collection whose
         # body changed can change how UNTOUCHED items read back. When it may have, and

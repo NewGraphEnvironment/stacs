@@ -117,6 +117,8 @@ class _StubAPI:
         (cid,) = ast.literal_eval(loads[-1][4][len("ids="):])
         for name in props:
             self.global_queryables.pop(name, None)
+        if self.apply_queryables == "take-global-only":
+            return
         self.queryables.setdefault(cid, {}).update(json.loads(json.dumps(props)))
 
     def collection_ids(self):
@@ -1407,3 +1409,61 @@ def test_other_collections_that_cannot_be_listed_refuse_before_any_write(env, ap
     api.fail["/collections/stac-other-a/queryables"] = 500
     r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
     assert r.rc == 1 and "before loading ours" in r.err and r.writes == 0
+
+
+def test_only_the_names_that_differ_are_sent(env, api):
+    """A name served as declared is not reloaded because another one drifted: the load
+    would replace a matching global row, and every other collection would lose it."""
+    items = _items(1)
+    api.others = ["stac-other-a"]
+    api.global_queryables = json.loads(json.dumps(QUERYABLES))
+    _in_sync(api, items)
+    api.load_log = env / "loads.log"
+    q = {**QUERYABLES, "zz:new": {"type": "string"}}
+    r = _run(env, "drift", api.url, items, queryables=q)
+    assert r.rc == 0, r.all
+    sent = json.loads((env / "loads.log.queryables.json").read_text())["properties"]
+    assert sorted(sent) == ["zz:new"]
+    assert api.served_queryables("stac-other-a") == QUERYABLES
+
+
+@pytest.mark.parametrize("mode", ["all", "drift"])
+def test_a_first_registration_does_not_take_a_matching_global_row(env, api, mode):
+    """With the collection not yet registered nothing can be read for it, but a global
+    row of the name may exist. Once the collection is loaded, that row serves it as
+    declared, so nothing is loaded and the other collection keeps it."""
+    items = _items(1)
+    api.others = ["stac-other-a"]
+    api.global_queryables = json.loads(json.dumps(QUERYABLES))
+    api.load_log, api.on_load = env / "loads.log", lambda a: _in_sync(a, items)
+    r = _run(env, mode, api.url, items, queryables=QUERYABLES)
+    assert r.rc == 0, r.all
+    assert "queryables" not in [l[0] for l in r.loads]
+    assert api.served_queryables("stac-other-a") == QUERYABLES
+
+
+def test_a_first_registration_that_takes_a_global_row_fails_loudly(env, api):
+    """A global row with a different definition: the load replaces it, and the other
+    collection's loss is reported although nothing could be read for ours first."""
+    items = _items(1)
+    api.others = ["stac-other-a"]
+    api.global_queryables = {"lidarbc:delivery": {"type": "integer"}}
+    api.load_log, api.on_load = env / "loads.log", lambda a: _in_sync(a, items)
+    r = _run(env, "all", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1, r.all
+    assert "stac-other-a (lidarbc:delivery lost)" in r.err
+
+
+def test_another_collections_loss_is_reported_even_when_ours_also_failed(env, api):
+    """Ours failing must not hide the other collections' loss: the next run's snapshot
+    would no longer hold the name, so no later run could report it."""
+    items = _items(1)
+    api.others = ["stac-other-a"]
+    api.global_queryables = {"lidarbc:delivery": {"type": "integer"}}
+    _in_sync(api, items)
+    api.load_log = env / "loads.log"
+    api.apply_queryables = "take-global-only"
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1
+    assert "stac-other-a (lidarbc:delivery lost)" in r.err
+    assert "after registering, declared queryable(s)" in r.err

@@ -44,7 +44,10 @@ collection. A name served here with a different definition may come from this
 collection's own row, a shared row or a global one, and the API cannot show which,
 because every collection a row covers serves it. For those names only, stacs reads what
 every other collection serves before the load and again after it, and fails the run if
-any lost or changed one. Refusing before the write would also refuse the ordinary case: two
+any lost or changed one. A collection that is not registered yet cannot be asked, and a
+global row of the name would serve it the moment it is, so on a first registration every
+declared name is read from the others. The drift is asked again once the collection is
+loaded, so a name a matching global row already serves is not loaded at all. Refusing before the write would also refuse the ordinary case: two
 catalogues each declaring the same key for themselves, one of which later changes it.
 
 A collection that declares the queryable itself gets it back by re-registering. A global

@@ -99,9 +99,10 @@ different collections coexist. `register` loads a queryable only when it is miss
 served with a different definition, after the items, and never with an index (each load
 replaces the row, and with it any index set on that name by hand). Removing a
 declaration leaves its row in place: nothing is deleted. A name that this collection
-already serves with a different definition may be a shared or global row, so `register`
-reads every other collection's definition of it before the load and fails if one was lost
-or changed after it. The host needs pypgstac 0.9.6 or later.
+already serves with a different definition may be a shared or global row, as may any
+name when the collection is registered for the first time, so `register` reads every other
+collection's definition of those names before the first write and fails if one was lost
+or changed after the load. The host needs pypgstac 0.9.6 or later.
 
 **No setting is a secret.** Writes go over ssh to the STAC host, which runs
 `pypgstac load --method upsert` there; the database password stays on the host and is

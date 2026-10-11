@@ -62,6 +62,16 @@ S1 from the SQL already read.
 - `_get_or_absent` returned None for both a 404 and a JSON `null` body, so a broken
   collection answer would have read as `missing`; now an `ABSENT` sentinel.
 
+## /code-check round 1 (review-round1.md)
+
+| finding | disposition |
+|---|---|
+| bug: every declared name was sent, not only those that differ | fixed: send = missing + changed, asked again after the collection load |
+| bug: a first registration skipped the guard, but a global row may exist | fixed: every declared name is at risk then; a matching global row is now not loaded at all |
+| fragile: our own failure hid another collection's loss | fixed: both checks run, one error |
+
+All three reproduced as red tests first; four mutations caught.
+
 ## Errors Encountered
 
 | Error | Resolution |
