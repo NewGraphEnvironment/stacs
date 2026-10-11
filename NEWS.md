@@ -3,7 +3,7 @@
 Versions track the package. A tag is a release consumers can pin with
 `tag = "vX.Y.Z"` in `[tool.uv.sources]`; `pyproject.toml` carries the same version.
 
-## Unreleased
+## 0.1.3
 
 - Every load names the database it reached (#6). Before writing, the host asks its pypgstac
   launcher for `current_database()` over the connection the load will use, and refuses
