@@ -33,6 +33,7 @@ from pathlib import Path
 
 from stacs.catalogue import (_read_url, collection_item_links, fetch_bodies, fetch_key,
                              published_digests)
+from stacs.queryables import QueryablesError, parse_queryables
 from stacs.validate import audit_items, parse_asset_keys
 from stacs.verify import (PAGE_SIZE, bodies_registered, bodies_serving, collection_state,
                           content_diff)
@@ -101,13 +102,14 @@ class Transport:
 @dataclass
 class Target:
     """One catalogue: where it is published, where it is served, how it is written,
-    and the asset rules it declares for itself."""
+    and the asset rules and queryables it declares for itself."""
     api: str
     collection_id: str
     bucket_url: str
     transport: Transport | None = None
     require_asset: str | None = None
     forbid_assets: list[str] = field(default_factory=list)
+    queryables: dict[str, dict] = field(default_factory=dict)
     page_size: int = PAGE_SIZE
     chunk: int = 500
     fetch_workers: int = 20
@@ -133,6 +135,10 @@ class Target:
             parse_asset_keys(self.forbid_assets)
         except ValueError as e:
             raise RegisterError(f"forbid_assets: {e}") from e
+        try:
+            parse_queryables(self.queryables)
+        except QueryablesError as e:
+            raise RegisterError(f"queryables: {e}") from e
 
 
 # =============================================================================

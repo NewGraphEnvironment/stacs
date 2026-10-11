@@ -21,17 +21,20 @@ import tomllib
 from pathlib import Path
 
 from stacs import __version__
+from stacs.queryables import QueryablesError, parse_queryables
 from stacs.register import MODES, RegisterError, Target, Transport, load, run
 from stacs.validate import audit_items, item_paths_in_dir, parse_asset_keys, validate_items
 
 # Every key the config may carry, by table. Anything else is refused, which is also what
-# keeps a `password = ...` line from being silently accepted.
+# keeps a `password = ...` line from being silently accepted. `[queryables]` is keyed by
+# property name, so its keys are free; `parse_queryables` checks every value instead.
 CONFIG_KEYS = {
     "catalogue": {"api", "collection_id", "bucket_url"},
     "assets": {"require", "forbid"},
     "transport": {"host", "db", "env_file", "workdir", "path_prepend", "pg_host",
                   "pg_port", "pg_user", "password_env", "pypgstac"},
     "tuning": {"page_size", "chunk", "fetch_workers"},
+    "queryables": None,
 }
 
 
@@ -53,6 +56,8 @@ def read_config(path) -> dict:
             raise ConfigError(f"{path}: unknown table [{table}]")
         if not isinstance(values, dict):
             raise ConfigError(f"{path}: {table} must be a table")
+        if CONFIG_KEYS[table] is None:
+            continue
         unknown = set(values) - CONFIG_KEYS[table]
         if unknown:
             raise ConfigError(f"{path}: unknown key(s) in [{table}]: "
@@ -133,6 +138,10 @@ def build_transport(args, cfg: dict) -> Transport:
 
 def build_target(args, cfg: dict, needs_transport: bool) -> Target:
     require, forbid = merge_asset_rules(cfg, args.require_asset, args.forbid_asset)
+    try:
+        queryables = parse_queryables(cfg.get("queryables"))
+    except QueryablesError as e:
+        raise ConfigError(f"[queryables] {e}") from e
     tuning = cfg.get("tuning", {})
     return Target(
         api=_pick(args.api, cfg, "catalogue", "api", "--api"),
@@ -142,6 +151,7 @@ def build_target(args, cfg: dict, needs_transport: bool) -> Target:
         transport=build_transport(args, cfg) if needs_transport else None,
         require_asset=require,
         forbid_assets=forbid,
+        queryables=queryables,
         **{k: tuning[k] for k in ("page_size", "chunk", "fetch_workers") if k in tuning},
     )
 

@@ -18,6 +18,13 @@ NewGraphEnvironment/stac_dem_bc#55 adds `lidarbc:delivery` to stac-elevation-bc 
 - Loaded as an upsert during `stacs register` (pypgstac's `load-queryables` is the mechanism), after the collection and before the item content check.
 - `stacs verify` compares the served `/queryables` with the declaration.
 
+## pgstac queryables semantics (2026-10-11)
+
+Durable verdict in `research/pgstac_queryables.md`. Additions found while reading:
+`start_datetime` is a core column in 0.10.0 (`queryable_column`) but not in 0.9.8's skip
+list; refused either way. An empty `enum` is served absent (`nullif_jsonbnullempty`).
+stac-fastapi-pgstac 404s the queryables endpoint when `get_queryables` returns NULL.
+
 ## Errors Encountered
 
 | Error | Resolution |

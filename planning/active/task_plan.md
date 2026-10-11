@@ -35,12 +35,12 @@ Out of scope: a `stacs load queryables` subcommand (every consumer uses `registe
 
 ## Phase 1: Research record and the declaration
 
-- [ ] `research/pgstac_queryables.md`: the load semantics above, with provenance
+- [x] `research/pgstac_queryables.md`: the load semantics above, with provenance
       (upstream source at v0.9.8 / v0.10.0, the file and function names) and what stacs
       does about each. Add a row to `research/README.md`.
-- [ ] Edit the #8 body's Shape so it reads correctly from top to bottom: own collection
+- [x] Edit the #8 body's Shape so it reads correctly from top to bottom: own collection
       only, and why.
-- [ ] Write the tests first, for a new `src/stacs/queryables.py` (`parse_queryables`,
+- [x] Write the tests first, for a new `src/stacs/queryables.py` (`parse_queryables`,
       `queryables_document`):
       - `[queryables."<name>"]` tables are JSON Schema fragments.
       - Refuse: a value that is not a table; an empty name; a `properties.` prefix
@@ -48,7 +48,7 @@ Out of scope: a `stacs load queryables` subcommand (every consumer uses `registe
         `datetime`, `end_datetime`, `collection`; to be checked against pgstac's
         `queryable_column`), which pgstac would skip silently; a backslash anywhere;
         a TOML datetime, which has no JSON form.
-- [ ] Implement it, then wire it in. `read_config` treats `[queryables]` keys as
+- [x] Implement it, then wire it in. `read_config` treats `[queryables]` keys as
       free-form names, but each value is still checked. Add `Target.queryables`
       (default empty) checked in `Target.check`; `build_target` carries it.
 
