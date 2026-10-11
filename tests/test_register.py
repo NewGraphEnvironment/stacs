@@ -39,6 +39,14 @@ fi
 
 FAKE_PYPGSTAC = r"""#!/bin/bash
 # fake_pypgstac load <kind> <file> --method upsert
+# fake_pypgstac load_queryables <file> --collection_ids=<python list literal>
+if [ "$1" = "load_queryables" ]; then
+  [ "$#" -eq 3 ] && [ "${3#--collection_ids=}" != "$3" ] || { echo "bad args: $*" >&2; exit 2; }
+  n=$(wc -l < "$2" | tr -d ' ')
+  cp "$2" "$SSH_LOG.queryables.json"
+  echo "queryables $n db=${PGDATABASE:-} pw=${PGPASSWORD:+set} ids=${3#--collection_ids=}" >> "$SSH_LOG"
+  exit "${FAKE_PYPGSTAC_RC:-0}"
+fi
 [ "$1" = "load" ] && [ "$4" = "--method" ] && [ "$5" = "upsert" ] || { echo "bad args: $*" >&2; exit 2; }
 n=$(wc -l < "$3" | tr -d ' ')
 if [ -n "${FAKE_PYPGSTAC_SAY:-}" ]; then echo "$FAKE_PYPGSTAC_SAY"; fi
@@ -1012,3 +1020,85 @@ def test_the_hosts_own_output_is_relayed_and_the_mark_is_not(env, monkeypatch):
     assert "pypgstac: 1 row upserted" in said
     assert not any(line.startswith(reg.LOADED_MARK) for line in said)
     assert "loaded   : 1 collections" in said
+
+
+# =============================================================================
+# Queryables: the load
+# =============================================================================
+
+QUERYABLES = {"lidarbc:delivery": {"type": "string", "title": "LidarBC delivery"}}
+
+
+def test_queryables_load_for_the_collection_alone_and_never_delete(env):
+    said = []
+    assert reg.load_queryables(_transport(), COLL, QUERYABLES, log=said.append) == 1
+    assert ("queryables", "1", "db=stacdb", "pw=set", f"ids=['{COLL}']") in [
+        tuple(line.split()) for line in (env / "loads.log").read_text().splitlines()]
+    doc = json.loads((env / "loads.log.queryables.json").read_text())
+    assert doc["properties"] == QUERYABLES
+    cmds = (env / "ssh_cmds.log").read_text()
+    assert "delete_missing" not in cmds and "index_fields" not in cmds
+    assert "loaded   : 1 queryables" in said
+
+
+def test_queryables_dryrun_sends_nothing(env):
+    said = []
+    reg.load_queryables(_transport(), COLL, QUERYABLES, dryrun=True, log=said.append)
+    assert "[dryrun] nothing sent" in said
+    assert not (env / "loads.log").exists() and not (env / "ssh_cmds.log").exists()
+
+
+def test_nothing_declared_sends_nothing(env):
+    said = []
+    assert reg.load_queryables(_transport(), COLL, {}, log=said.append) == 0
+    assert not (env / "ssh_cmds.log").exists()
+
+
+def test_a_failed_queryables_load_says_nothing_was_loaded(env, monkeypatch):
+    """pypgstac loads a queryables document in one transaction."""
+    monkeypatch.setenv("FAKE_PYPGSTAC_RC", "1")
+    with pytest.raises(reg.RegisterError, match="Nothing was loaded"):
+        reg.load_queryables(_transport(), COLL, QUERYABLES)
+
+
+def test_a_queryables_load_that_does_not_confirm_itself_failed(env, monkeypatch):
+    monkeypatch.setenv("SSH_SILENT_SUCCESS", "1")
+    with pytest.raises(reg.RegisterError, match="without confirming"):
+        reg.load_queryables(_transport(), COLL, QUERYABLES)
+
+
+def test_a_bad_declaration_is_refused_before_anything_is_sent(env):
+    with pytest.raises(reg.RegisterError, match="column"):
+        reg.load_queryables(_transport(), COLL, {"datetime": {"type": "string"}})
+    assert not (env / "ssh_cmds.log").exists()
+
+
+@pytest.mark.parametrize("kind, collection_id", [
+    ("queryables", None), ("queryables", " "), ("items", COLL), ("collections", COLL)])
+def test_a_collection_id_goes_with_a_queryables_load_and_nothing_else(kind,
+                                                                      collection_id):
+    with pytest.raises(ValueError):
+        reg.remote_script(_transport(), kind, 1, collection_id)
+
+
+@pytest.mark.parametrize("collection_id", [
+    COLL, "it's a (test)", 'quo"te', "back\\slash", "café \U0001F600", "[x]", "1"])
+def test_the_real_fire_reads_the_collection_ids_as_a_list_of_that_one_id(collection_id):
+    """pypgstac is a `fire` CLI. Run fire itself over the words the remote shell would
+    pass, after the shell has split them, against a stub with load_queryables'
+    signature. A bare word or a number would reach pypgstac as a str or an int."""
+    import shlex
+
+    import fire
+
+    class StubCLI:
+        def load_queryables(self, file, collection_ids=None, delete_missing=False,
+                            index_fields=None):
+            return file, collection_ids, delete_missing, index_fields
+
+    script = reg.remote_script(_transport(), "queryables", 1, collection_id)
+    line = next(l for l in script.splitlines() if "load_queryables" in l)
+    words = shlex.split(line.replace("|| exit 1", ""))
+    assert words[0] == "fake_pypgstac"
+    got = fire.Fire(StubCLI, command=words[1:])
+    assert got == ("$__stacs_tmp", [collection_id], False, None)

@@ -11,3 +11,8 @@
   stac-fastapi-pgstac filter.py); #8 body edited (own collection only);
   src/stacs/queryables.py with parse/document/digest/diff; `[queryables]` in the config
   and on Target. Both guards mutation-checked (removed → tests fail).
+- Phase 2: `remote_script` kind `queryables` (`load_queryables FILE
+  '--collection_ids=[<repr>]'`, one shell word); `load`'s send path factored into
+  `_send`, shared by `load_queryables`. The real `fire` (dev dependency) parses the
+  generated words to `[id]` for 7 ids incl. quotes, backslash, non-ASCII, `[x]`, `1`;
+  mutation (bare id) fails all 7.

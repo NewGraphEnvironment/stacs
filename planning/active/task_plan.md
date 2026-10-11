@@ -54,15 +54,15 @@ Out of scope: a `stacs load queryables` subcommand (every consumer uses `registe
 
 ## Phase 2: The load over ssh
 
-- [ ] Tests first. Extend `remote_script` with kind `queryables`, which runs
+- [x] Tests first. Extend `remote_script` with kind `queryables`, which runs
       `<launcher> load_queryables "$__stacs_tmp" --collection_ids=<python-literal list of
       the one id>`, never `--delete_missing`. The same `STACS_LOADED 1 queryables` mark
       and the same bash-3.2 discipline apply. Extend the fake `pypgstac` in
       `tests/test_register.py` to accept and log this form.
-- [ ] A test that runs the real `fire` (new dev dependency) over the exact arguments
+- [x] A test that runs the real `fire` (new dev dependency) over the exact arguments
       generated, against a stub with `load_queryables`' signature. It asserts
       `collection_ids == [id]`, including for an id containing a quote or a space.
-- [ ] `load_queryables(t, collection_id, declared, dryrun, log)` in `register.py`. It
+- [x] `load_queryables(t, collection_id, declared, dryrun, log)` in `register.py`. It
       reuses `load`'s send, line-count and mark path, factored out rather than copied.
 
 ## Phase 3: Register and verify

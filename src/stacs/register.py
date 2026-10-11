@@ -33,7 +33,7 @@ from pathlib import Path
 
 from stacs.catalogue import (_read_url, collection_item_links, fetch_bodies, fetch_key,
                              published_digests)
-from stacs.queryables import QueryablesError, parse_queryables
+from stacs.queryables import QueryablesError, parse_queryables, queryables_document
 from stacs.validate import audit_items, parse_asset_keys
 from stacs.verify import (PAGE_SIZE, bodies_registered, bodies_serving, collection_state,
                           content_diff)
@@ -195,8 +195,14 @@ def ndjson_write(paths, out, expect_collection: str | None = None) -> int:
     return n
 
 
-def remote_script(t: Transport, kind: str, expected: int) -> str:
+def remote_script(t: Transport, kind: str, expected: int,
+                  collection_id: str | None = None) -> str:
     """The script the host runs, payload on stdin. Every caller value is quoted.
+
+    `kind` is `items`, `collections` or `queryables`. Queryables are loaded with
+    `load_queryables` for `collection_id` alone, and never with `--delete_missing`:
+    pypgstac replaces every row of a name that overlaps the collections it is given, so
+    naming any other collection would narrow or remove that collection's queryable.
 
     The line count is checked on the RECEIVING side: if the sender dies mid-stream the
     remote `cat` sees EOF, and pypgstac would load a syntactically valid short file and
@@ -223,9 +229,19 @@ def remote_script(t: Transport, kind: str, expected: int) -> str:
         ['pypgstac load items "$__stacs_tmp" --method upsert || exit 1']
         >>> script.splitlines()[-1]
         '__stacs_ok=1'
+        >>> import shlex
+        >>> script = remote_script(t, "queryables", 1, collection_id="my-collection")
+        >>> line = next(l for l in script.splitlines() if "load_queryables" in l)
+        >>> shlex.split(line)[1:4]
+        ['load_queryables', '$__stacs_tmp', "--collection_ids=['my-collection']"]
     """
-    if kind not in ("items", "collections"):
+    if kind not in ("items", "collections", "queryables"):
         raise ValueError(f"unknown load kind: {kind!r}")
+    if (kind == "queryables") != (collection_id is not None):
+        raise ValueError("a collection id is given with, and only with, a queryables load")
+    if kind == "queryables" and (not isinstance(collection_id, str)
+                                 or not collection_id.strip()):
+        raise ValueError(f"invalid collection id: {collection_id!r}")
     q = shlex.quote
     lines = [
         "set -euo pipefail",
@@ -267,7 +283,14 @@ def remote_script(t: Transport, kind: str, expected: int) -> str:
                    f'"FATAL: {t.password_env} is not set on the host" >&2; exit 1; fi')
         sub.append(f'export PGPASSWORD="${{{t.password_env}}}"')
     launcher = " ".join(q(a) for a in t.pypgstac)
-    sub.append(f'{launcher} load {kind} "$__stacs_tmp" --method upsert || exit 1')
+    if kind == "queryables":
+        # pypgstac is a `fire` CLI, which reads a list argument as a Python literal.
+        # The flag and its value are one shell word, so fire cannot take the value for
+        # a positional argument.
+        ids = q(f"--collection_ids={[collection_id]!r}")
+        sub.append(f'{launcher} load_queryables "$__stacs_tmp" {ids} || exit 1')
+    else:
+        sub.append(f'{launcher} load {kind} "$__stacs_tmp" --method upsert || exit 1')
     sub.append(f'echo "{LOADED_MARK} $__stacs_n {kind}"')
     lines += ["  " + l for l in sub]
     # A plain `( ... )`, never `( ... ) || exit 1`: bash suspends `set -e` for every
@@ -314,33 +337,63 @@ def load(t: Transport, kind: str, paths, expect_collection: str | None = None,
         if written != len(paths):
             raise RegisterError(f"assembled {written} line(s) from {len(paths)} path(s) "
                                 f"-- refusing to load")
-        log(f"{kind:<8}: {written}")
-        log(f"payload : {payload.stat().st_size} bytes")
-        log(f"target  : {t.db} db on {t.host}")
-        if dryrun:
-            log("[dryrun] nothing sent")
-            return 0
-        probe(t)
-        with open(payload, "rb") as fh:
-            r = subprocess.run(_ssh(t, "bash -c " + shlex.quote(
-                remote_script(t, kind, written))), stdin=fh, stdout=subprocess.PIPE,
-                text=True, errors="replace")
-        out_lines = r.stdout.splitlines()
-        for line in out_lines:
-            if not line.startswith(LOADED_MARK):
-                log(line)
-        if r.returncode != 0:
-            raise RegisterError(
-                f"load of {written} {kind} failed on {t.host} (exit {r.returncode}). "
-                + ("Nothing was loaded." if kind == "collections" else
-                   "Some of these items may have been committed before the failure "
-                   "(pypgstac commits per chunk); re-running is safe, every load is "
-                   "an upsert."))
-        if f"{LOADED_MARK} {written} {kind}" not in out_lines:
-            raise RegisterError(f"load of {written} {kind} on {t.host} exited 0 without "
-                                f"confirming it loaded; treat it as failed")
-        log(f"loaded   : {written} {kind}")
-    return written
+        return _send(t, kind, payload, written, dryrun, log)
+
+
+def load_queryables(t: Transport, collection_id: str, declared: dict,
+                    dryrun: bool = False, log=print) -> int:
+    """Upsert a catalogue's declared queryables for its own collection. Returns the
+    number of properties sent.
+
+    One document, one line, loaded in one transaction by pypgstac. The collection must
+    already be registered: pgstac refuses a queryable naming a collection it lacks.
+    """
+    t.check()
+    try:
+        declared = parse_queryables(declared)
+    except QueryablesError as e:
+        raise RegisterError(f"queryables: {e}") from e
+    if not declared:
+        log("nothing to register (0 queryables)")
+        return 0
+    with tempfile.TemporaryDirectory(prefix="stacs_load.") as work:
+        payload = Path(work) / "queryables.json"
+        payload.write_text(json.dumps(queryables_document(declared),
+                                      separators=(",", ":")) + "\n", encoding="utf-8")
+        log(f"queryables: {', '.join(sorted(declared))} for {collection_id}")
+        _send(t, "queryables", payload, 1, dryrun, log, collection_id=collection_id)
+    return len(declared)
+
+
+def _send(t: Transport, kind: str, payload: Path, lines: int, dryrun: bool, log,
+          collection_id: str | None = None) -> int:
+    """Run the remote script with `payload` on stdin, and require its success line."""
+    log(f"{kind:<8}: {lines}")
+    log(f"payload : {payload.stat().st_size} bytes")
+    log(f"target  : {t.db} db on {t.host}")
+    if dryrun:
+        log("[dryrun] nothing sent")
+        return 0
+    probe(t)
+    with open(payload, "rb") as fh:
+        r = subprocess.run(_ssh(t, "bash -c " + shlex.quote(
+            remote_script(t, kind, lines, collection_id))), stdin=fh,
+            stdout=subprocess.PIPE, text=True, errors="replace")
+    out_lines = r.stdout.splitlines()
+    for line in out_lines:
+        if not line.startswith(LOADED_MARK):
+            log(line)
+    if r.returncode != 0:
+        raise RegisterError(
+            f"load of {lines} {kind} failed on {t.host} (exit {r.returncode}). "
+            + ("Some of these items may have been committed before the failure "
+               "(pypgstac commits per chunk); re-running is safe, every load is "
+               "an upsert." if kind == "items" else "Nothing was loaded."))
+    if f"{LOADED_MARK} {lines} {kind}" not in out_lines:
+        raise RegisterError(f"load of {lines} {kind} on {t.host} exited 0 without "
+                            f"confirming it loaded; treat it as failed")
+    log(f"loaded   : {lines} {kind}")
+    return lines
 
 
 # =============================================================================
