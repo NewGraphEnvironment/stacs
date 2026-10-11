@@ -371,23 +371,105 @@ def collection_state(collection_file, collection_id: str, api: str,
         published = json.load(fh)
     session = session or requests.Session()
     url = f"{api.rstrip('/')}/collections/{urllib.parse.quote(collection_id)}"
+    registered = _get_or_absent(session, url, api)
+    if registered is ABSENT:
+        return "missing"
+    return "same" if body_digest(published) == body_digest(registered) else "changed"
+
+
+# What `_get_or_absent` returns for a 404. Not None: a 200 whose body is JSON `null` is a
+# broken answer, and must not read as "not there".
+ABSENT = object()
+
+
+def _get_or_absent(session, url: str, api: str):
+    """GET JSON with retries; ABSENT for a 404 from an API that answers /collections.
+
+    Only that 404 means absent. A wrong `api` path prefix 404s too, and must raise
+    rather than read as "not registered". Any other failure raises after retries.
+    """
     last = None
     for attempt in range(1, RETRIES + 1):
         try:
             resp = session.get(url, timeout=180)
             if resp.status_code == 404:
-                # Only a 404 from an API that answers /collections means "not
-                # registered". A wrong `api` path prefix 404s here too.
                 root = session.get(f"{api.rstrip('/')}/collections", timeout=180)
                 root.raise_for_status()
-                return "missing"
+                return ABSENT
             resp.raise_for_status()
-            registered = resp.json()
-            break
+            return resp.json()
         except requests.RequestException as exc:
             last = exc
             if attempt < RETRIES:
                 time.sleep(attempt * 2)
-    else:
-        raise RuntimeError(f"API request failed after {RETRIES} attempts: {last}") from last
-    return "same" if body_digest(published) == body_digest(registered) else "changed"
+    raise RuntimeError(f"API request failed after {RETRIES} attempts: {last}") from last
+
+
+# =============================================================================
+# Queryables and the collections an API serves
+# =============================================================================
+
+def queryables_served(collection_id: str, api: str, session=None) -> dict[str, dict]:
+    """{name: fragment} the API serves at /collections/<id>/queryables, for a
+    collection the API has.
+
+    A collection with no queryables at all is served `"properties": null`, which is
+    none. A 404 is not: for a collection that exists it means the API does not serve
+    queryables (stac-fastapi-pgstac without its filter extension), and read as "none" it
+    would report every declared queryable missing on every run. So it raises, as does
+    every other way of not reading the document.
+    """
+    session = session or requests.Session()
+    url = (f"{api.rstrip('/')}/collections/{urllib.parse.quote(collection_id)}"
+           f"/queryables")
+    doc = _get_or_absent(session, url, api)
+    if doc is ABSENT:
+        raise RuntimeError(f"{url} is not found: the API does not serve queryables for "
+                           f"{collection_id!r} (is its filter extension enabled?)")
+    props = doc.get("properties", ...) if isinstance(doc, dict) else ...
+    if props is None:
+        return {}
+    if not isinstance(props, dict):
+        raise RuntimeError(f"{url} returned no properties object")
+    return props
+
+
+def collections_listed(api: str, session=None) -> list[str]:
+    """Every collection id the API lists at /collections, following `next` links.
+
+    stac-fastapi pages /collections (10 to a page by default), so the first page alone
+    is a sample. Every way out other than "no next link" raises, as in _search_pages.
+    """
+    session = session or requests.Session()
+    url = f"{api.rstrip('/')}/collections"
+    seen_urls: set[str] = set()
+    out: list[str] = []
+    while True:
+        seen_urls.add(url)
+        doc = _get_or_absent(session, url, api)
+        cols = doc.get("collections") if isinstance(doc, dict) else None
+        if not isinstance(cols, list):
+            raise RuntimeError(f"{url} returned no collection list after {len(out)}")
+        for c in cols:
+            cid = c.get("id") if isinstance(c, dict) else None
+            if not isinstance(cid, str) or not cid:
+                raise RuntimeError(f"{url} listed a collection with no id")
+            if cid in out:
+                raise RuntimeError(f"collection {cid!r} listed twice: the paging "
+                                   f"overlapped")
+            out.append(cid)
+        links = doc.get("links")
+        if not isinstance(links, list):
+            raise RuntimeError(f"{url} returned no links after {len(out)} collections, "
+                               f"so whether there are more pages cannot be told")
+        nxt = next((l for l in links if isinstance(l, dict) and l.get("rel") == "next"),
+                   None)
+        if not nxt:
+            return out
+        href = nxt.get("href")
+        if not isinstance(href, str) or not href:
+            raise RuntimeError(f"/collections paging stopped early: 'next' link with no "
+                               f"href after {len(out)} collections")
+        url = urllib.parse.urljoin(url, href)
+        if url in seen_urls:
+            raise RuntimeError(f"/collections paging repeated {url} -- not advancing")

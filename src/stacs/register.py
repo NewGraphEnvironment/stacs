@@ -5,6 +5,11 @@ Upsert only, collection before items, and nothing in this module deletes.
 item in it, which is how a delete-then-load once took a catalogue offline. A load that
 fails here leaves the previous rows serving: an upsert never removes one.
 
+The one exception is pgstac's, not ours: a queryables load replaces every row of the name
+that the collection is served, including a global or shared one. It is made only for a
+queryable served differently from its declaration, never for one already served as
+declared, and another collection's queryable it changed fails the run.
+
 Writes go over ssh to the STAC host, which runs `pypgstac load` there: the database
 password never leaves the host, and a STAC API without the transaction extension cannot
 be written through anyway. The host, database, environment file and launcher are all the
@@ -33,10 +38,11 @@ from pathlib import Path
 
 from stacs.catalogue import (_read_url, collection_item_links, fetch_bodies, fetch_key,
                              published_digests)
-from stacs.queryables import QueryablesError, parse_queryables, queryables_document
+from stacs.queryables import (QueryablesError, fragment_digest, parse_queryables,
+                              queryables_diff, queryables_document)
 from stacs.validate import audit_items, parse_asset_keys
 from stacs.verify import (PAGE_SIZE, bodies_registered, bodies_serving, collection_state,
-                          content_diff)
+                          collections_listed, content_diff, queryables_served)
 
 MODES = ("verify", "drift", "all", "ids")
 
@@ -465,6 +471,7 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
     log(f"collection : {target.collection_id}")
     log(f"mode       : {mode}")
     log(f"asset audit: {describe_rules(target)}")
+    log(f"queryables : {', '.join(sorted(target.queryables)) or 'none declared'}")
 
     with tempfile.TemporaryDirectory(prefix="stacs.") as work:
         work = Path(work)
@@ -520,7 +527,10 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
         if mode in ("all", "ids"):
             log(f"to register: {len(todo)}")
             if dryrun:
-                log(f"[dryrun] would fetch {len(todo)} item(s) and upsert them")
+                log(f"[dryrun] would fetch {len(todo)} item(s) and upsert them"
+                    + (f", and queryables {', '.join(sorted(target.queryables))} "
+                       f"where they are not served as declared"
+                       if target.queryables else ""))
                 for i in todo[:3]:
                     log(f"  {i}\t{by_id[i]}")
                 return 0
@@ -531,6 +541,10 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
         if writes and not dryrun:
             _api_probe(target)
             probe(target.transport)
+            if mode in ("all", "ids") and target.queryables:
+                q_missing, q_changed = _queryables_drift(
+                    target, _collection_state(coll_file, target) != "missing")
+                log(f"queryables : {len(q_missing)} missing, {len(q_changed)} changed")
 
         # --- fetch ------------------------------------------------------------
         fetch_dir = work / "items"
@@ -561,12 +575,18 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
                 log(f"{label:<10} : {len(ids)}")
             coll_state = _collection_state(coll_file, target)
             log(f"collection : {coll_state}")
+            q_missing, q_changed = _queryables_drift(target, coll_state != "missing")
+            if target.queryables:
+                log(f"queryables : {len(q_missing)} missing, {len(q_changed)} changed")
             todo = sorted(set(missing) | set(changed))
 
         if mode == "verify":
             for name, ids in (("missing.txt", missing), ("orphaned.txt", orphaned),
                               ("changed.txt", changed)):
                 _write_list(out_dir, name, ids)
+            if target.queryables:
+                _write_list(out_dir, "queryables_missing.txt", q_missing)
+                _write_list(out_dir, "queryables_changed.txt", q_changed)
             if out_dir is not None:
                 Path(out_dir, "collection_state.txt").write_text(coll_state + "\n")
             rc = 0
@@ -585,21 +605,35 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
             elif coll_state == "missing":
                 warn("DRIFT: the collection is not registered")
                 rc = 1
+            for names, what in ((q_missing, "declared queryable(s) are not served"),
+                                (q_changed, "declared queryable(s) are served with a "
+                                            "different definition")):
+                if names:
+                    warn(f"DRIFT: {len(names)} {what}: {', '.join(names)}")
+                    rc = 1
             if rc == 0:
                 # Absence of drift is an affirmative result and is said out loud.
                 log(f"IN SYNC: {len(published)} published, all registered with the "
-                    f"published body, no orphans")
+                    f"published body, no orphans"
+                    + (f"; {len(target.queryables)} declared queryable(s) served as "
+                       f"declared" if target.queryables else ""))
             return rc
 
+        # Only what is not served as declared. Every pgstac queryables load deletes and
+        # reinserts the row, dropping any index an operator set on it, so a load of what
+        # is already served is not free.
+        load_q = bool(target.queryables) and bool(q_missing or q_changed)
         if mode == "drift":
             log(f"to register: {len(todo)}")
             if dryrun:
                 log(f"[dryrun] would upsert {len(todo)} item(s) (collection: "
-                    f"{coll_state})")
+                    f"{coll_state})"
+                    + (f" and queryables {', '.join(q_missing + q_changed)}"
+                       if load_q else ""))
                 for i in todo[:5]:
                     log(f"  {i}")
                 return 0
-            if not todo and coll_state == "same":
+            if not todo and coll_state == "same" and not load_q:
                 log("nothing to register -- already in sync")
                 return 0
 
@@ -619,12 +653,22 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
                 raise RegisterError("audit refused the load -- nothing written: "
                                     + "; ".join(audit.failures))
 
+        # A queryable load replaces every row of the name that this collection is
+        # served, which may be a global or shared row other collections serve too; the
+        # API cannot say which. Only a name served here already can be such a row, so
+        # only those are read from the other collections, now, before the first write.
+        others = _others_queryables(target, q_changed) if load_q and q_changed else {}
+
         # pgstac.items.collection REFERENCES collections(id): items with no collection
-        # row fail outright.
+        # row fail outright. pgstac refuses a queryable for a collection it lacks too.
+        # Queryables last, so a queryables load that fails cannot hold the items back.
         load(target.transport, "collections", [coll_file], log=log)
         if todo_paths:
             load(target.transport, "items", todo_paths,
                  expect_collection=target.collection_id, log=log)
+        if load_q:
+            load_queryables(target.transport, target.collection_id, target.queryables,
+                            log=log)
 
         # --- verify -----------------------------------------------------------
         log("verifying by set equality and content ...")
@@ -633,6 +677,14 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
             raise RegisterError(f"after registering, the collection reads {after!r}, "
                                 f"not 'same'")
         log("OK: the collection is served with the published body")
+        if load_q:
+            q_missing, q_changed = _queryables_drift(target, True)
+            if q_missing or q_changed:
+                raise RegisterError(
+                    f"after registering, declared queryable(s) are not served "
+                    f"{q_missing} or served with a different definition {q_changed}")
+            log(f"OK: {len(target.queryables)} declared queryable(s) served as declared")
+            _check_others(target, others)
 
         # pgstac serves items hydrated against their collection, so a collection whose
         # body changed can change how UNTOUCHED items read back. When it may have, and
@@ -681,8 +733,70 @@ def _api_probe(target) -> None:
                "fields": {"include": ["id"]}})
         root = requests.get(f"{target.api.rstrip('/')}/collections", timeout=60)
         root.raise_for_status()
+        if target.queryables:
+            # An API without the filter extension could never serve them, so the
+            # verification after the load would fail with the write already made.
+            # pgstac answers nothing at /queryables while it holds no collection, so a
+            # 404 there is the filter extension only when there are collections.
+            q = requests.get(f"{target.api.rstrip('/')}/queryables", timeout=60)
+            if q.status_code != 404 or collections_listed(target.api):
+                q.raise_for_status()
     except (RuntimeError, requests.RequestException) as e:
         raise RegisterError(f"the API at {target.api} does not answer: {e}") from e
+
+
+def _queryables_drift(target, registered: bool) -> tuple[list[str], list[str]]:
+    """(missing, changed) for the declared queryables; nothing read when none are, and
+    every one missing when the collection is not registered."""
+    if not target.queryables:
+        return [], []
+    if not registered:
+        return sorted(target.queryables), []
+    try:
+        return queryables_diff(target.queryables,
+                               queryables_served(target.collection_id, target.api))
+    except (RuntimeError, ValueError) as e:
+        raise RegisterError(f"could not compare the served queryables: {e}") from e
+
+
+def _others_queryables(target, names) -> dict[str, dict[str, str]]:
+    """{collection: {name: digest}} of these names as every OTHER collection serves
+    them. Names a collection does not serve are left out."""
+    try:
+        out = {}
+        for cid in collections_listed(target.api):
+            if cid == target.collection_id:
+                continue
+            served = queryables_served(cid, target.api)
+            out[cid] = {n: fragment_digest(served[n]) for n in names if n in served}
+        return out
+    except (RuntimeError, ValueError) as e:
+        raise RegisterError(f"could not read the queryables other collections serve, "
+                            f"before loading ours: {e}") from e
+
+
+def _check_others(target, before: dict[str, dict[str, str]]) -> None:
+    """Refuse to report success when the load took a queryable away from, or changed
+    it for, another collection: pypgstac replaces a global or shared row of the name
+    with this collection's own."""
+    names = sorted({n for v in before.values() for n in v})
+    if not names:
+        return
+    after = _others_queryables(target, names)
+    hit = []
+    for cid, names in before.items():
+        for name, digest in names.items():
+            now = after.get(cid, {}).get(name)
+            if now != digest:
+                hit.append(f"{cid} ({name} {'lost' if now is None else 'changed'})")
+    if hit:
+        raise RegisterError(
+            f"loading the queryables changed what other collections serve: "
+            f"{', '.join(hit)}. A global or shared queryable row of that name was "
+            f"replaced by this collection's own. A collection that declares the "
+            f"queryable in its own stacs.toml gets it back by re-registering, and its row "
+            f"then coexists with this one. A global row cannot come back beside a "
+            f"per-collection one: declare the queryable in each catalogue instead.")
 
 
 def _digests(links, fetch_dir):

@@ -36,6 +36,8 @@ def test_nothing_declared_is_an_empty_declaration(table):
     ({"collection": {"type": "string"}}, "column"),
     ({"x": {"type": "string", "pattern": "^\\d+$"}}, "backslash"),
     ({"x\\y": {"type": "string"}}, "backslash"),
+    ({"x": {"type": "string", "title": "a\x00b"}}, "NUL"),
+    ({"x\x00": {"type": "string"}}, "NUL"),
     ({"x": {"type": "string", "enum": []}}, "empty enum"),
     ({"x": {"type": "string", "enum": "a"}}, "enum"),
     ({"x": {"type": "string", "default": datetime.date(2026, 1, 1)}}, "JSON"),

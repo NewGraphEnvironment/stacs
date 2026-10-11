@@ -13,10 +13,13 @@ How it runs offline:
   - conftest.py refuses every lookup and connection outside loopback
 """
 
+import ast
 import json
 import os
 import threading
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 import pytest
 
@@ -81,12 +84,55 @@ class _StubAPI:
         self.on_load = None      # fn(api), run once after a collection load is logged
         self.load_log = None
         self.fail = {}           # path -> HTTP status to answer instead
+        self.others = []         # ids of other collections /collections lists
+        self.collections_page = 100
+        self.queryables = {}     # collection id -> {name: fragment}, per-collection rows
+        self.global_queryables = {}  # name -> fragment, served for every collection
+        self.apply_queryables = True
+        self.queryables_applied = 0
+        self.filter_off = False  # stac-fastapi-pgstac with its filter extension disabled
+        self.gets = []
 
     def sync(self):
         if self.on_load and self.load_log and self.load_log.exists() and \
                 "collections" in self.load_log.read_text():
             fn, self.on_load = self.on_load, None
             fn(self)
+        self._apply_queryables()
+
+    def _apply_queryables(self):
+        """What pgstac does with a queryables load: the row passed in wins, so a global
+        row of each name loaded goes."""
+        if not (self.load_log and self.load_log.exists()):
+            return
+        loads = [l.split() for l in self.load_log.read_text().splitlines()
+                 if l.startswith("queryables ")]
+        if len(loads) <= self.queryables_applied:
+            return
+        self.queryables_applied = len(loads)
+        if not self.apply_queryables:
+            return
+        props = json.loads(Path(f"{self.load_log}.queryables.json").read_text())[
+            "properties"]
+        (cid,) = ast.literal_eval(loads[-1][4][len("ids="):])
+        for name in props:
+            self.global_queryables.pop(name, None)
+        self.queryables.setdefault(cid, {}).update(json.loads(json.dumps(props)))
+
+    def collection_ids(self):
+        own = [self.collection["id"]] if self.collection is not None else []
+        return own + list(self.others)
+
+    def served_queryables(self, cid):
+        """None for a 404. pgstac's get_queryables is an aggregate, so a collection
+        with no rows is served `"properties": null`; stac-fastapi-pgstac 404s only an
+        unknown collection, or every collection when its filter extension is off.
+
+        This models research/pgstac_queryables.md, so the tests check stacs against
+        that note, not against pgstac itself."""
+        if self.filter_off or cid not in self.collection_ids():
+            return None
+        return {**self.global_queryables, **self.queryables.get(cid, {})}
 
 
 def _handler(api):
@@ -103,12 +149,39 @@ def _handler(api):
             self.wfile.write(data)
 
         def do_GET(self):
+            api.gets.append(self.path)
             api.sync()
             if self.path in api.fail:
                 self._send(api.fail[self.path], {"code": "ServerError"})
                 return
-            if self.path == "/collections":
-                self._send(200, {"collections": []})
+            path, _, query = self.path.partition("?")
+            if path == "/collections":
+                ids = api.collection_ids()
+                start = int(urllib.parse.parse_qs(query).get("offset", ["0"])[0])
+                page = ids[start:start + api.collections_page]
+                links = [{"rel": "self", "href": self.path}]
+                if start + api.collections_page < len(ids):
+                    links.append({"rel": "next", "href":
+                                  f"/collections?offset={start + api.collections_page}"})
+                self._send(200, {"collections": [{"id": i} for i in page],
+                                 "links": links})
+                return
+            if path == "/queryables":
+                # get_queryables(NULL) is NULL while there is no collection: a 404.
+                if api.filter_off or not api.collection_ids():
+                    self._send(404, {"code": "NotFoundError"})
+                else:
+                    self._send(200, {"type": "object", "properties": None})
+                return
+            prefix = "/collections/"
+            if path.startswith(prefix) and path.endswith("/queryables"):
+                cid = urllib.parse.unquote(path[len(prefix):-len("/queryables")])
+                props = api.served_queryables(cid)
+                if props is None:
+                    self._send(404, {"code": "NotFoundError"})
+                else:
+                    self._send(200, {"$id": "x", "type": "object",
+                                     "properties": props or None})
                 return
             prefix = "/collections/"
             if self.path.startswith(prefix) and "/" not in self.path[len(prefix):]:
@@ -1102,3 +1175,235 @@ def test_the_real_fire_reads_the_collection_ids_as_a_list_of_that_one_id(collect
     assert words[0] == "fake_pypgstac"
     got = fire.Fire(StubCLI, command=words[1:])
     assert got == ("$__stacs_tmp", [collection_id], False, None)
+
+
+# =============================================================================
+# Queryables: verify, drift, all, and other collections
+# =============================================================================
+
+def _q_in_sync(api, env, items, queryables=QUERYABLES):
+    _in_sync(api, items)
+    api.queryables[COLL] = json.loads(json.dumps(queryables))
+    api.load_log = env / "loads.log"
+
+
+@pytest.mark.parametrize("mode", ["verify", "drift", "all"])
+def test_no_queryables_declared_reads_no_queryables(env, api, mode):
+    """A catalogue that declares none runs as it did before queryables existed, even
+    on an API that serves none."""
+    items = _items(2)
+    _in_sync(api, items)
+    api.filter_off = True
+    api.load_log, api.on_load = env / "loads.log", lambda a: _in_sync(a, items)
+    out = env / "report"
+    r = _run(env, mode, api.url, items, out_dir=out if mode == "verify" else None)
+    assert r.rc == 0, r.all
+    assert "queryables : none declared" in r.out
+    assert not [g for g in api.gets if "queryables" in g]
+    assert "queryables" not in [l[0] for l in r.loads]
+    if mode == "verify":
+        assert not list(out.glob("queryables_*"))
+
+
+def test_verify_in_sync_with_a_reordered_enum(env, api):
+    q = {"x:kind": {"type": "string", "enum": ["b", "a"]}}
+    items = _items(2)
+    _q_in_sync(api, env, items, {"x:kind": {"type": "string", "enum": ["a", "b"]}})
+    r = _run(env, "verify", api.url, items, queryables=q)
+    assert r.rc == 0, r.all
+    assert "1 declared queryable(s) served as declared" in r.out
+
+
+def test_verify_reports_missing_and_changed_queryables(env, api):
+    q = {**QUERYABLES, "x:gsd": {"type": "number"}, "x:new": {"type": "string"}}
+    items = _items(2)
+    _q_in_sync(api, env, items, {**QUERYABLES, "x:gsd": {"type": "integer"}})
+    out = env / "report"
+    r = _run(env, "verify", api.url, items, queryables=q, out_dir=out)
+    assert r.rc == 1
+    assert "not served: x:new" in r.err
+    assert "different definition: x:gsd" in r.err
+    assert (out / "queryables_missing.txt").read_text() == "x:new\n"
+    assert (out / "queryables_changed.txt").read_text() == "x:gsd\n"
+
+
+def test_verify_reads_a_collection_with_no_queryables_as_none_served(env, api):
+    items = _items(1)
+    _in_sync(api, items)
+    r = _run(env, "verify", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1 and "not served: lidarbc:delivery" in r.err
+
+
+def test_verify_reads_a_404_for_an_existing_collection_as_no_filter_extension(env, api):
+    """Read as "none served", it would report every declaration missing, forever."""
+    items = _items(1)
+    _q_in_sync(api, env, items)
+    api.filter_off = True
+    r = _run(env, "verify", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1 and "filter extension" in r.err
+    assert "DRIFT" not in r.err
+
+
+def test_verify_of_an_unregistered_collection_reports_its_queryables_missing(env, api):
+    items = _items(1)
+    r = _run(env, "verify", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1 and "not served: lidarbc:delivery" in r.err
+    assert not [g for g in api.gets if "queryables" in g]
+
+
+def test_verify_refuses_an_unreadable_queryables_document(env, api, no_retry_sleep):
+    items = _items(1)
+    _q_in_sync(api, env, items)
+    api.fail[f"/collections/{COLL}/queryables"] = 500
+    r = _run(env, "verify", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1 and "could not compare the served queryables" in r.err
+
+
+def test_all_loads_collection_then_items_then_queryables_and_verifies(env, api):
+    """Queryables last: a queryables load that fails must not hold the items back."""
+    items = _items(2)
+    api.load_log, api.on_load = env / "loads.log", lambda a: _in_sync(a, items)
+    r = _run(env, "all", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 0, r.all
+    assert [l[0] for l in r.loads] == ["collections", "items", "queryables"]
+    assert "1 declared queryable(s) served as declared" in r.out
+    assert api.queryables[COLL] == QUERYABLES
+
+
+def test_all_does_not_reload_queryables_served_as_declared(env, api):
+    """Every pgstac queryables load deletes and reinserts the row, dropping an index an
+    operator set on it."""
+    items = _items(2)
+    _q_in_sync(api, env, items)
+    api.on_load = lambda a: _in_sync(a, items)
+    r = _run(env, "all", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 0, r.all
+    assert [l[0] for l in r.loads] == ["collections", "items"]
+
+
+def test_all_bootstraps_queryables_into_an_empty_database(env, api):
+    """pgstac 404s /queryables while it holds no collection; the probe must not take
+    that for a missing filter extension."""
+    items = _items(2)
+    api.load_log, api.on_load = env / "loads.log", lambda a: _in_sync(a, items)
+    r = _run(env, "all", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 0, r.all
+    assert "/queryables" in api.gets
+
+
+def test_queryables_not_served_after_the_load_fail_the_run(env, api):
+    items = _items(2)
+    api.load_log, api.on_load = env / "loads.log", lambda a: _in_sync(a, items)
+    api.apply_queryables = False
+    r = _run(env, "all", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1 and "after registering, declared queryable(s)" in r.err
+
+
+def test_drift_in_sync_with_queryables_writes_nothing(env, api):
+    items = _items(2)
+    _q_in_sync(api, env, items)
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 0, r.all
+    assert "already in sync" in r.out and r.writes == 0
+
+
+def test_drift_loads_queryables_that_are_missing_and_nothing_else(env, api):
+    items = _items(2)
+    _in_sync(api, items)
+    api.load_log = env / "loads.log"
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 0, r.all
+    assert [l[0] for l in r.loads] == ["collections", "queryables"]
+
+
+def test_drift_with_queryables_in_sync_does_not_reload_them(env, api):
+    items = _items(2)
+    _q_in_sync(api, env, items)
+    api.items.pop("a1")
+    api.on_load = lambda a: _in_sync(a, items)
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 0, r.all
+    assert [l[0] for l in r.loads] == ["collections", "items"]
+
+
+def test_drift_dryrun_names_the_queryables_it_would_load(env, api):
+    items = _items(1)
+    _in_sync(api, items)
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES, dryrun=True)
+    assert r.rc == 0 and "queryables lidarbc:delivery" in r.out and r.writes == 0
+
+
+def test_all_dryrun_names_the_queryables(env):
+    r = _run(env, "all", items=_items(1), queryables=QUERYABLES, dryrun=True)
+    assert r.rc == 0 and "and queryables lidarbc:delivery" in r.out
+
+
+@pytest.mark.parametrize("mode", ["all", "drift"])
+def test_an_api_without_queryables_is_refused_before_any_write(env, api, mode):
+    api.others = ["stac-other-a"]
+    api.filter_off = True
+    r = _run(env, mode, api.url, _items(1), queryables=QUERYABLES)
+    assert r.rc == 1 and "does not answer" in r.err and r.writes == 0
+
+
+def test_a_name_not_served_here_cannot_touch_another_collection_so_none_is_read(
+        env, api):
+    """pgstac replaces only rows of the name that this collection is served, so a name
+    not served here is loaded without reading any other collection."""
+    items = _items(1)
+    api.others = ["stac-other-a", "stac-other-b"]
+    api.queryables["stac-other-b"] = json.loads(json.dumps(QUERYABLES))
+    _in_sync(api, items)
+    api.load_log = env / "loads.log"
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 0, r.all
+    assert api.queryables["stac-other-b"] == QUERYABLES
+    assert not [g for g in api.gets if "stac-other" in g]
+
+
+def test_changing_our_own_row_leaves_another_collections_own_row(env, api):
+    """Rows for disjoint collections coexist. /collections pages one at a time here, so
+    the enumeration has to follow next links to reach the other collections."""
+    items = _items(1)
+    api.others = ["stac-other-a", "stac-other-b"]
+    api.collections_page = 1
+    api.queryables["stac-other-b"] = json.loads(json.dumps(QUERYABLES))
+    _in_sync(api, items)
+    api.queryables[COLL] = {"lidarbc:delivery": {"type": "integer"}}
+    api.load_log = env / "loads.log"
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 0, r.all
+    assert f"/collections/stac-other-b/queryables" in api.gets
+    assert api.queryables["stac-other-b"] == QUERYABLES
+
+
+def test_a_load_that_takes_a_global_queryable_from_others_fails_loudly(env, api):
+    """pypgstac replaces a global row of the name with this collection's own, so
+    every other collection stops serving it. The API cannot show that before the load;
+    after it, the run must not report success."""
+    items = _items(1)
+    api.others = ["stac-other-a", "stac-other-b"]
+    api.collections_page = 1
+    api.global_queryables = json.loads(json.dumps(QUERYABLES))
+    _in_sync(api, items)
+    api.queryables[COLL] = {}
+    api.global_queryables["lidarbc:delivery"]["title"] = "global"
+    api.load_log = env / "loads.log"
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1, r.all
+    assert "stac-other-a (lidarbc:delivery lost)" in r.err
+    assert "stac-other-b (lidarbc:delivery lost)" in r.err
+    assert "re-registering" in r.err and "A global row cannot come back" in r.err
+    # Every other write had already been made: queryables come last.
+    assert [l[0] for l in r.loads] == ["collections", "queryables"]
+
+
+def test_other_collections_that_cannot_be_listed_refuse_before_any_write(env, api,
+                                                                          no_retry_sleep):
+    items = _items(1)
+    _in_sync(api, items)
+    api.queryables[COLL] = {"lidarbc:delivery": {"type": "integer"}}
+    api.others = ["stac-other-a"]
+    api.fail["/collections/stac-other-a/queryables"] = 500
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1 and "before loading ours" in r.err and r.writes == 0

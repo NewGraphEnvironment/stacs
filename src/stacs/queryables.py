@@ -14,7 +14,7 @@ row too, so a catalogue that named another's collection would narrow or remove t
 catalogue's queryable every time it registered. Rows for disjoint collections coexist.
 
 Every refusal here is a declaration pgstac would not serve as written, which would read
-as drift on every verify. research/pgstac_queryables.md has the source for each.
+as drift on every verify.
 """
 
 import hashlib
@@ -42,9 +42,9 @@ def _check_json(value, where: str) -> None:
         for k, v in value.items():
             if not isinstance(k, str):
                 raise QueryablesError(f"{where}: key {k!r} is not a string")
-            if "\\" in k:
-                raise QueryablesError(f"{where}: key {k!r} contains a backslash, which "
-                                      f"pypgstac's reader rewrites before loading")
+            if "\\" in k or "\x00" in k:
+                raise QueryablesError(f"{where}: key {k!r} contains a backslash or a NUL, "
+                                      f"which pypgstac or Postgres would not keep")
             _check_json(v, f"{where}.{k}")
     elif isinstance(value, list):
         for i, v in enumerate(value):
@@ -53,6 +53,9 @@ def _check_json(value, where: str) -> None:
         if "\\" in value:
             raise QueryablesError(f"{where}: {value!r} contains a backslash, which "
                                   f"pypgstac's reader rewrites before loading")
+        if "\x00" in value:
+            raise QueryablesError(f"{where}: {value!r} contains a NUL, which Postgres "
+                                  f"jsonb refuses")
     elif isinstance(value, float):
         if not math.isfinite(value):
             raise QueryablesError(f"{where}: {value!r} has no JSON form")

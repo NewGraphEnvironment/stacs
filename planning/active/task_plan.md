@@ -67,36 +67,35 @@ Out of scope: a `stacs load queryables` subcommand (every consumer uses `registe
 
 ## Phase 3: Register and verify
 
-- [ ] Tests first, with the stub API extended: `/queryables`,
-      `/collections/<id>/queryables`, several collections, paging on `/collections`. The
-      fake pypgstac applies a queryables load to the stub, including a mode that mimics
-      "the row passed wins" against another collection's queryable.
-- [ ] `verify.py`:
-      - `queryables_served(collection_id, api)`: GET with retries. A 404 counts as "none"
-        only if `/collections` answers, as `collection_state` does.
-      - `queryables_diff(declared, served) -> (missing, changed)`: by digest of each
-        fragment, with `enum` compared as a sorted, deduplicated set. Undeclared served
-        names are not reported, because pgstac's global defaults cannot be told apart
-        from them.
-- [ ] `_run`:
-      - Log the declared names.
-      - `_api_probe` also GETs `/queryables` when any are declared, so an API without
-        the filter extension is refused before writing.
-      - **verify** reports `DRIFT` for missing or changed queryables (exit 1) and writes
-        `queryables_missing.txt` and `queryables_changed.txt` to `--out-dir`.
-      - **drift** loads the queryables when they differ, and "already in sync" now also
-        requires them to be in sync.
-      - **all** and **ids** load them whenever any are declared.
-      - Order: collection, then queryables, then items.
-      - After the load, the collection's served queryables must equal the declaration,
-        or `RegisterError`.
-- [ ] A guard for other collections. Before the load, enumerate `/collections`
-      (following `next` links) and record each other collection's served definitions of
-      the declared names. After the load, re-read them. Any that were lost or changed
-      raise a `RegisterError` naming the collections, with the remedy (re-register them).
-      It cannot prevent the replacement, because the API cannot tell a global row from
-      a per-collection one; it can make the damage loud.
-- [ ] Mutation-check each new guard: remove it, watch a test fail, restore it.
+Revised after the plan review (`review-plan.md`; dispositions in `findings.md`).
+
+- [x] Tests first, with the stub API extended: `/queryables`,
+      `/collections/<id>/queryables`, several collections, paging on `/collections`, a GET
+      log, filter-off mode, and pgstac's serving rules (an existing collection with no
+      rows is `"properties": null`; root `/queryables` 404s with no collections). The
+      fake pypgstac applies a queryables load to the stub, the row passed in taking the
+      global row of its name.
+- [x] `verify.py`: `queryables_served` (`null` is none; a 404 for an existing collection
+      raises "filter extension?"); `collections_listed` (follows `next` hrefs, never stops
+      short silently); `_get_or_absent` shared with `collection_state`, with an `ABSENT`
+      sentinel so a JSON `null` body is not "not there".
+- [x] `queryables.py`: `fragment_digest` with `enum` compared as a set; `queryables_diff`
+      reports only declared names (missing, changed). Core columns include
+      `start_datetime`; empty `enum` and NUL are refused.
+- [x] `_run`: declared names logged; a catalogue that declares none makes no queryables
+      request. Verify reports DRIFT and writes `queryables_*.txt` only when something is
+      declared. Every writing mode loads queryables **only when missing or changed**
+      (each pgstac load deletes and reinserts the row, dropping an operator's index).
+      Order: collection, then items, then queryables, so a queryables failure cannot hold
+      items back. Post-load: served must equal declared. `_api_probe` checks root
+      `/queryables`, accepting its 404 only when `/collections` lists none (bootstrap).
+- [x] Other-collections guard, scoped by the review's S1: only names already served on
+      this collection with a different definition can sit in a global or shared row.
+      For those, every other collection is read before the first write and again after
+      the load. A loss or change fails the run, with a remedy that says a global row
+      cannot come back.
+- [x] Mutation-checked: 21 mutations, each caught (one survived until a NUL test was
+      added).
 
 ## Phase 4: Docs and release notes
 

@@ -25,6 +25,43 @@ Durable verdict in `research/pgstac_queryables.md`. Additions found while readin
 list; refused either way. An empty `enum` is served absent (`nullif_jsonbnullempty`).
 stac-fastapi-pgstac 404s the queryables endpoint when `get_queryables` returns NULL.
 
+## Plan review dispositions (review-plan.md)
+
+Probed before acting: G1 by reading `get_queryables` (`SELECT CASE ... jsonb_object_agg
+... END FROM g`, an aggregate with no GROUP BY, so one row over an empty set); B1 in
+stac-fastapi-pgstac `models/extensions.py` (filter is one of `ENABLED_EXTENSIONS`); B2 and
+S1 from the SQL already read.
+
+| finding | disposition |
+|---|---|
+| B1 filter-off 404 read as "none" | fixed: a 404 for an existing collection raises; an unregistered collection is not asked |
+| B2 root /queryables 404 on an empty db | fixed: accepted only when /collections lists none; bootstrap test |
+| G1 zero rows is `properties: null` | fixed, in the stub too; research note corrected |
+| G2 no declaration, no requests | test over verify/drift/all with a GET log; out-dir files only when declared |
+| G3 load only when it differs | adopted in every writing mode |
+| G4 register docstring | amended |
+| G5 dryrun | done in Phase 3 (all/ids and drift both name the queryables) |
+| G6 queryables-only drift upserts the collection | kept deliberately: every write run upserts the collection, as it does for item-only drift |
+| G7 docstring names research/ | removed |
+| G8 plan text | Phase 3 rewritten |
+| G9 NUL | refused, tested, mutation-checked |
+| O1 queryables last | adopted |
+| O2 snapshot before any write | already the case; kept |
+| S1 guard only names served here | adopted; test that no other collection is read otherwise |
+| S2 remedy wrong for a global row | message rewritten |
+| S3 complete enumeration, 404 never "lost" | collections_listed guards; a 404 now raises |
+| A1-A6 | A1 matches the code (enum as a set); A2 permissions and Acc1 (live run) are post-merge, in the PR body for stac_dem_bc#55; A6 caching: not new, as collection_state has the same exposure |
+| H2 stub models the research note | said in the stub's docstring |
+| Sc1 endpoint naming | the issue edit names /collections/<id>/queryables (see Phase 4) |
+| Sc2 ids mode | harmless with diff gating; kept, as ids mode loads the collection too |
+
+## Defects found by the tests written for the review
+
+- `_check_others` with nothing snapshotted still enumerated every collection's
+  queryables (test: a name not served here reads no other collection).
+- `_get_or_absent` returned None for both a 404 and a JSON `null` body, so a broken
+  collection answer would have read as `missing`; now an `ABSENT` sentinel.
+
 ## Errors Encountered
 
 | Error | Resolution |

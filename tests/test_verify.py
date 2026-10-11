@@ -553,3 +553,74 @@ def test_a_lone_surrogate_in_a_key_raises_a_named_error():
 def test_a_digest_error_is_a_value_error():
     """Callers that already refuse an unreadable body (ValueError) refuse this too."""
     assert issubclass(v.DigestError, ValueError)
+
+
+# =============================================================================
+# Queryables and the collection list
+# =============================================================================
+
+class _UrlSession:
+    """GET answers by exact URL suffix after the API base."""
+    def __init__(self, routes):
+        self.routes, self.calls = routes, []
+
+    def get(self, url, timeout=None):
+        self.calls.append(url)
+        status, payload = self.routes[url.replace("http://api.example.invalid", "")]
+        return _FakeResponse(payload, status)
+
+
+API = "http://api.example.invalid"
+
+
+@pytest.mark.parametrize("payload, want", [
+    ({"properties": {"a": {"type": "string"}}}, {"a": {"type": "string"}}),
+    # pgstac's get_queryables is an aggregate: a collection with no rows is null.
+    ({"properties": None}, {}),
+])
+def test_queryables_served(payload, want):
+    s = _UrlSession({"/collections/c/queryables": (200, payload)})
+    assert v.queryables_served("c", API, session=s) == want
+
+
+@pytest.mark.parametrize("payload", [{}, {"properties": []}, [], None])
+def test_queryables_served_refuses_a_document_with_no_properties_object(payload):
+    s = _UrlSession({"/collections/c/queryables": (200, payload)})
+    with pytest.raises(RuntimeError, match="no properties object"):
+        v.queryables_served("c", API, session=s)
+
+
+def test_a_queryables_404_from_an_answering_api_is_no_filter_extension():
+    s = _UrlSession({"/collections/c/queryables": (404, {}),
+                     "/collections": (200, {"collections": []})})
+    with pytest.raises(RuntimeError, match="filter extension"):
+        v.queryables_served("c", API, session=s)
+
+
+def test_collections_listed_follows_next_links():
+    s = _UrlSession({
+        "/collections": (200, {"collections": [{"id": "a"}], "links": [
+            {"rel": "next", "href": "/collections?offset=1"}]}),
+        "/collections?offset=1": (200, {"collections": [{"id": "b"}], "links": []}),
+    })
+    assert v.collections_listed(API, session=s) == ["a", "b"]
+
+
+@pytest.mark.parametrize("routes, match", [
+    ({"/collections": (200, {"collections": [{"id": "a"}]})}, "no links"),
+    ({"/collections": (200, {"links": []})}, "no collection list"),
+    ({"/collections": (200, {"collections": [{}], "links": []})}, "no id"),
+    ({"/collections": (200, {"collections": [{"id": "a"}], "links": [
+        {"rel": "next", "href": "/collections"}]})}, "repeated|twice"),
+    ({"/collections": (200, {"collections": [{"id": "a"}], "links": [
+        {"rel": "next"}]})}, "no href"),
+])
+def test_collections_listed_never_stops_short_silently(routes, match):
+    with pytest.raises(RuntimeError, match=match):
+        v.collections_listed(API, session=_UrlSession(routes))
+
+
+def test_a_collection_served_as_json_null_is_not_missing(tmp_path):
+    s = _GetSession({"collections/c": (200, None), "collections": (200, {})})
+    with pytest.raises(TypeError):
+        v.collection_state(_coll_file(tmp_path, COLL_DOC), "c", api=API, session=s)

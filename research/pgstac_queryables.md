@@ -25,6 +25,8 @@ It reads the first JSON document in `FILE` and loads one row per member of its
 | core columns (`id`, `geometry`, `datetime`, `end_datetime`, `collection`; 0.10.0 also `start_datetime`) | skipped silently | skipped silently (`queryable_column`) | refuses to declare them: a skipped name would verify as missing forever |
 | a `properties.` prefix | kept | stripped (`strip_properties_prefix`) | refuses it |
 | replacing an existing row of the name | deletes the row with exactly these `collection_ids` **and the global row** (`collection_ids IS NULL`), then inserts | deletes **every conflicting row**: the global one and every row whose collections overlap (`conflicting_queryables`), then inserts | loads for the catalogue's own collection only, and checks after the load that no other collection lost or changed a declared name |
+| a row shared by this collection and another | kept, so the insert trigger raises `unique_violation` and nothing loads | replaced by this collection's own row | queryables load after the items, so a failure cannot hold the items back |
+| the index setting (`property_index_type`) | every load deletes and reinserts, so the new row has none unless `--index_fields` names it | same; the delete trigger drops the reference index | never passes `--index_fields`; loads a name only when it is missing or served differently, never one already served as declared |
 | `--delete_missing` | deletes the collection's rows the file does not list | same, via `delete_missing_queryables` | never passed: upsert only |
 | backslashes | `read_json` replaces `\\` with `\` in each line before parsing, as it does for items ([`pgstac_round_trip.md`](pgstac_round_trip.md)) | same | refuses a declaration containing a backslash |
 
@@ -34,10 +36,22 @@ replaces a global row of the same name, so every other collection stops serving 
 serving it. Rows for disjoint collections coexist, which is why each catalogue declares
 its own and never names another's.
 
-The API cannot show whether a served queryable comes from a global row or a
-per-collection one: both appear in every collection they cover. So stacs cannot refuse
-before the write. It records what every other collection serves for the declared names
-and compares that again afterwards.
+**Which loads can harm another collection.** The rows a load replaces are exactly the
+rows of the name that are served on *this* collection: 0.10.0's `conflicting_queryables`
+is "global, or overlapping these collections", and 0.9.x deletes the exact match and the
+global row. So a declared name that is not served here yet cannot touch any other
+collection. A name served here with a different definition may come from this
+collection's own row, a shared row or a global one, and the API cannot show which,
+because every collection a row covers serves it. For those names only, stacs reads what
+every other collection serves before the load and again after it, and fails the run if
+any lost or changed one. Refusing before the write would also refuse the ordinary case: two
+catalogues each declaring the same key for themselves, one of which later changes it.
+
+A collection that declares the queryable itself gets it back by re-registering. A global
+row cannot come back beside a per-collection one: in 0.10.0 a global row conflicts with
+every row of its name, and in 0.9.x the insert trigger refuses it. Losing a global row
+also changes root `/queryables` and every collection created later, which no check made
+after the load can see.
 
 Upstream `main` has since removed pypgstac. Its replacement is a Rust `pgstac` CLI,
 `pgstac load-queryables FILE --collection-ids a,b`. stacs drives the pypgstac form, which
@@ -46,9 +60,20 @@ is what released hosts run.
 ## Serving
 
 stac-fastapi-pgstac answers `/collections/<id>/queryables` with `get_queryables(<id>)` and
-sets `$id` to the request URL. When that returns nothing it answers **404**, including for
-an existing collection with no queryable rows at all. pgstac seeds global defaults, so in
-practice that does not happen.
+sets `$id` to the request URL. When that returns NULL it answers **404**.
+
+- For an **existing collection with no queryable rows**, `get_queryables` is not NULL:
+  it is an aggregate with no `GROUP BY`, so an empty set still yields one row, with
+  `"properties": null`. stacs reads that as none served.
+- `get_queryables` returns NULL only for a collection that does not exist. stacs never
+  asks about one: a collection that is not registered has every declaration missing.
+- With the filter extension disabled (`ENABLED_EXTENSIONS` without `filter`), the route
+  itself 404s. For an existing collection, then, a 404 means "this API does not serve
+  queryables", never "none". stacs raises rather than report every declaration missing
+  forever.
+- Root `/queryables` is `get_queryables(NULL)`, which is NULL while the database holds
+  no collection at all, so it 404s on a fresh database. The pre-write probe accepts that
+  404 only when `/collections` lists none.
 
 `get_queryables` merges every row of a name that covers the collection:
 
