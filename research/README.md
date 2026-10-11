@@ -9,6 +9,7 @@ Naming: `<topic>.md`, revised in place, from 2026-10-06.
 |---|---|
 | [`pgstac_round_trip.md`](pgstac_round_trip.md) | what pgstac changes about a STAC body between load and serve, what the digest canonicalises, and why RFC 8785 |
 | [`pgstac_queryables.md`](pgstac_queryables.md) | how pypgstac loads queryables (the row passed in wins), how the API serves them, and what stacs guards |
+| [`pypgstac_database_query.md`](pypgstac_database_query.md) | asking pypgstac which database its connection reaches (`_db query_one`), and what the answer cannot see |
 
 ## Related work
 
