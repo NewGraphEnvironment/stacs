@@ -33,21 +33,21 @@ anything is written.
 
 ## Phase 1: Tests first (`tests/test_register.py`)
 
-- [ ] Fake pypgstac answers `_db query_one 'SELECT current_database()'` (exact args, else
+- [x] Fake pypgstac answers `_db query_one 'SELECT current_database()'` (exact args, else
       exit 2): it prints `${FAKE_PYPGSTAC_DB-$PGDATABASE}` and exits
       `${FAKE_PYPGSTAC_DB_RC:-0}`. It logs to `$SSH_LOG.dbq`, not `$SSH_LOG`, so
       `Run.loads` and `_StubAPI` stay unchanged. The two new variables are cleared in the
       `env` fixture.
-- [ ] A launcher that reaches another database is refused on the host and loads nothing:
+- [x] A launcher that reaches another database is refused on the host and loads nothing:
       `all` returns rc 1, the error names both databases, and `r.loads == []`. The
       collection is never loaded.
-- [ ] A failing database query is refused and loads nothing.
-- [ ] Python requires the database in the mark. A remote printing the old
+- [x] A failing database query is refused and loads nothing.
+- [x] Python requires the database in the mark. A remote printing the old
       `STACS_LOADED 1 collections`, or `... collections otherdb`, raises "without
       confirming". This runs through a monkeypatched `remote_script`, so the Python check
       is exercised without the host check.
-- [ ] A successful load logs the database it reached.
-- [ ] Real `fire` over the shell-split words of the query line, against a stub CLI with a
+- [x] A successful load logs the database it reached.
+- [x] Real `fire` over the shell-split words of the query line, against a stub CLI with a
       `_db` attribute, calls `query_one("SELECT current_database()")`. Fire prints a str
       result as the bare value on stdout, checked with capsys. This is the same pattern
       as `test_the_real_fire_reads_the_collection_ids_as_a_list_of_that_one_id`.
