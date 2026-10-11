@@ -412,11 +412,16 @@ def _send(t: Transport, kind: str, payload: Path, lines: int, dryrun: bool, log,
     with open(payload, "rb") as fh:
         r = subprocess.run(_ssh(t, "bash -c " + shlex.quote(
             remote_script(t, kind, lines, collection_id))), stdin=fh,
-            stdout=subprocess.PIPE, text=True, errors="replace")
-    out_lines = r.stdout.splitlines()
+            stdout=subprocess.PIPE)
+    # Split on "\n" alone, never `text=True` or `splitlines()`: universal newlines and
+    # splitlines also break at "\r", "\x1c", "\x85" ..., which would cut
+    # `STACS_LOADED 1 items stacdb\r` down to a line matching the mark exactly.
+    out_lines = r.stdout.decode("utf-8", errors="replace").split("\n")
+    if out_lines[-1] == "":
+        out_lines.pop()
     for line in out_lines:
         if not line.startswith(LOADED_MARK):
-            log(line)
+            log(line.rstrip("\r"))
     if r.returncode != 0:
         raise RegisterError(
             f"load of {lines} {kind} failed on {t.host} (exit {r.returncode}). "

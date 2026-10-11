@@ -521,12 +521,16 @@ def test_a_database_query_that_fails_loads_nothing(env, api, monkeypatch):
 
 @pytest.mark.parametrize("mark", ["STACS_LOADED 1 collections",
                                   "STACS_LOADED 1 collections otherdb",
-                                  "STACS_LOADED 1 collections stacdb extra"])
+                                  "STACS_LOADED 1 collections stacdb extra",
+                                  "STACS_LOADED 1 collections stacdb\r",
+                                  "STACS_LOADED 1 collections stacdb\x1cother",
+                                  "STACS_LOADED 1 collections stacdb\u0085"])
 def test_a_mark_that_does_not_name_the_database_is_not_a_load(env, monkeypatch, mark):
     """Python's half of the check, with the host's taken away: the mark must name
-    exactly `db`."""
+    exactly `db`. A line separator Python knows and the shell does not (`\r`, `\x1c`,
+    `\x85`) must not cut a longer name down to `db`."""
     monkeypatch.setattr(reg, "remote_script",
-                        lambda *a, **k: f"cat > /dev/null; echo '{mark}'\n")
+                        lambda *a, **k: f"cat > /dev/null; printf '%s\\n' '{mark}'\n")
     p = env / "c.json"
     p.write_text(json.dumps(_collection()))
     with pytest.raises(reg.RegisterError, match="without confirming"):
@@ -1196,6 +1200,15 @@ def test_the_hosts_own_output_is_relayed_and_the_mark_is_not(env, monkeypatch):
     assert "pypgstac: 1 row upserted" in said
     assert not any(line.startswith(reg.LOADED_MARK) for line in said)
     assert "loaded   : 1 collections" in said
+
+
+def test_a_hosts_crlf_output_is_relayed_without_the_cr(env, monkeypatch):
+    monkeypatch.setenv("FAKE_PYPGSTAC_SAY", "pypgstac: 1 row upserted\r")
+    p = env / "c.json"
+    p.write_text(json.dumps(_collection()))
+    said = []
+    reg.load(_transport(), "collections", [str(p)], log=said.append)
+    assert "pypgstac: 1 row upserted" in said
 
 
 # =============================================================================

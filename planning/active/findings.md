@@ -51,6 +51,15 @@ Each guard removed from `register.py` in turn; the 57 tests matching
   line now prints the name with `printf %q` (bash 3.2 gives `$'stacdb\r'` too); three
   cases pinned, all red with `%q` removed.
 
+## Review round 2 (2026-10-11)
+
+1 fragile (low). `review-round2.md`. Python's half alone did not require exactly `db`:
+`text=True` (universal newlines) and `splitlines()` break at `\r`, `\x1c`-`\x1e`, `\x85`,
+`\u2028`, so `STACS_LOADED 1 collections stacdb\r` produced a line equal to the mark. The
+host compare refused all of them first, so it never bit. `_send` now decodes stdout itself
+and splits on `\n` alone; relayed lines drop a trailing `\r`. Three mark cases plus a CRLF
+relay test, red under `splitlines()` / without the `rstrip`.
+
 ## Errors Encountered
 
 | Error | Resolution |
