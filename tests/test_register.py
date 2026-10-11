@@ -978,8 +978,9 @@ def test_all_dryrun_previews_probes_and_writes_nothing(env, api):
     assert "fetching 4" not in r.out and r.writes == 0 and r.probes == 1
 
 
-# A dryrun is everything but the write, so a pass says the host and the API answered;
-# one that skipped them would read as a connectivity check that never ran (#5).
+# A dryrun runs the read-only probes, so a register dryrun that passes says the host and
+# the API answered, and a load dryrun the host; one that skipped them would read as a
+# connectivity check that never ran (#5).
 
 def _dryrun(env, api_url, mode):
     items = _items(2)
@@ -995,7 +996,7 @@ def test_a_dryrun_reaches_the_host_and_the_api_and_says_so(env, api, mode):
     r = _dryrun(env, api.url, mode)
     assert r.rc == 0, r.all
     assert r.probes == 1 and r.writes == 0
-    assert "/collections" in api.gets       # read by `_api_probe` alone in a dryrun
+    assert "/collections" in api.gets       # `_api_probe` alone: the collection exists
     assert f"[dryrun] reached {api.url} and nobody@stub.invalid" in r.out
 
 

@@ -11,3 +11,4 @@
   dryrun return, offline dryrun tests given the stub API, CLI probe stubbed. Plan review
   folded in (findings.md). Mutation table in findings.md. Full suite 498 passed.
 - Phase 4: README dryrun paragraph, --dryrun help, NEWS Unreleased. mkdocs --strict clean.
+- /code-check branch: 3 rounds + enumeration of every dryrun claim (findings.md). Fixes committed per round.

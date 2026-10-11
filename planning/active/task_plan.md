@@ -31,7 +31,7 @@ Acceptance (revised from the issue's "If done", which described the docs-only op
 
 ## Validation
 
-- [ ] Tests pass (`uv run pytest`), and `mkdocs build --strict` passes (README markers)
-- [ ] `/code-check` clean (each commit, or once over the branch with `/code-check branch`)
-- [ ] PWF checkboxes match landed work
+- [x] Tests pass (`uv run pytest`), and `mkdocs build --strict` passes (README markers)
+- [x] `/code-check` clean (each commit, or once over the branch with `/code-check branch`)
+- [x] PWF checkboxes match landed work
 - [ ] `/planning-archive` on completion

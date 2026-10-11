@@ -42,9 +42,27 @@ real load" is a no-op only when `verify` reports the collection `same`); A2 (a C
 with no ssh keys or known_hosts now exits 1); S2 (NEWS states it as a behaviour change);
 S3 (`run` docstring).
 
-Mutations, each in a scratch copy (each turned tests red): dryrun skipping the probes (9
+Mutations at fac6b72, each in a scratch copy, `-k dryrun` only (each turned tests red; round 3
+re-ran them on the full suite at f5b2dd9: 10 for `_api_probe`, 8 for `probe`): dryrun skipping the probes (9
 failed), no `_api_probe` (3), no ssh probe in `_run` (6), no probe in `_send` (5), no
 "reached" line (2), the dryrun naming every declared queryable (1).
+
+## Code-check (branch, 2026-10-11)
+
+Round 1: NEWS said a drift dryrun never reached the API (it always did). Round 2: NEWS said
+`load --dryrun` reaches the API (host only); two test names claimed what they did not
+assert. Round 3 named the mechanism: the change was described as "the run minus the write",
+one claim for every command and mode, instead of being derived per command and mode. It
+survived in the README's first sentence and two comments ("everything but the write").
+
+Enumeration that ended the loop: every added line on the branch making a dryrun, probe or
+reach claim (README paragraph, NEWS bullets, both `--help` strings, `run` docstring, the
+`_run`/`_send` comments, `_say_reached` and `_send` log lines, the test_cli fixture and
+test_register module docstrings, the section comment, and the 10 dryrun test names), each
+checked against what `_run`/`_send` do per command and mode: register all/ids (API and
+host probes, stop before the fetch), register drift (probes, then fetch and diff, stop
+before the audit), load (host probe after its checks, no API), verify (untouched). After
+the round-3 fixes none claims more than its command does.
 
 ## Errors Encountered
 

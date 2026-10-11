@@ -405,7 +405,7 @@ def _send(t: Transport, kind: str, payload: Path, lines: int, dryrun: bool, log,
     log(f"{kind:<8}: {lines}")
     log(f"payload : {payload.stat().st_size} bytes")
     log(f"target  : {t.db} db on {t.host}")
-    # The probe is read-only, so a dryrun runs it too: it is everything but the write.
+    # The probe is read-only, so a dryrun runs it too; it stops before the remote script.
     probe(t)
     if dryrun:
         log(f"[dryrun] reached {t.host}")
