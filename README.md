@@ -81,11 +81,28 @@ pypgstac = ["uv", "run", "pypgstac"]  # the launcher on the host
 page_size = 10000       # keyset page size for full enumerations
 chunk = 500             # ids per lookup when checking what was just written
 fetch_workers = 20
+
+[queryables."my:property"]  # optional: item properties clients can filter on
+type = "string"             # a JSON Schema fragment, one table per property
+title = "My property"
 ```
 
 Flags override the catalogue and transport settings. The asset rules can be added to by a
 flag but never loosened: a declared `require` cannot be replaced, and `--forbid-asset`
 adds keys. Pointing at another collection id does not drop them.
+
+**Queryables** are loaded for the catalogue's own `collection_id` and no other.
+pgstac serves `/collections/<id>/queryables` from its own table, never from the collection
+body, and its loader replaces every row of a name that the collection is served,
+including a shared or global one. So each catalogue declares its own, and rows for
+different collections coexist. `register` loads a queryable only when it is missing or
+served with a different definition, after the items, and never with an index (each load
+replaces the row, and with it any index set on that name by hand). Removing a
+declaration leaves its row in place: nothing is deleted. Queryables are loaded last,
+once the collection and items are verified and the collection is registered. A name the
+collection is then served with a different definition may come from a shared or global
+row, so `register` reads every other collection's definition of it just before the load
+and again after it, whatever happened in between, and fails if one was lost or changed. The host needs pypgstac 0.9.6 or later.
 
 **No setting is a secret.** Writes go over ssh to the STAC host, which runs
 `pypgstac load --method upsert` there; the database password stays on the host and is
@@ -115,7 +132,8 @@ find build/items -name '*.json' ! -name collection.json \
 and refuses an id that appears twice; it exits 1 if there was nothing to load.
 
 `verify` exits 1 on any drift and writes `missing.txt`, `changed.txt`, `orphaned.txt` and
-`collection_state.txt` to `--out-dir`. `register` refuses before writing wherever it can:
+`collection_state.txt` to `--out-dir`, and `queryables_missing.txt` and
+`queryables_changed.txt` when queryables are declared. `register` refuses before writing wherever it can:
 a collection id that does not match the published `collection.json`, an item link
 duplicated or pointing at a body that names another id, a body that could not be fetched,
 an item that fails the audit, an unreachable host.
@@ -134,6 +152,9 @@ re-compare the whole catalogue after writing for that reason.
   name without `.json`, with `%20` read as a space. Child catalogues are refused, not
   skipped.
 - The STAC host has bash and a `pypgstac` that can reach the database.
+- Where queryables are declared, the API has the filter extension enabled. A 404 for an
+  existing collection's queryables is reported as the extension missing, never as "none
+  served".
 
 <!-- --8<-- [end:use] -->
 

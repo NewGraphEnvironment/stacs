@@ -99,6 +99,35 @@ def test_an_unknown_config_key_is_refused(tmp_path, extra, match, capsys):
     assert re.search(match, capsys.readouterr().err)
 
 
+def test_declared_queryables_reach_the_target(tmp_path, captured_run):
+    p = tmp_path / "stacs.toml"
+    p.write_text(CONFIG + '\n[queryables."lidarbc:delivery"]\ntype = "string"\n'
+                 'title = "LidarBC delivery"\n')
+    assert cli.main(["verify", "--config", str(p)]) == 0
+    assert captured_run[0][0].queryables == {
+        "lidarbc:delivery": {"type": "string", "title": "LidarBC delivery"}}
+
+
+def test_no_queryables_declared_is_an_empty_declaration(cfg_file, captured_run):
+    cli.main(["verify", "--config", str(cfg_file)])
+    assert captured_run[0][0].queryables == {}
+
+
+@pytest.mark.parametrize("extra, match", [
+    # The table's keys are free, so a stray secret has to be refused by its value.
+    ('[queryables]\npassword = "hunter2"\n', "must be a table"),
+    ('[queryables.datetime]\ntype = "string"\n', "column"),
+    ('[queryables.x]\ntype = "string"\npattern = \'^\\d+$\'\n', "backslash"),
+])
+def test_a_bad_queryables_declaration_is_refused(tmp_path, captured_run, extra, match,
+                                                 capsys):
+    p = tmp_path / "stacs.toml"
+    p.write_text(CONFIG + extra)
+    assert cli.main(["verify", "--config", str(p)]) == 2
+    assert re.search(match, capsys.readouterr().err)
+    assert not captured_run
+
+
 def test_an_unreadable_config_is_refused(tmp_path, capsys):
     assert cli.main(["verify", "--config", str(tmp_path / "nope.toml")]) == 2
     assert "cannot read config" in capsys.readouterr().err

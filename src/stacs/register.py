@@ -5,6 +5,11 @@ Upsert only, collection before items, and nothing in this module deletes.
 item in it, which is how a delete-then-load once took a catalogue offline. A load that
 fails here leaves the previous rows serving: an upsert never removes one.
 
+The one exception is pgstac's, not ours: a queryables load replaces every row of the name
+that the collection is served, including a global or shared one. It is made only for a
+queryable served differently from its declaration, never for one already served as
+declared, and another collection's queryable it changed fails the run.
+
 Writes go over ssh to the STAC host, which runs `pypgstac load` there: the database
 password never leaves the host, and a STAC API without the transaction extension cannot
 be written through anyway. The host, database, environment file and launcher are all the
@@ -33,9 +38,11 @@ from pathlib import Path
 
 from stacs.catalogue import (_read_url, collection_item_links, fetch_bodies, fetch_key,
                              published_digests)
+from stacs.queryables import (QueryablesError, fragment_digest, parse_queryables,
+                              queryables_diff, queryables_document)
 from stacs.validate import audit_items, parse_asset_keys
 from stacs.verify import (PAGE_SIZE, bodies_registered, bodies_serving, collection_state,
-                          content_diff)
+                          collections_listed, content_diff, queryables_served)
 
 MODES = ("verify", "drift", "all", "ids")
 
@@ -101,13 +108,14 @@ class Transport:
 @dataclass
 class Target:
     """One catalogue: where it is published, where it is served, how it is written,
-    and the asset rules it declares for itself."""
+    and the asset rules and queryables it declares for itself."""
     api: str
     collection_id: str
     bucket_url: str
     transport: Transport | None = None
     require_asset: str | None = None
     forbid_assets: list[str] = field(default_factory=list)
+    queryables: dict[str, dict] = field(default_factory=dict)
     page_size: int = PAGE_SIZE
     chunk: int = 500
     fetch_workers: int = 20
@@ -133,6 +141,11 @@ class Target:
             parse_asset_keys(self.forbid_assets)
         except ValueError as e:
             raise RegisterError(f"forbid_assets: {e}") from e
+        try:
+            # Normalised, so a library caller's None reads as "none declared" below.
+            self.queryables = parse_queryables(self.queryables)
+        except QueryablesError as e:
+            raise RegisterError(f"queryables: {e}") from e
 
 
 # =============================================================================
@@ -189,8 +202,14 @@ def ndjson_write(paths, out, expect_collection: str | None = None) -> int:
     return n
 
 
-def remote_script(t: Transport, kind: str, expected: int) -> str:
+def remote_script(t: Transport, kind: str, expected: int,
+                  collection_id: str | None = None) -> str:
     """The script the host runs, payload on stdin. Every caller value is quoted.
+
+    `kind` is `items`, `collections` or `queryables`. Queryables are loaded with
+    `load_queryables` for `collection_id` alone, and never with `--delete_missing`:
+    pypgstac replaces every row of a name that overlaps the collections it is given, so
+    naming any other collection would narrow or remove that collection's queryable.
 
     The line count is checked on the RECEIVING side: if the sender dies mid-stream the
     remote `cat` sees EOF, and pypgstac would load a syntactically valid short file and
@@ -217,9 +236,19 @@ def remote_script(t: Transport, kind: str, expected: int) -> str:
         ['pypgstac load items "$__stacs_tmp" --method upsert || exit 1']
         >>> script.splitlines()[-1]
         '__stacs_ok=1'
+        >>> import shlex
+        >>> script = remote_script(t, "queryables", 1, collection_id="my-collection")
+        >>> line = next(l for l in script.splitlines() if "load_queryables" in l)
+        >>> shlex.split(line)[1:4]
+        ['load_queryables', '$__stacs_tmp', "--collection_ids=['my-collection']"]
     """
-    if kind not in ("items", "collections"):
+    if kind not in ("items", "collections", "queryables"):
         raise ValueError(f"unknown load kind: {kind!r}")
+    if (kind == "queryables") != (collection_id is not None):
+        raise ValueError("a collection id is given with, and only with, a queryables load")
+    if kind == "queryables" and (not isinstance(collection_id, str)
+                                 or not collection_id.strip()):
+        raise ValueError(f"invalid collection id: {collection_id!r}")
     q = shlex.quote
     lines = [
         "set -euo pipefail",
@@ -261,7 +290,14 @@ def remote_script(t: Transport, kind: str, expected: int) -> str:
                    f'"FATAL: {t.password_env} is not set on the host" >&2; exit 1; fi')
         sub.append(f'export PGPASSWORD="${{{t.password_env}}}"')
     launcher = " ".join(q(a) for a in t.pypgstac)
-    sub.append(f'{launcher} load {kind} "$__stacs_tmp" --method upsert || exit 1')
+    if kind == "queryables":
+        # pypgstac is a `fire` CLI, which reads a list argument as a Python literal.
+        # The flag and its value are one shell word, so fire cannot take the value for
+        # a positional argument.
+        ids = q(f"--collection_ids={[collection_id]!r}")
+        sub.append(f'{launcher} load_queryables "$__stacs_tmp" {ids} || exit 1')
+    else:
+        sub.append(f'{launcher} load {kind} "$__stacs_tmp" --method upsert || exit 1')
     sub.append(f'echo "{LOADED_MARK} $__stacs_n {kind}"')
     lines += ["  " + l for l in sub]
     # A plain `( ... )`, never `( ... ) || exit 1`: bash suspends `set -e` for every
@@ -308,33 +344,72 @@ def load(t: Transport, kind: str, paths, expect_collection: str | None = None,
         if written != len(paths):
             raise RegisterError(f"assembled {written} line(s) from {len(paths)} path(s) "
                                 f"-- refusing to load")
-        log(f"{kind:<8}: {written}")
-        log(f"payload : {payload.stat().st_size} bytes")
-        log(f"target  : {t.db} db on {t.host}")
-        if dryrun:
-            log("[dryrun] nothing sent")
+        return _send(t, kind, payload, written, dryrun, log)
+
+
+def load_queryables(t: Transport, collection_id: str, declared: dict,
+                    dryrun: bool = False, log=print) -> int:
+    """Upsert a catalogue's declared queryables for its own collection. Returns the
+    number of properties sent.
+
+    One document, one line, loaded in one transaction by pypgstac. The collection must
+    already be registered: pgstac refuses a queryable naming a collection it lacks.
+
+    This is the bare load. pgstac replaces a global or shared row of each name with this
+    collection's own, and nothing here checks what that took from other collections:
+    `run` does, around this call.
+    """
+    t.check()
+    try:
+        declared = parse_queryables(declared)
+    except QueryablesError as e:
+        raise RegisterError(f"queryables: {e}") from e
+    if not declared:
+        log("nothing to register (0 queryables)")
+        return 0
+    with tempfile.TemporaryDirectory(prefix="stacs_load.") as work:
+        payload = Path(work) / "queryables.json"
+        payload.write_text(json.dumps(queryables_document(declared),
+                                      separators=(",", ":")) + "\n", encoding="utf-8")
+        log(f"queryables: {', '.join(sorted(declared))} for {collection_id}")
+        if not _send(t, "queryables", payload, 1, dryrun, log,
+                     collection_id=collection_id):
             return 0
-        probe(t)
-        with open(payload, "rb") as fh:
-            r = subprocess.run(_ssh(t, "bash -c " + shlex.quote(
-                remote_script(t, kind, written))), stdin=fh, stdout=subprocess.PIPE,
-                text=True, errors="replace")
-        out_lines = r.stdout.splitlines()
-        for line in out_lines:
-            if not line.startswith(LOADED_MARK):
-                log(line)
-        if r.returncode != 0:
-            raise RegisterError(
-                f"load of {written} {kind} failed on {t.host} (exit {r.returncode}). "
-                + ("Nothing was loaded." if kind == "collections" else
-                   "Some of these items may have been committed before the failure "
-                   "(pypgstac commits per chunk); re-running is safe, every load is "
-                   "an upsert."))
-        if f"{LOADED_MARK} {written} {kind}" not in out_lines:
-            raise RegisterError(f"load of {written} {kind} on {t.host} exited 0 without "
-                                f"confirming it loaded; treat it as failed")
-        log(f"loaded   : {written} {kind}")
-    return written
+    return len(declared)
+
+
+def _send(t: Transport, kind: str, payload: Path, lines: int, dryrun: bool, log,
+          collection_id: str | None = None) -> int:
+    """Run the remote script with `payload` on stdin, and require its success line."""
+    log(f"{kind:<8}: {lines}")
+    log(f"payload : {payload.stat().st_size} bytes")
+    log(f"target  : {t.db} db on {t.host}")
+    if dryrun:
+        log("[dryrun] nothing sent")
+        return 0
+    probe(t)
+    with open(payload, "rb") as fh:
+        r = subprocess.run(_ssh(t, "bash -c " + shlex.quote(
+            remote_script(t, kind, lines, collection_id))), stdin=fh,
+            stdout=subprocess.PIPE, text=True, errors="replace")
+    out_lines = r.stdout.splitlines()
+    for line in out_lines:
+        if not line.startswith(LOADED_MARK):
+            log(line)
+    if r.returncode != 0:
+        raise RegisterError(
+            f"load of {lines} {kind} failed on {t.host} (exit {r.returncode}). "
+            + ("Some of these items may have been committed before the failure "
+               "(pypgstac commits per chunk); re-running is safe, every load is "
+               "an upsert." if kind == "items" else
+               "It is one transaction, but a failure reported after its commit (a "
+               "dropped connection) leaves it loaded; re-running is safe."
+               if kind == "queryables" else "Nothing was loaded."))
+    if f"{LOADED_MARK} {lines} {kind}" not in out_lines:
+        raise RegisterError(f"load of {lines} {kind} on {t.host} exited 0 without "
+                            f"confirming it loaded; treat it as failed")
+    log(f"loaded   : {lines} {kind}")
+    return lines
 
 
 # =============================================================================
@@ -406,6 +481,7 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
     log(f"collection : {target.collection_id}")
     log(f"mode       : {mode}")
     log(f"asset audit: {describe_rules(target)}")
+    log(f"queryables : {', '.join(sorted(target.queryables)) or 'none declared'}")
 
     with tempfile.TemporaryDirectory(prefix="stacs.") as work:
         work = Path(work)
@@ -461,7 +537,10 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
         if mode in ("all", "ids"):
             log(f"to register: {len(todo)}")
             if dryrun:
-                log(f"[dryrun] would fetch {len(todo)} item(s) and upsert them")
+                log(f"[dryrun] would fetch {len(todo)} item(s) and upsert them"
+                    + (f", and queryables {', '.join(sorted(target.queryables))} "
+                       f"where they are not served as declared"
+                       if target.queryables else ""))
                 for i in todo[:3]:
                     log(f"  {i}\t{by_id[i]}")
                 return 0
@@ -472,6 +551,10 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
         if writes and not dryrun:
             _api_probe(target)
             probe(target.transport)
+            if mode in ("all", "ids") and target.queryables:
+                q_missing, q_changed = _queryables_drift(
+                    target, _collection_state(coll_file, target) != "missing")
+                log(f"queryables : {len(q_missing)} missing, {len(q_changed)} changed")
 
         # --- fetch ------------------------------------------------------------
         fetch_dir = work / "items"
@@ -502,12 +585,18 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
                 log(f"{label:<10} : {len(ids)}")
             coll_state = _collection_state(coll_file, target)
             log(f"collection : {coll_state}")
+            q_missing, q_changed = _queryables_drift(target, coll_state != "missing")
+            if target.queryables:
+                log(f"queryables : {len(q_missing)} missing, {len(q_changed)} changed")
             todo = sorted(set(missing) | set(changed))
 
         if mode == "verify":
             for name, ids in (("missing.txt", missing), ("orphaned.txt", orphaned),
                               ("changed.txt", changed)):
                 _write_list(out_dir, name, ids)
+            if target.queryables:
+                _write_list(out_dir, "queryables_missing.txt", q_missing)
+                _write_list(out_dir, "queryables_changed.txt", q_changed)
             if out_dir is not None:
                 Path(out_dir, "collection_state.txt").write_text(coll_state + "\n")
             rc = 0
@@ -526,21 +615,35 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
             elif coll_state == "missing":
                 warn("DRIFT: the collection is not registered")
                 rc = 1
+            for names, what in ((q_missing, "declared queryable(s) are not served"),
+                                (q_changed, "declared queryable(s) are served with a "
+                                            "different definition")):
+                if names:
+                    warn(f"DRIFT: {len(names)} {what}: {', '.join(names)}")
+                    rc = 1
             if rc == 0:
                 # Absence of drift is an affirmative result and is said out loud.
                 log(f"IN SYNC: {len(published)} published, all registered with the "
-                    f"published body, no orphans")
+                    f"published body, no orphans"
+                    + (f"; {len(target.queryables)} declared queryable(s) served as "
+                       f"declared" if target.queryables else ""))
             return rc
 
+        # Only what is not served as declared. Every pgstac queryables load deletes and
+        # reinserts the row, dropping any index an operator set on it, so a load of what
+        # is already served is not free.
+        load_q = bool(target.queryables) and bool(q_missing or q_changed)
         if mode == "drift":
             log(f"to register: {len(todo)}")
             if dryrun:
                 log(f"[dryrun] would upsert {len(todo)} item(s) (collection: "
-                    f"{coll_state})")
+                    f"{coll_state})"
+                    + (f" and queryables {', '.join(q_missing + q_changed)}"
+                       if load_q else ""))
                 for i in todo[:5]:
                     log(f"  {i}")
                 return 0
-            if not todo and coll_state == "same":
+            if not todo and coll_state == "same" and not load_q:
                 log("nothing to register -- already in sync")
                 return 0
 
@@ -561,7 +664,9 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
                                     + "; ".join(audit.failures))
 
         # pgstac.items.collection REFERENCES collections(id): items with no collection
-        # row fail outright.
+        # row fail outright. pgstac refuses a queryable for a collection it lacks too.
+        # Queryables come last of all, after the collection and items are verified, so
+        # a queryables failure cannot hold the items back.
         load(target.transport, "collections", [coll_file], log=log)
         if todo_paths:
             load(target.transport, "items", todo_paths,
@@ -604,11 +709,58 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
                     f"{target.collection_id} and {len(differ)} are served with a body "
                     f"that differs from the one sent, e.g. {(not_served + differ)[:5]}")
             log(f"OK: all {len(todo)} registered id(s) are served with the body sent")
+        if load_q:
+            _register_queryables(target, log)
         if mode == "ids":
             log("note: 'ids' checks only the ids it registered; run 'verify' if "
                 "collection.json changed")
         log(f"DONE: {len(todo)} item(s) registered to {target.collection_id}")
         return 0
+
+
+def _register_queryables(target, log) -> None:
+    """Load the declared queryables that differ, then prove ours and everyone else's.
+
+    A load replaces every row of the name that this collection is served, which may be a
+    global or shared row other collections serve too; the API cannot say which. So the
+    other collections' definitions of those names are read just before the load, and
+    read again on EVERY way out once the load has been attempted. A load can commit and
+    still report failure (pypgstac commits, then the connection drops), and the next run
+    finds our own row serving the name as declared and checks nothing: a loss not
+    reported now is never reported.
+    """
+    # Asked now that the collection is registered: a global row may already serve a
+    # name as declared, and loading it would take that row from every other collection.
+    q_missing, q_changed = _queryables_drift(target, True)
+    send = {n: target.queryables[n] for n in q_missing + q_changed}
+    if not send:
+        log("queryables : served as declared once the collection was registered; "
+            "nothing to load")
+        return
+    # A name not served here is in no row that covers this collection, so it cannot
+    # touch another; only a name served here with another definition can.
+    try:
+        others = _others_queryables(target, q_changed) if q_changed else {}
+    except (RuntimeError, ValueError) as e:
+        raise RegisterError(f"could not read the queryables other collections serve, "
+                            f"before loading ours; nothing loaded: {e}") from e
+    problems = []
+    try:
+        load_queryables(target.transport, target.collection_id, send, log=log)
+        q_missing, q_changed = _queryables_drift(target, True)
+        if q_missing or q_changed:
+            problems.append(f"after registering, declared queryable(s) are not served "
+                            f"{q_missing} or served with a different definition "
+                            f"{q_changed}")
+    except Exception as e:  # noqa: BLE001 -- any way out must still report the others
+        problems.append(str(e) if isinstance(e, RegisterError)
+                        else f"{type(e).__name__}: {e}")
+    damage = _others_damage(target, others)
+    if damage:
+        problems.append(damage)
+    if problems:
+        raise RegisterError("; ".join(problems))
+    log(f"OK: {len(target.queryables)} declared queryable(s) served as declared")
 
 
 def _api_probe(target) -> None:
@@ -622,8 +774,73 @@ def _api_probe(target) -> None:
                "fields": {"include": ["id"]}})
         root = requests.get(f"{target.api.rstrip('/')}/collections", timeout=60)
         root.raise_for_status()
+        if target.queryables:
+            # An API without the filter extension could never serve them, so the
+            # verification after the load would fail with the write already made.
+            # pgstac answers nothing at /queryables while it holds no collection, so a
+            # 404 there is the filter extension only when there are collections.
+            q = requests.get(f"{target.api.rstrip('/')}/queryables", timeout=60)
+            if q.status_code != 404 or collections_listed(target.api):
+                q.raise_for_status()
     except (RuntimeError, requests.RequestException) as e:
         raise RegisterError(f"the API at {target.api} does not answer: {e}") from e
+
+
+def _queryables_drift(target, registered: bool) -> tuple[list[str], list[str]]:
+    """(missing, changed) for the declared queryables; nothing read when none are, and
+    every one missing when the collection is not registered."""
+    if not target.queryables:
+        return [], []
+    if not registered:
+        return sorted(target.queryables), []
+    try:
+        return queryables_diff(target.queryables,
+                               queryables_served(target.collection_id, target.api))
+    except (RuntimeError, ValueError) as e:
+        raise RegisterError(f"could not compare the served queryables: {e}") from e
+
+
+def _others_queryables(target, names) -> dict[str, dict[str, str]]:
+    """{collection: {name: digest}} of these names as every OTHER collection serves
+    them. Names a collection does not serve are left out. Raises RuntimeError or
+    ValueError on a read that fails; the caller says when it happened."""
+    out = {}
+    for cid in collections_listed(target.api):
+        if cid == target.collection_id:
+            continue
+        served = queryables_served(cid, target.api)
+        out[cid] = {n: fragment_digest(served[n]) for n in names if n in served}
+    return out
+
+
+def _others_damage(target, before: dict[str, dict[str, str]]) -> str | None:
+    """What the load took away from, or changed for, another collection, as a message;
+    None when nothing. pypgstac replaces a global or shared row of the name with this
+    collection's own. Never raises: it runs on the way out of a failure too."""
+    names = sorted({n for v in before.values() for n in v})
+    if not names:
+        return None
+    try:
+        after = _others_queryables(target, names)
+    except (RuntimeError, ValueError) as e:
+        return (f"could not re-read the other collections after the queryables load, so "
+                f"whether it took {names} from any of {sorted(before)} is unknown; check "
+                f"them before the next run, which will not: {e}")
+    hit = []
+    for cid, names in before.items():
+        for name, digest in names.items():
+            now = after.get(cid, {}).get(name)
+            if now != digest:
+                hit.append(f"{cid} ({name} {'lost' if now is None else 'changed'})")
+    if hit:
+        return (
+            f"loading the queryables changed what other collections serve: "
+            f"{', '.join(hit)}. A global or shared queryable row of that name was "
+            f"replaced by this collection's own. A collection that declares the "
+            f"queryable in its own stacs.toml gets it back by re-registering, and its row "
+            f"then coexists with this one. A global row cannot come back beside a "
+            f"per-collection one: declare the queryable in each catalogue instead.")
+    return None
 
 
 def _digests(links, fetch_dir):

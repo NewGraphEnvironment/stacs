@@ -13,10 +13,13 @@ How it runs offline:
   - conftest.py refuses every lookup and connection outside loopback
 """
 
+import ast
 import json
 import os
 import threading
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 import pytest
 
@@ -39,6 +42,14 @@ fi
 
 FAKE_PYPGSTAC = r"""#!/bin/bash
 # fake_pypgstac load <kind> <file> --method upsert
+# fake_pypgstac load_queryables <file> --collection_ids=<python list literal>
+if [ "$1" = "load_queryables" ]; then
+  [ "$#" -eq 3 ] && [ "${3#--collection_ids=}" != "$3" ] || { echo "bad args: $*" >&2; exit 2; }
+  n=$(wc -l < "$2" | tr -d ' ')
+  cp "$2" "$SSH_LOG.queryables.json"
+  echo "queryables $n db=${PGDATABASE:-} pw=${PGPASSWORD:+set} ids=${3#--collection_ids=}" >> "$SSH_LOG"
+  exit "${FAKE_PYPGSTAC_QUERYABLES_RC:-${FAKE_PYPGSTAC_RC:-0}}"
+fi
 [ "$1" = "load" ] && [ "$4" = "--method" ] && [ "$5" = "upsert" ] || { echo "bad args: $*" >&2; exit 2; }
 n=$(wc -l < "$3" | tr -d ' ')
 if [ -n "${FAKE_PYPGSTAC_SAY:-}" ]; then echo "$FAKE_PYPGSTAC_SAY"; fi
@@ -73,12 +84,57 @@ class _StubAPI:
         self.on_load = None      # fn(api), run once after a collection load is logged
         self.load_log = None
         self.fail = {}           # path -> HTTP status to answer instead
+        self.others = []         # ids of other collections /collections lists
+        self.collections_page = 100
+        self.queryables = {}     # collection id -> {name: fragment}, per-collection rows
+        self.global_queryables = {}  # name -> fragment, served for every collection
+        self.apply_queryables = True
+        self.queryables_applied = 0
+        self.filter_off = False  # stac-fastapi-pgstac with its filter extension disabled
+        self.gets = []
 
     def sync(self):
         if self.on_load and self.load_log and self.load_log.exists() and \
                 "collections" in self.load_log.read_text():
             fn, self.on_load = self.on_load, None
             fn(self)
+        self._apply_queryables()
+
+    def _apply_queryables(self):
+        """What pgstac does with a queryables load: the row passed in wins, so a global
+        row of each name loaded goes."""
+        if not (self.load_log and self.load_log.exists()):
+            return
+        loads = [l.split() for l in self.load_log.read_text().splitlines()
+                 if l.startswith("queryables ")]
+        if len(loads) <= self.queryables_applied:
+            return
+        self.queryables_applied = len(loads)
+        if not self.apply_queryables:
+            return
+        props = json.loads(Path(f"{self.load_log}.queryables.json").read_text())[
+            "properties"]
+        (cid,) = ast.literal_eval(loads[-1][4][len("ids="):])
+        for name in props:
+            self.global_queryables.pop(name, None)
+        if self.apply_queryables == "take-global-only":
+            return
+        self.queryables.setdefault(cid, {}).update(json.loads(json.dumps(props)))
+
+    def collection_ids(self):
+        own = [self.collection["id"]] if self.collection is not None else []
+        return own + list(self.others)
+
+    def served_queryables(self, cid):
+        """None for a 404. pgstac's get_queryables is an aggregate, so a collection
+        with no rows is served `"properties": null`; stac-fastapi-pgstac 404s only an
+        unknown collection, or every collection when its filter extension is off.
+
+        This models research/pgstac_queryables.md, so the tests check stacs against
+        that note, not against pgstac itself."""
+        if self.filter_off or cid not in self.collection_ids():
+            return None
+        return {**self.global_queryables, **self.queryables.get(cid, {})}
 
 
 def _handler(api):
@@ -95,12 +151,39 @@ def _handler(api):
             self.wfile.write(data)
 
         def do_GET(self):
+            api.gets.append(self.path)
             api.sync()
             if self.path in api.fail:
                 self._send(api.fail[self.path], {"code": "ServerError"})
                 return
-            if self.path == "/collections":
-                self._send(200, {"collections": []})
+            path, _, query = self.path.partition("?")
+            if path == "/collections":
+                ids = api.collection_ids()
+                start = int(urllib.parse.parse_qs(query).get("offset", ["0"])[0])
+                page = ids[start:start + api.collections_page]
+                links = [{"rel": "self", "href": self.path}]
+                if start + api.collections_page < len(ids):
+                    links.append({"rel": "next", "href":
+                                  f"/collections?offset={start + api.collections_page}"})
+                self._send(200, {"collections": [{"id": i} for i in page],
+                                 "links": links})
+                return
+            if path == "/queryables":
+                # get_queryables(NULL) is NULL while there is no collection: a 404.
+                if api.filter_off or not api.collection_ids():
+                    self._send(404, {"code": "NotFoundError"})
+                else:
+                    self._send(200, {"type": "object", "properties": None})
+                return
+            prefix = "/collections/"
+            if path.startswith(prefix) and path.endswith("/queryables"):
+                cid = urllib.parse.unquote(path[len(prefix):-len("/queryables")])
+                props = api.served_queryables(cid)
+                if props is None:
+                    self._send(404, {"code": "NotFoundError"})
+                else:
+                    self._send(200, {"$id": "x", "type": "object",
+                                     "properties": props or None})
                 return
             prefix = "/collections/"
             if self.path.startswith(prefix) and "/" not in self.path[len(prefix):]:
@@ -165,7 +248,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("SSH_LOG", str(tmp_path / "loads.log"))
     monkeypatch.setenv("SSH_CMDS", str(tmp_path / "ssh_cmds.log"))
     for k in ("SSH_PROBE_RC", "SSH_TRUNCATE", "SSH_SILENT_SUCCESS", "FAKE_PYPGSTAC_RC",
-              "FAKE_PYPGSTAC_SAY"):
+              "FAKE_PYPGSTAC_SAY", "FAKE_PYPGSTAC_QUERYABLES_RC"):
         monkeypatch.delenv(k, raising=False)
     # Set for every test, so a test aimed at something else cannot pass because the
     # password check refused first.
@@ -1012,3 +1095,492 @@ def test_the_hosts_own_output_is_relayed_and_the_mark_is_not(env, monkeypatch):
     assert "pypgstac: 1 row upserted" in said
     assert not any(line.startswith(reg.LOADED_MARK) for line in said)
     assert "loaded   : 1 collections" in said
+
+
+# =============================================================================
+# Queryables: the load
+# =============================================================================
+
+QUERYABLES = {"lidarbc:delivery": {"type": "string", "title": "LidarBC delivery"}}
+
+
+def test_queryables_load_for_the_collection_alone_and_never_delete(env):
+    said = []
+    assert reg.load_queryables(_transport(), COLL, QUERYABLES, log=said.append) == 1
+    assert ("queryables", "1", "db=stacdb", "pw=set", f"ids=['{COLL}']") in [
+        tuple(line.split()) for line in (env / "loads.log").read_text().splitlines()]
+    doc = json.loads((env / "loads.log.queryables.json").read_text())
+    assert doc["properties"] == QUERYABLES
+    cmds = (env / "ssh_cmds.log").read_text()
+    assert "delete_missing" not in cmds and "index_fields" not in cmds
+    assert "loaded   : 1 queryables" in said
+
+
+def test_queryables_dryrun_sends_nothing(env):
+    said = []
+    assert reg.load_queryables(_transport(), COLL, QUERYABLES, dryrun=True,
+                               log=said.append) == 0
+    assert "[dryrun] nothing sent" in said
+    assert not (env / "loads.log").exists() and not (env / "ssh_cmds.log").exists()
+
+
+def test_nothing_declared_sends_nothing(env):
+    said = []
+    assert reg.load_queryables(_transport(), COLL, {}, log=said.append) == 0
+    assert not (env / "ssh_cmds.log").exists()
+
+
+def test_a_failed_queryables_load_does_not_promise_nothing_was_loaded(env, monkeypatch):
+    """One transaction, but a failure reported after the commit leaves it loaded."""
+    monkeypatch.setenv("FAKE_PYPGSTAC_RC", "1")
+    with pytest.raises(reg.RegisterError, match="after its commit") as e:
+        reg.load_queryables(_transport(), COLL, QUERYABLES)
+    assert "Nothing was loaded" not in str(e.value)
+
+
+def test_a_queryables_load_that_does_not_confirm_itself_failed(env, monkeypatch):
+    monkeypatch.setenv("SSH_SILENT_SUCCESS", "1")
+    with pytest.raises(reg.RegisterError, match="without confirming"):
+        reg.load_queryables(_transport(), COLL, QUERYABLES)
+
+
+def test_a_bad_declaration_is_refused_before_anything_is_sent(env):
+    with pytest.raises(reg.RegisterError, match="column"):
+        reg.load_queryables(_transport(), COLL, {"datetime": {"type": "string"}})
+    assert not (env / "ssh_cmds.log").exists()
+
+
+@pytest.mark.parametrize("kind, collection_id", [
+    ("queryables", None), ("queryables", " "), ("items", COLL), ("collections", COLL)])
+def test_a_collection_id_goes_with_a_queryables_load_and_nothing_else(kind,
+                                                                      collection_id):
+    with pytest.raises(ValueError):
+        reg.remote_script(_transport(), kind, 1, collection_id)
+
+
+@pytest.mark.parametrize("collection_id", [
+    COLL, "it's a (test)", 'quo"te', "back\\slash", "café \U0001F600", "[x]", "1"])
+def test_the_real_fire_reads_the_collection_ids_as_a_list_of_that_one_id(collection_id):
+    """pypgstac is a `fire` CLI. Run fire itself over the words the remote shell would
+    pass, after the shell has split them, against a stub with load_queryables'
+    signature. A bare word or a number would reach pypgstac as a str or an int."""
+    import shlex
+
+    import fire
+
+    class StubCLI:
+        def load_queryables(self, file, collection_ids=None, delete_missing=False,
+                            index_fields=None):
+            return file, collection_ids, delete_missing, index_fields
+
+    script = reg.remote_script(_transport(), "queryables", 1, collection_id)
+    line = next(l for l in script.splitlines() if "load_queryables" in l)
+    words = shlex.split(line.replace("|| exit 1", ""))
+    assert words[0] == "fake_pypgstac"
+    got = fire.Fire(StubCLI, command=words[1:])
+    assert got == ("$__stacs_tmp", [collection_id], False, None)
+
+
+# =============================================================================
+# Queryables: verify, drift, all, and other collections
+# =============================================================================
+
+def _q_in_sync(api, env, items, queryables=QUERYABLES):
+    _in_sync(api, items)
+    api.queryables[COLL] = json.loads(json.dumps(queryables))
+    api.load_log = env / "loads.log"
+
+
+@pytest.mark.parametrize("mode", ["verify", "drift", "all"])
+def test_no_queryables_declared_reads_no_queryables(env, api, mode):
+    """A catalogue that declares none runs as it did before queryables existed, even
+    on an API that serves none."""
+    items = _items(2)
+    _in_sync(api, items)
+    api.filter_off = True
+    api.load_log, api.on_load = env / "loads.log", lambda a: _in_sync(a, items)
+    out = env / "report"
+    r = _run(env, mode, api.url, items, out_dir=out if mode == "verify" else None)
+    assert r.rc == 0, r.all
+    assert "queryables : none declared" in r.out
+    assert not [g for g in api.gets if "queryables" in g]
+    assert "queryables" not in [l[0] for l in r.loads]
+    if mode == "verify":
+        assert not list(out.glob("queryables_*"))
+
+
+def test_verify_in_sync_with_a_reordered_enum(env, api):
+    q = {"x:kind": {"type": "string", "enum": ["b", "a"]}}
+    items = _items(2)
+    _q_in_sync(api, env, items, {"x:kind": {"type": "string", "enum": ["a", "b"]}})
+    r = _run(env, "verify", api.url, items, queryables=q)
+    assert r.rc == 0, r.all
+    assert "1 declared queryable(s) served as declared" in r.out
+
+
+def test_verify_reports_missing_and_changed_queryables(env, api):
+    q = {**QUERYABLES, "x:gsd": {"type": "number"}, "x:new": {"type": "string"}}
+    items = _items(2)
+    _q_in_sync(api, env, items, {**QUERYABLES, "x:gsd": {"type": "integer"}})
+    out = env / "report"
+    r = _run(env, "verify", api.url, items, queryables=q, out_dir=out)
+    assert r.rc == 1
+    assert "not served: x:new" in r.err
+    assert "different definition: x:gsd" in r.err
+    assert (out / "queryables_missing.txt").read_text() == "x:new\n"
+    assert (out / "queryables_changed.txt").read_text() == "x:gsd\n"
+
+
+def test_verify_reads_a_collection_with_no_queryables_as_none_served(env, api):
+    items = _items(1)
+    _in_sync(api, items)
+    r = _run(env, "verify", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1 and "not served: lidarbc:delivery" in r.err
+
+
+def test_verify_reads_a_404_for_an_existing_collection_as_no_filter_extension(env, api):
+    """Read as "none served", it would report every declaration missing, forever."""
+    items = _items(1)
+    _q_in_sync(api, env, items)
+    api.filter_off = True
+    r = _run(env, "verify", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1 and "filter extension" in r.err
+    assert "DRIFT" not in r.err
+
+
+def test_verify_of_an_unregistered_collection_reports_its_queryables_missing(env, api):
+    items = _items(1)
+    r = _run(env, "verify", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1 and "not served: lidarbc:delivery" in r.err
+    assert not [g for g in api.gets if "queryables" in g]
+
+
+def test_verify_refuses_an_unreadable_queryables_document(env, api, no_retry_sleep):
+    items = _items(1)
+    _q_in_sync(api, env, items)
+    api.fail[f"/collections/{COLL}/queryables"] = 500
+    r = _run(env, "verify", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1 and "could not compare the served queryables" in r.err
+
+
+def test_all_loads_collection_then_items_then_queryables_and_verifies(env, api):
+    """Queryables last: a queryables load that fails must not hold the items back."""
+    items = _items(2)
+    api.load_log, api.on_load = env / "loads.log", lambda a: _in_sync(a, items)
+    r = _run(env, "all", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 0, r.all
+    assert [l[0] for l in r.loads] == ["collections", "items", "queryables"]
+    assert "1 declared queryable(s) served as declared" in r.out
+    assert api.queryables[COLL] == QUERYABLES
+
+
+def test_all_does_not_reload_queryables_served_as_declared(env, api):
+    """Every pgstac queryables load deletes and reinserts the row, dropping an index an
+    operator set on it."""
+    items = _items(2)
+    _q_in_sync(api, env, items)
+    api.on_load = lambda a: _in_sync(a, items)
+    r = _run(env, "all", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 0, r.all
+    assert [l[0] for l in r.loads] == ["collections", "items"]
+
+
+def test_all_bootstraps_queryables_into_an_empty_database(env, api):
+    """pgstac 404s /queryables while it holds no collection; the probe must not take
+    that for a missing filter extension."""
+    items = _items(2)
+    api.load_log, api.on_load = env / "loads.log", lambda a: _in_sync(a, items)
+    r = _run(env, "all", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 0, r.all
+    assert "/queryables" in api.gets
+
+
+def test_queryables_not_served_after_the_load_fail_the_run(env, api):
+    items = _items(2)
+    api.load_log, api.on_load = env / "loads.log", lambda a: _in_sync(a, items)
+    api.apply_queryables = False
+    r = _run(env, "all", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1 and "after registering, declared queryable(s)" in r.err
+
+
+def test_drift_in_sync_with_queryables_writes_nothing(env, api):
+    items = _items(2)
+    _q_in_sync(api, env, items)
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 0, r.all
+    assert "already in sync" in r.out and r.writes == 0
+
+
+def test_drift_loads_queryables_that_are_missing_and_nothing_else(env, api):
+    items = _items(2)
+    _in_sync(api, items)
+    api.load_log = env / "loads.log"
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 0, r.all
+    assert [l[0] for l in r.loads] == ["collections", "queryables"]
+
+
+def test_drift_with_queryables_in_sync_does_not_reload_them(env, api):
+    items = _items(2)
+    _q_in_sync(api, env, items)
+    api.items.pop("a1")
+    api.on_load = lambda a: _in_sync(a, items)
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 0, r.all
+    assert [l[0] for l in r.loads] == ["collections", "items"]
+
+
+def test_drift_dryrun_names_the_queryables_it_would_load(env, api):
+    items = _items(1)
+    _in_sync(api, items)
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES, dryrun=True)
+    assert r.rc == 0 and "queryables lidarbc:delivery" in r.out and r.writes == 0
+
+
+def test_all_dryrun_names_the_queryables(env):
+    r = _run(env, "all", items=_items(1), queryables=QUERYABLES, dryrun=True)
+    assert r.rc == 0 and "and queryables lidarbc:delivery" in r.out
+
+
+@pytest.mark.parametrize("mode", ["all", "drift"])
+def test_an_api_without_queryables_is_refused_before_any_write(env, api, mode):
+    api.others = ["stac-other-a"]
+    api.filter_off = True
+    r = _run(env, mode, api.url, _items(1), queryables=QUERYABLES)
+    assert r.rc == 1 and "does not answer" in r.err and r.writes == 0
+
+
+def test_a_name_not_served_here_cannot_touch_another_collection_so_none_is_read(
+        env, api):
+    """pgstac replaces only rows of the name that this collection is served, so a name
+    not served here is loaded without reading any other collection."""
+    items = _items(1)
+    api.others = ["stac-other-a", "stac-other-b"]
+    api.queryables["stac-other-b"] = json.loads(json.dumps(QUERYABLES))
+    _in_sync(api, items)
+    api.load_log = env / "loads.log"
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 0, r.all
+    assert api.queryables["stac-other-b"] == QUERYABLES
+    assert not [g for g in api.gets if "stac-other" in g]
+
+
+def test_changing_our_own_row_leaves_another_collections_own_row(env, api):
+    """Rows for disjoint collections coexist. /collections pages one at a time here, so
+    the enumeration has to follow next links to reach the other collections."""
+    items = _items(1)
+    api.others = ["stac-other-a", "stac-other-b"]
+    api.collections_page = 1
+    api.queryables["stac-other-b"] = json.loads(json.dumps(QUERYABLES))
+    _in_sync(api, items)
+    api.queryables[COLL] = {"lidarbc:delivery": {"type": "integer"}}
+    api.load_log = env / "loads.log"
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 0, r.all
+    assert f"/collections/stac-other-b/queryables" in api.gets
+    assert api.queryables["stac-other-b"] == QUERYABLES
+
+
+def test_a_load_that_takes_a_global_queryable_from_others_fails_loudly(env, api):
+    """pypgstac replaces a global row of the name with this collection's own, so
+    every other collection stops serving it. The API cannot show that before the load;
+    after it, the run must not report success."""
+    items = _items(1)
+    api.others = ["stac-other-a", "stac-other-b"]
+    api.collections_page = 1
+    api.global_queryables = json.loads(json.dumps(QUERYABLES))
+    _in_sync(api, items)
+    api.queryables[COLL] = {}
+    api.global_queryables["lidarbc:delivery"]["title"] = "global"
+    api.load_log = env / "loads.log"
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1, r.all
+    assert "stac-other-a (lidarbc:delivery lost)" in r.err
+    assert "stac-other-b (lidarbc:delivery lost)" in r.err
+    assert "re-registering" in r.err and "A global row cannot come back" in r.err
+    # Every other write had already been made: queryables come last.
+    assert [l[0] for l in r.loads] == ["collections", "queryables"]
+
+
+def test_other_collections_that_cannot_be_read_refuse_the_queryables_load(
+        env, api, no_retry_sleep):
+    items = _items(1)
+    _in_sync(api, items)
+    api.queryables[COLL] = {"lidarbc:delivery": {"type": "integer"}}
+    api.others = ["stac-other-a"]
+    api.fail["/collections/stac-other-a/queryables"] = 500
+    api.load_log = env / "loads.log"
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1 and "before loading ours; nothing loaded" in r.err
+    assert "queryables" not in [l[0] for l in r.loads]
+
+
+def _global_row_taken_setup(api, env, items):
+    """Our collection is served the name through a global row with another definition,
+    so loading ours takes it from stac-other-a."""
+    api.others = ["stac-other-a"]
+    api.global_queryables = {"lidarbc:delivery": {"type": "integer"}}
+    _in_sync(api, items)
+    api.load_log = env / "loads.log"
+
+
+def test_a_load_that_commits_then_reports_failure_still_reports_the_loss(
+        env, api, monkeypatch):
+    """pypgstac commits, then the connection drops: the next run would find our row
+    serving the name as declared and check nothing, so the loss is reported now."""
+    items = _items(1)
+    _global_row_taken_setup(api, env, items)
+    # The fake logs the load, which the stub applies, then exits 1: committed, reported failed.
+    monkeypatch.setenv("FAKE_PYPGSTAC_QUERYABLES_RC", "1")
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1
+    assert "failed on" in r.err
+    assert "stac-other-a (lidarbc:delivery lost)" in r.err
+
+
+def test_a_failed_reread_of_ours_still_reports_the_loss(env, api, monkeypatch):
+    items = _items(1)
+    _global_row_taken_setup(api, env, items)
+    real = reg.queryables_served
+    calls = {"ours": 0}
+
+    def flaky(cid, api_url, session=None):
+        if cid == COLL:
+            calls["ours"] += 1
+            if calls["ours"] == 3:      # before the run, before the load, after it
+                raise RuntimeError("API request failed after 3 attempts: boom")
+        return real(cid, api_url, session)
+
+    monkeypatch.setattr(reg, "queryables_served", flaky)
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1
+    assert "could not compare the served queryables" in r.err
+    assert "stac-other-a (lidarbc:delivery lost)" in r.err
+
+
+def test_a_failed_reread_of_the_others_says_the_load_was_made(env, api, monkeypatch):
+    items = _items(1)
+    _global_row_taken_setup(api, env, items)
+    real = reg.queryables_served
+    calls = {"other": 0}
+
+    def flaky(cid, api_url, session=None):
+        if cid == "stac-other-a":
+            calls["other"] += 1
+            if calls["other"] == 2:     # before the load, after it
+                raise RuntimeError("API request failed after 3 attempts: boom")
+        return real(cid, api_url, session)
+
+    monkeypatch.setattr(reg, "queryables_served", flaky)
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1
+    assert "could not re-read the other collections after the queryables load" in r.err
+    assert "before loading ours" not in r.err
+
+
+def test_queryables_are_not_loaded_when_the_collection_does_not_read_back(env, api):
+    """Queryables come after the collection and items are proven."""
+    items = _items(1)
+    _global_row_taken_setup(api, env, items)
+    api.on_load = lambda a: setattr(a, "collection", _collection(COLL) | {"title": "x"})
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1 and "collection reads 'changed'" in r.err
+    assert "queryables" not in [l[0] for l in r.loads]
+    assert api.served_queryables("stac-other-a") == {"lidarbc:delivery":
+                                                     {"type": "integer"}}
+
+
+def test_only_the_names_that_differ_are_sent(env, api):
+    """A name served as declared is not reloaded because another one drifted: the load
+    would replace a matching global row, and every other collection would lose it."""
+    items = _items(1)
+    api.others = ["stac-other-a"]
+    api.global_queryables = json.loads(json.dumps(QUERYABLES))
+    _in_sync(api, items)
+    api.load_log = env / "loads.log"
+    q = {**QUERYABLES, "zz:new": {"type": "string"}}
+    r = _run(env, "drift", api.url, items, queryables=q)
+    assert r.rc == 0, r.all
+    sent = json.loads((env / "loads.log.queryables.json").read_text())["properties"]
+    assert sorted(sent) == ["zz:new"]
+    assert api.served_queryables("stac-other-a") == QUERYABLES
+
+
+@pytest.mark.parametrize("mode", ["all", "drift"])
+def test_a_first_registration_does_not_take_a_matching_global_row(env, api, mode):
+    """With the collection not yet registered nothing can be read for it, but a global
+    row of the name may exist. Once the collection is loaded, that row serves it as
+    declared, so nothing is loaded and the other collection keeps it."""
+    items = _items(1)
+    api.others = ["stac-other-a"]
+    api.global_queryables = json.loads(json.dumps(QUERYABLES))
+    api.load_log, api.on_load = env / "loads.log", lambda a: _in_sync(a, items)
+    r = _run(env, mode, api.url, items, queryables=QUERYABLES)
+    assert r.rc == 0, r.all
+    assert "queryables" not in [l[0] for l in r.loads]
+    assert api.served_queryables("stac-other-a") == QUERYABLES
+
+
+def test_a_first_registration_that_takes_a_global_row_fails_loudly(env, api):
+    """A global row with a different definition: the load replaces it, and the other
+    collection's loss is reported although nothing could be read for ours first."""
+    items = _items(1)
+    api.others = ["stac-other-a"]
+    api.global_queryables = {"lidarbc:delivery": {"type": "integer"}}
+    api.load_log, api.on_load = env / "loads.log", lambda a: _in_sync(a, items)
+    r = _run(env, "all", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1, r.all
+    assert "stac-other-a (lidarbc:delivery lost)" in r.err
+
+
+def test_another_collections_loss_is_reported_even_when_ours_also_failed(env, api):
+    """Ours failing must not hide the other collections' loss: the next run's snapshot
+    would no longer hold the name, so no later run could report it."""
+    items = _items(1)
+    api.others = ["stac-other-a"]
+    api.global_queryables = {"lidarbc:delivery": {"type": "integer"}}
+    _in_sync(api, items)
+    api.load_log = env / "loads.log"
+    api.apply_queryables = "take-global-only"
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1
+    assert "stac-other-a (lidarbc:delivery lost)" in r.err
+    assert "after registering, declared queryable(s)" in r.err
+
+
+def test_a_load_that_raises_something_else_still_reports_the_loss(env, api, monkeypatch):
+    """Any way out after the load is attempted, not only a RegisterError."""
+    items = _items(1)
+    _global_row_taken_setup(api, env, items)
+    real = reg.load_queryables
+
+    def load_then_break(*a, **k):
+        real(*a, **k)
+        raise OSError("connection reset")
+
+    monkeypatch.setattr(reg, "load_queryables", load_then_break)
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1, r.all
+    assert "OSError: connection reset" in r.err
+    assert "stac-other-a (lidarbc:delivery lost)" in r.err
+
+
+def test_a_library_target_with_queryables_none_declares_none(env, api):
+    items = _items(1)
+    _in_sync(api, items)
+    r = _run(env, "verify", api.url, items, queryables=None)
+    assert r.rc == 0, r.all
+    assert "queryables : none declared" in r.out
+
+
+def test_a_definition_another_collection_still_serves_but_changed_is_reported(
+        monkeypatch):
+    """pgstac 0.9.x could serve a name to one collection from its own row merged with a
+    global one, so taking the global row changes the definition rather than removing it."""
+    t = reg.Target(api="https://api.example.invalid", collection_id=COLL,
+                   bucket_url="https://bucket.example.invalid", queryables=QUERYABLES)
+    monkeypatch.setattr(reg, "_others_queryables",
+                        lambda target, names: {"stac-other-a": {"lidarbc:delivery": "d2"}})
+    msg = reg._others_damage(t, {"stac-other-a": {"lidarbc:delivery": "d1"}})
+    assert "stac-other-a (lidarbc:delivery changed)" in msg
+    assert reg._others_damage(t, {"stac-other-a": {"lidarbc:delivery": "d2"}}) is None

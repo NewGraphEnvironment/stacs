@@ -8,6 +8,7 @@ Naming: `<topic>.md`, revised in place, from 2026-10-06.
 | file | covers |
 |---|---|
 | [`pgstac_round_trip.md`](pgstac_round_trip.md) | what pgstac changes about a STAC body between load and serve, what the digest canonicalises, and why RFC 8785 |
+| [`pgstac_queryables.md`](pgstac_queryables.md) | how pypgstac loads queryables (the row passed in wins), how the API serves them, and what stacs guards |
 
 ## Related work
 
