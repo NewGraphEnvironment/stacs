@@ -69,15 +69,15 @@ anything is written.
 
 ## Phase 3: Docs
 
-- [ ] `NEWS.md` `## Unreleased` entry, including what the check cannot see.
-- [ ] `README.md` "No setting is a secret" paragraph: one sentence saying each load
+- [x] `NEWS.md` `## Unreleased` entry, including what the check cannot see.
+- [x] `README.md` "No setting is a secret" paragraph: one sentence saying each load
       confirms the database the host connected to, outside the snippet markers if a link
       is added.
-- [ ] `CLAUDE.md` line 48: `STACS_LOADED <n> <kind> <db>`.
+- [x] `CLAUDE.md` line 48: `STACS_LOADED <n> <kind> <db>`.
 
 ## Validation
 
-- [ ] Tests pass (`uv run pytest`), including the doctests
+- [x] Tests pass (`uv run pytest`), including the doctests
 - [ ] `/code-check` clean (each commit, or once over the branch with `/code-check branch`)
 - [ ] PWF checkboxes match landed work
 - [ ] `/planning-archive` on completion

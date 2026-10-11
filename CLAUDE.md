@@ -45,7 +45,7 @@ rather than copied:
 traps found while porting it, both of which passed a load that never ran:
 
 - On bash 3.2, an expansion error or a failed `.` under an armed `EXIT` trap exits **0**.
-  Success is a flag set on the last line and a `STACS_LOADED <n> <kind>` line Python
+  Success is a flag set on the last line and a `STACS_LOADED <n> <kind> <db>` line Python
   requires on stdout -- never the exit status alone.
 - `( ... ) || exit 1` suspends `set -e` for everything inside the subshell. The subshell
   that sources the env file runs untested; the parent's `-e` carries its failure.

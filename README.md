@@ -106,7 +106,8 @@ and again after it, whatever happened in between, and fails if one was lost or c
 
 **No setting is a secret.** Writes go over ssh to the STAC host, which runs
 `pypgstac load --method upsert` there; the database password stays on the host and is
-named (`password_env`), never given. The config refuses unknown keys, so a `password`
+named (`password_env`), never given. Each load first asks that connection which database
+it reached and refuses anything but `db`. The config refuses unknown keys, so a `password`
 line is an error rather than a silently ignored secret.
 
 <!-- --8<-- [end:configure] -->

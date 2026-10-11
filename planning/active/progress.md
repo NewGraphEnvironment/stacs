@@ -13,3 +13,4 @@
 - Phase 2: `remote_script` asks `current_database()` through the launcher before the
   load and refuses a mismatch on the host; the mark carries the name; `_send` requires
   `STACS_LOADED <n> <kind> <db>` exactly. 479 passed. Mutation table in findings.md.
+- Phase 3: NEWS Unreleased, README sentence (inside the configure snippet, no link), CLAUDE.md mark. Strict mkdocs build clean.
