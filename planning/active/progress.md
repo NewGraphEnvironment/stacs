@@ -10,3 +10,4 @@
 - Phases 1-3: new dryrun tests written first (12 failing), probes moved ahead of every
   dryrun return, offline dryrun tests given the stub API, CLI probe stubbed. Plan review
   folded in (findings.md). Mutation table in findings.md. Full suite 498 passed.
+- Phase 4: README dryrun paragraph, --dryrun help, NEWS Unreleased. mkdocs --strict clean.

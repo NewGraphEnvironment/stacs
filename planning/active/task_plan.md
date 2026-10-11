@@ -25,9 +25,9 @@ Acceptance (revised from the issue's "If done", which described the docs-only op
 - [x] `tests/test_cli.py`: the `load --dryrun` tests run with no ssh stub. Stub `stacs.register.probe` with a recorder (no real ssh from the suite) and assert it was called (autouse, so no future test runs real ssh)
 
 ## Phase 4: Docs
-- [ ] README "Use" (inside the markers): one paragraph. `--dryrun` makes every read a real run makes before writing (the published set, the API, ssh to the host) and stops before the first write. It never runs the remote script, so the env file, pypgstac and the database check are first exercised by a real load. Upserting the already-published `collection.json` with `stacs load collection` is the smallest real load
-- [ ] `cli.py`: `help=` on both `--dryrun` flags, saying the same in one line
-- [ ] `NEWS.md` `## Unreleased` entry (the version bump and tag happen at release, by hand)
+- [x] README "Use" (inside the markers): one paragraph. A dryrun writes nothing and still reaches the API (`register`) and the host (both). It stops before the fetch (all/ids), the audit (drift), or after `load`'s checks, and never runs the remote script, so the env file, pypgstac and the database check are first exercised by a real load. When `verify` reports the collection `same`, `stacs load collection` with a downloaded copy of the published `collection.json` is the smallest real load (review A1)
+- [x] `cli.py`: `help=` on both `--dryrun` flags, saying the same in one line
+- [x] `NEWS.md` `## Unreleased` entry, marked as a behaviour change (review S2; the version bump and tag happen at release, by hand)
 
 ## Validation
 

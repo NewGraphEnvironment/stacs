@@ -132,6 +132,16 @@ find build/items -name '*.json' ! -name collection.json \
 `load` checks every item against the declared collection and asset rules before sending,
 and refuses an id that appears twice; it exits 1 if there was nothing to load.
 
+`--dryrun` writes nothing, and it still reaches the API and the host. `register` asks
+the API for one item of the collection, and both commands run `ssh <host> true`, so a
+dryrun that passes means they answered, and one that cannot reach either exits 1. It then stops: `all` and `ids` before
+fetching any item body, `drift` after comparing every body with the API but before the
+asset audit, `load` after its checks. None of them runs the script on the host, so the env
+file, pypgstac and the database check are first exercised by a real load. When `verify`
+reports the collection `same`, `stacs load collection` with a downloaded copy of the
+published `collection.json` is the smallest real load: it upserts the body the database
+already holds.
+
 `verify` exits 1 on any drift and writes `missing.txt`, `changed.txt`, `orphaned.txt` and
 `collection_state.txt` to `--out-dir`, and `queryables_missing.txt` and
 `queryables_changed.txt` when queryables are declared. `register` refuses before writing wherever it can:

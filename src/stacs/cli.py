@@ -306,7 +306,9 @@ def build_parser() -> argparse.ArgumentParser:
     _asset_flags(p)
     p.add_argument("--mode", required=True, choices=[m for m in MODES if m != "verify"])
     p.add_argument("--ids-file", help="for --mode ids: one id per line")
-    p.add_argument("--dryrun", action="store_true")
+    p.add_argument("--dryrun", action="store_true",
+                   help="probe the API and the host (read-only), then stop before "
+                        "the fetch (all, ids) or the audit (drift); writes nothing")
     p.set_defaults(fn=cmd_register)
 
     p = sub.add_parser("load", help="upsert JSON files built locally")
@@ -321,7 +323,9 @@ def build_parser() -> argparse.ArgumentParser:
                        help="the collection id to check against (default: collection_id "
                             "in [catalogue])")
         _transport_flags(q)
-        q.add_argument("--dryrun", action="store_true")
+        q.add_argument("--dryrun", action="store_true",
+                       help="check the files and probe the host (read-only); sends "
+                            "nothing")
         q.set_defaults(fn=cmd_load)
 
     p = with_config(sub.add_parser("audit", help="assert every item agrees with its "
