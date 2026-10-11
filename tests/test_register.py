@@ -48,7 +48,7 @@ if [ "$1" = "load_queryables" ]; then
   n=$(wc -l < "$2" | tr -d ' ')
   cp "$2" "$SSH_LOG.queryables.json"
   echo "queryables $n db=${PGDATABASE:-} pw=${PGPASSWORD:+set} ids=${3#--collection_ids=}" >> "$SSH_LOG"
-  exit "${FAKE_PYPGSTAC_RC:-0}"
+  exit "${FAKE_PYPGSTAC_QUERYABLES_RC:-${FAKE_PYPGSTAC_RC:-0}}"
 fi
 [ "$1" = "load" ] && [ "$4" = "--method" ] && [ "$5" = "upsert" ] || { echo "bad args: $*" >&2; exit 2; }
 n=$(wc -l < "$3" | tr -d ' ')
@@ -248,7 +248,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("SSH_LOG", str(tmp_path / "loads.log"))
     monkeypatch.setenv("SSH_CMDS", str(tmp_path / "ssh_cmds.log"))
     for k in ("SSH_PROBE_RC", "SSH_TRUNCATE", "SSH_SILENT_SUCCESS", "FAKE_PYPGSTAC_RC",
-              "FAKE_PYPGSTAC_SAY"):
+              "FAKE_PYPGSTAC_SAY", "FAKE_PYPGSTAC_QUERYABLES_RC"):
         monkeypatch.delenv(k, raising=False)
     # Set for every test, so a test aimed at something else cannot pass because the
     # password check refused first.
@@ -1129,11 +1129,12 @@ def test_nothing_declared_sends_nothing(env):
     assert not (env / "ssh_cmds.log").exists()
 
 
-def test_a_failed_queryables_load_says_nothing_was_loaded(env, monkeypatch):
-    """pypgstac loads a queryables document in one transaction."""
+def test_a_failed_queryables_load_does_not_promise_nothing_was_loaded(env, monkeypatch):
+    """One transaction, but a failure reported after the commit leaves it loaded."""
     monkeypatch.setenv("FAKE_PYPGSTAC_RC", "1")
-    with pytest.raises(reg.RegisterError, match="Nothing was loaded"):
+    with pytest.raises(reg.RegisterError, match="after its commit") as e:
         reg.load_queryables(_transport(), COLL, QUERYABLES)
+    assert "Nothing was loaded" not in str(e.value)
 
 
 def test_a_queryables_load_that_does_not_confirm_itself_failed(env, monkeypatch):
@@ -1400,15 +1401,92 @@ def test_a_load_that_takes_a_global_queryable_from_others_fails_loudly(env, api)
     assert [l[0] for l in r.loads] == ["collections", "queryables"]
 
 
-def test_other_collections_that_cannot_be_listed_refuse_before_any_write(env, api,
-                                                                          no_retry_sleep):
+def test_other_collections_that_cannot_be_read_refuse_the_queryables_load(
+        env, api, no_retry_sleep):
     items = _items(1)
     _in_sync(api, items)
     api.queryables[COLL] = {"lidarbc:delivery": {"type": "integer"}}
     api.others = ["stac-other-a"]
     api.fail["/collections/stac-other-a/queryables"] = 500
+    api.load_log = env / "loads.log"
     r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
-    assert r.rc == 1 and "before loading ours" in r.err and r.writes == 0
+    assert r.rc == 1 and "before loading ours; nothing loaded" in r.err
+    assert "queryables" not in [l[0] for l in r.loads]
+
+
+def _global_row_taken_setup(api, env, items):
+    """Our collection is served the name through a global row with another definition,
+    so loading ours takes it from stac-other-a."""
+    api.others = ["stac-other-a"]
+    api.global_queryables = {"lidarbc:delivery": {"type": "integer"}}
+    _in_sync(api, items)
+    api.load_log = env / "loads.log"
+
+
+def test_a_load_that_commits_then_reports_failure_still_reports_the_loss(
+        env, api, monkeypatch):
+    """pypgstac commits, then the connection drops: the next run would find our row
+    serving the name as declared and check nothing, so the loss is reported now."""
+    items = _items(1)
+    _global_row_taken_setup(api, env, items)
+    # The fake logs the load, which the stub applies, then exits 1: committed, reported failed.
+    monkeypatch.setenv("FAKE_PYPGSTAC_QUERYABLES_RC", "1")
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1
+    assert "failed on" in r.err
+    assert "stac-other-a (lidarbc:delivery lost)" in r.err
+
+
+def test_a_failed_reread_of_ours_still_reports_the_loss(env, api, monkeypatch):
+    items = _items(1)
+    _global_row_taken_setup(api, env, items)
+    real = reg.queryables_served
+    calls = {"ours": 0}
+
+    def flaky(cid, api_url, session=None):
+        if cid == COLL:
+            calls["ours"] += 1
+            if calls["ours"] == 3:      # before the run, before the load, after it
+                raise RuntimeError("API request failed after 3 attempts: boom")
+        return real(cid, api_url, session)
+
+    monkeypatch.setattr(reg, "queryables_served", flaky)
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1
+    assert "could not compare the served queryables" in r.err
+    assert "stac-other-a (lidarbc:delivery lost)" in r.err
+
+
+def test_a_failed_reread_of_the_others_says_the_load_was_made(env, api, monkeypatch):
+    items = _items(1)
+    _global_row_taken_setup(api, env, items)
+    real = reg.queryables_served
+    calls = {"other": 0}
+
+    def flaky(cid, api_url, session=None):
+        if cid == "stac-other-a":
+            calls["other"] += 1
+            if calls["other"] == 2:     # before the load, after it
+                raise RuntimeError("API request failed after 3 attempts: boom")
+        return real(cid, api_url, session)
+
+    monkeypatch.setattr(reg, "queryables_served", flaky)
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1
+    assert "could not re-read the other collections after the queryables load" in r.err
+    assert "before loading ours" not in r.err
+
+
+def test_queryables_are_not_loaded_when_the_collection_does_not_read_back(env, api):
+    """Queryables come after the collection and items are proven."""
+    items = _items(1)
+    _global_row_taken_setup(api, env, items)
+    api.on_load = lambda a: setattr(a, "collection", _collection(COLL) | {"title": "x"})
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1 and "collection reads 'changed'" in r.err
+    assert "queryables" not in [l[0] for l in r.loads]
+    assert api.served_queryables("stac-other-a") == {"lidarbc:delivery":
+                                                     {"type": "integer"}}
 
 
 def test_only_the_names_that_differ_are_sent(env, api):
@@ -1467,3 +1545,20 @@ def test_another_collections_loss_is_reported_even_when_ours_also_failed(env, ap
     assert r.rc == 1
     assert "stac-other-a (lidarbc:delivery lost)" in r.err
     assert "after registering, declared queryable(s)" in r.err
+
+
+def test_a_load_that_raises_something_else_still_reports_the_loss(env, api, monkeypatch):
+    """Any way out after the load is attempted, not only a RegisterError."""
+    items = _items(1)
+    _global_row_taken_setup(api, env, items)
+    real = reg.load_queryables
+
+    def load_then_break(*a, **k):
+        real(*a, **k)
+        raise OSError("connection reset")
+
+    monkeypatch.setattr(reg, "load_queryables", load_then_break)
+    r = _run(env, "drift", api.url, items, queryables=QUERYABLES)
+    assert r.rc == 1, r.all
+    assert "OSError: connection reset" in r.err
+    assert "stac-other-a (lidarbc:delivery lost)" in r.err

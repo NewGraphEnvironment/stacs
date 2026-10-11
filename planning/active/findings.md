@@ -72,6 +72,19 @@ S1 from the SQL already read.
 
 All three reproduced as red tests first; four mutations caught.
 
+## /code-check round 2 (review-round2.md): inside round 1's fix
+
+Mechanism: the other-collections check ran only on the success path after a load. Fixed
+structurally rather than per exit. Queryables become one step (`_register_queryables`),
+run last, after the collection and items are verified. The snapshot is taken just before
+the load (round 2's fragile 2), and the check runs on every way out once the load is
+attempted. Enumerated exits: RegisterError from the load (caught); any other exception
+(was dropped by `finally`, now caught, test with OSError); the re-read of ours (caught);
+`_others_damage` (never raises); `_run` after the step (log only); other callers of
+`load_queryables` (none; docstring now says the bare load checks nothing). The failure
+message no longer promises nothing was loaded. The after-load read failure has its own
+wording. Eight mutations caught (two re-run after the first attempt was malformed).
+
 ## Errors Encountered
 
 | Error | Resolution |

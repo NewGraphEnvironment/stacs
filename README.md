@@ -98,11 +98,11 @@ including a shared or global one. So each catalogue declares its own, and rows f
 different collections coexist. `register` loads a queryable only when it is missing or
 served with a different definition, after the items, and never with an index (each load
 replaces the row, and with it any index set on that name by hand). Removing a
-declaration leaves its row in place: nothing is deleted. A name that this collection
-already serves with a different definition may be a shared or global row, as may any
-name when the collection is registered for the first time, so `register` reads every other
-collection's definition of those names before the first write and fails if one was lost
-or changed after the load. The host needs pypgstac 0.9.6 or later.
+declaration leaves its row in place: nothing is deleted. Queryables are loaded last,
+once the collection and items are verified and the collection is registered. A name the
+collection is then served with a different definition may come from a shared or global
+row, so `register` reads every other collection's definition of it just before the load
+and again after it, whatever happened in between, and fails if one was lost or changed. The host needs pypgstac 0.9.6 or later.
 
 **No setting is a secret.** Writes go over ssh to the STAC host, which runs
 `pypgstac load --method upsert` there; the database password stays on the host and is
