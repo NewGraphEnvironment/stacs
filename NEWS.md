@@ -3,6 +3,19 @@
 Versions track the package. A tag is a release consumers can pin with
 `tag = "vX.Y.Z"` in `[tool.uv.sources]`; `pyproject.toml` carries the same version.
 
+## Unreleased
+
+- A catalogue declares its queryables in `stacs.toml`, one JSON Schema fragment per item
+  property under `[queryables."<name>"]` (#8). `register` loads them through
+  `pypgstac load_queryables` for the catalogue's own collection only, after the items and
+  only when one is missing or served differently. `verify` compares
+  `/collections/<id>/queryables` with the declaration. pgstac's loader replaces a shared or
+  global row of the name, so a register that changes what another collection serves
+  fails. A catalogue that declares none makes no queryables request.
+- A declaration pgstac would not serve as written is refused when the config is read:
+  `id`, `geometry`, `datetime`, `start_datetime`, `end_datetime` and `collection`; a
+  `properties.` prefix; a backslash or a NUL; an empty `enum`; a value with no JSON form.
+
 ## 0.1.1
 
 - A documentation site, <https://www.newgraphenvironment.com/stacs/> (#3): MkDocs with

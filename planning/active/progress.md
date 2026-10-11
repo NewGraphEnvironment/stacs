@@ -16,3 +16,9 @@
   `_send`, shared by `load_queryables`. The real `fire` (dev dependency) parses the
   generated words to `[id]` for 7 ids incl. quotes, backslash, non-ASCII, `[x]`, `1`;
   mutation (bare id) fails all 7.
+- Phase 3: register/verify integration, other-collections guard; plan review folded in
+  (dispositions in findings.md); 21 mutations caught. Issue #8 body: load order and the
+  served endpoint corrected.
+- Phase 4: README configure/use/assumes, NEWS Unreleased, docs/reference/queryables.md +
+  nav; `mkdocs build --strict` clean (no WARNING lines). 460 tests pass.
+- Next: /code-check branch, archive, PR.

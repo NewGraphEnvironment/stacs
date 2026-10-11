@@ -57,6 +57,7 @@ nav:
       - stacs.verify: reference/verify.md
       - stacs.catalogue: reference/catalogue.md
       - stacs.validate: reference/validate.md
+      - stacs.queryables: reference/queryables.md
       - stacs.register: reference/register.md
   - Changelog: changelog.md
 

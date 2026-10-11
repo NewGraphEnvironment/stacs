@@ -99,18 +99,18 @@ Revised after the plan review (`review-plan.md`; dispositions in `findings.md`).
 
 ## Phase 4: Docs and release notes
 
-- [ ] README `configure` section: a `[queryables."lidarbc:delivery"]` example plus prose.
+- [x] README `configure` section: a `[queryables."lidarbc:delivery"]` example plus prose.
       Cover own collection only; that removing a declaration leaves the row (upsert
       never deletes); pypgstac ≥ 0.9.6 on the host; and the filter extension under
       "What it assumes". Keep the snippet markers intact.
-- [ ] `docs/reference/queryables.md` and its mkdocs nav entry. Run the strict build
+- [x] `docs/reference/queryables.md` and its mkdocs nav entry. Run the strict build
       without `-q`.
-- [ ] `NEWS.md` `## Unreleased` entry. No version bump in this PR; the release is cut by
+- [x] `NEWS.md` `## Unreleased` entry. No version bump in this PR; the release is cut by
       hand at merge.
 
 ## Validation
 
-- [ ] Tests pass
+- [x] Tests pass
 - [ ] `/code-check` clean (each commit, or once over the branch with `/code-check branch`)
 - [ ] PWF checkboxes match landed work
 - [ ] `/planning-archive` on completion
