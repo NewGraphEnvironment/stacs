@@ -975,7 +975,7 @@ def test_all_dryrun_previews_probes_and_writes_nothing(env, api):
     r = _run(env, "all", api.url, items=_items(4), dryrun=True)
     assert r.rc == 0, r.all
     assert "to register: 4" in r.out and "[dryrun]" in r.out
-    assert "fetching 4" not in r.out and r.writes == 0
+    assert "fetching 4" not in r.out and r.writes == 0 and r.probes == 1
 
 
 # A dryrun is everything but the write, so a pass says the host and the API answered;
@@ -995,6 +995,7 @@ def test_a_dryrun_reaches_the_host_and_the_api_and_says_so(env, api, mode):
     r = _dryrun(env, api.url, mode)
     assert r.rc == 0, r.all
     assert r.probes == 1 and r.writes == 0
+    assert "/collections" in api.gets       # read by `_api_probe` alone in a dryrun
     assert f"[dryrun] reached {api.url} and nobody@stub.invalid" in r.out
 
 
