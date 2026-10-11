@@ -80,4 +80,4 @@ anything is written.
 - [x] Tests pass (`uv run pytest`), including the doctests
 - [x] `/code-check` clean (each commit, or once over the branch with `/code-check branch`)
 - [x] PWF checkboxes match landed work
-- [ ] `/planning-archive` on completion
+- [x] `/planning-archive` on completion
