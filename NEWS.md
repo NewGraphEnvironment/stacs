@@ -7,7 +7,8 @@ Versions track the package. A tag is a release consumers can pin with
 
 - **Behaviour change:** `--dryrun` now probes the API and the host (#5). Both probes are
   read-only. `register --dryrun` (all modes) and `load --dryrun` used to return before
-  them, so a dryrun that passed proved nothing about the API or ssh. A dryrun now exits 1
+  them, so a dryrun that passed proved nothing about ssh, and in `all` and `ids` nothing
+  about the API either. A dryrun now exits 1
   when either does not answer, including in a CI job with no ssh key or known_hosts, and
   says what it reached. It still stops before the item fetch (`all`, `ids`) or the audit
   (`drift`), and never runs the script on the host; the README says what each one skips.
