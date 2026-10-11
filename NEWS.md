@@ -3,7 +3,7 @@
 Versions track the package. A tag is a release consumers can pin with
 `tag = "vX.Y.Z"` in `[tool.uv.sources]`; `pyproject.toml` carries the same version.
 
-## Unreleased
+## 0.1.2
 
 - A catalogue declares its queryables in `stacs.toml`, one JSON Schema fragment per item
   property under `[queryables."<name>"]` (#8). `register` loads them through
