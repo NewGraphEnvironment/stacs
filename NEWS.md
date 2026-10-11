@@ -3,7 +3,7 @@
 Versions track the package. A tag is a release consumers can pin with
 `tag = "vX.Y.Z"` in `[tool.uv.sources]`; `pyproject.toml` carries the same version.
 
-## Unreleased
+## 0.2.0
 
 - **Behaviour change:** `--dryrun` now probes the host, and `register --dryrun` the API as
   well (#5). Both probes are read-only. `register --dryrun` (all modes) and

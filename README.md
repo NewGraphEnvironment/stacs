@@ -41,10 +41,10 @@ Managed with [uv](https://docs.astral.sh/uv/). Install from git rather than PyPI
 
 ```toml
 [tool.uv.sources]
-stacs = { git = "https://github.com/NewGraphEnvironment/stacs", tag = "v0.1.3" }
+stacs = { git = "https://github.com/NewGraphEnvironment/stacs", tag = "v0.2.0" }
 ```
 
-Without uv: `pip install "stacs @ git+https://github.com/NewGraphEnvironment/stacs@v0.1.3"`.
+Without uv: `pip install "stacs @ git+https://github.com/NewGraphEnvironment/stacs@v0.2.0"`.
 
 <!-- --8<-- [end:home] -->
 
