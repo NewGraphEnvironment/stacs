@@ -281,6 +281,11 @@ With `cancel-in-progress: false`, GitHub keeps one running and one pending run p
 
 *1 line of evidence for this rule is in `conventions/ci-monitoring.md`, which `/code-check` reads in full.*
 
+## A deploy commit on `gh-pages` is not yet a served page
+Before telling anyone a Pages URL is live, fetch it and compare the bytes with the source: the deploy commit lands on `gh-pages` before the `pages-build-deployment` run publishes it, and until that run finishes the URL still answers 404.
+
+*1 line of evidence for this rule is in `conventions/ci-monitoring.md`, which `/code-check` reads in full.*
+
 # Code Check — R
 Traps in R: the language and base/utils behaviour, package internals (`R CMD build`, `.Rbuildignore`, roxygen, lintr, `data-raw/`, testthat, pak), and the DBI/duckdb/arrow data layer.
 
@@ -794,6 +799,9 @@ Write `${1}` whenever the text after a backreference starts with a digit: Perl r
 
 ### `for x in $(cmd | grep … || true)` hides a failing `cmd`
 Assign the command on its own line under `set -e` (`out=$(cmd)`), then filter `out` with `|| true`.
+
+### A sed/awk range can run to EOF
+Never pipe a `sed`/`awk` range extract into an interpreter.
 
 # Code Check Conventions
 Structured checklist for reviewing diffs before commit.
