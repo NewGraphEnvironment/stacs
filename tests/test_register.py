@@ -5,8 +5,9 @@ Ported from stac_dem_bc's tests/test_catalogue_register.py, run in-process.
 How it runs offline:
   - collection.json and every item link are `file://` URLs
   - a stub STAC API on localhost answers POST /search and GET /collections/<id>
-  - `ssh` is a stub on PATH. The probe (`... HOST true`) answers $SSH_PROBE_RC; any
-    other call RUNS the remote script locally, as a remote login shell would, so the
+  - `ssh` is a stub on PATH. The probe (`... HOST true`) is counted in
+    $SSH_CMDS.probes and answers $SSH_PROBE_RC; any other call RUNS the remote
+    script locally, as a remote login shell would, so the
     receiving-side line count, the PG* exports and the trap are exercised for real
   - the remote launcher is a fake `pypgstac` that logs `<kind> <lines> db=<PGDATABASE>
     pw=<set|unset>` and exits $FAKE_PYPGSTAC_RC. Asked for `current_database()` it prints
@@ -31,7 +32,9 @@ ASSETS = ("data", "thumbnail")
 
 SSH_STUB = r"""#!/bin/bash
 last="${@: -1}"
-if [ "$last" = "true" ]; then exit "${SSH_PROBE_RC:-0}"; fi
+if [ "$last" = "true" ]; then
+  echo probe >> "$SSH_CMDS.probes"; exit "${SSH_PROBE_RC:-0}"
+fi
 echo "$last" >> "$SSH_CMDS"
 if [ -n "${SSH_SILENT_SUCCESS:-}" ]; then cat > /dev/null; exit 0; fi
 if [ -n "${SSH_TRUNCATE:-}" ]; then
@@ -298,6 +301,8 @@ class Run:
         cmds = tmp_path / "ssh_cmds.log"
         self.writes = 0 if not cmds.exists() else sum(
             1 for line in cmds.read_text().splitlines() if line.startswith("bash -c"))
+        probes = tmp_path / "ssh_cmds.log.probes"
+        self.probes = 0 if not probes.exists() else len(probes.read_text().splitlines())
 
 
 def _run(tmp_path, mode, api_url="http://127.0.0.1:9", items=(), collection_id=COLL,
@@ -328,14 +333,14 @@ def _items(n=3):
 # Startup and the published set
 # =============================================================================
 
-def test_the_asset_policy_is_said_out_loud_at_startup(env):
+def test_the_asset_policy_is_said_out_loud_at_startup(env, api):
     """Off is said out loud, or an unaudited run reads as a checked pass."""
-    r = _run(env, "all", items=_items(1), dryrun=True)
+    r = _run(env, "all", api.url, items=_items(1), dryrun=True)
     assert r.rc == 0, r.all
     assert "asset audit: none" in r.out
     d = env / "declared"
     d.mkdir()
-    r = _run(d, "all", items=_items(1), dryrun=True, require_asset="data",
+    r = _run(d, "all", api.url, items=_items(1), dryrun=True, require_asset="data",
              forbid_assets=["legacy"])
     assert "asset audit: require=data forbid=legacy" in r.out
 
@@ -384,10 +389,10 @@ def test_relative_item_hrefs_resolve_against_the_collection(env, api):
 # ids mode input
 # =============================================================================
 
-def test_ids_mode_normalises_blank_lines_and_duplicates(env):
+def test_ids_mode_normalises_blank_lines_and_duplicates(env, api):
     ids = env / "ids.txt"
     ids.write_text("a1\n\n  \na1\na0")      # no trailing newline, blank, duplicate
-    r = _run(env, "ids", items=_items(3), ids_file=ids, dryrun=True)
+    r = _run(env, "ids", api.url, items=_items(3), ids_file=ids, dryrun=True)
     assert r.rc == 0, r.all
     assert "to register: 2" in r.out
 
@@ -966,12 +971,65 @@ def test_all_succeeds_end_to_end_when_the_api_serves_what_was_sent(env, api):
     assert "DONE: 3 item(s)" in r.out
 
 
-def test_all_dryrun_previews_and_touches_nothing(env, monkeypatch):
-    monkeypatch.setenv("SSH_PROBE_RC", "255")     # a probe would fail the run
-    r = _run(env, "all", items=_items(4), dryrun=True)
+def test_all_dryrun_previews_probes_and_writes_nothing(env, api):
+    r = _run(env, "all", api.url, items=_items(4), dryrun=True)
     assert r.rc == 0, r.all
     assert "to register: 4" in r.out and "[dryrun]" in r.out
-    assert "fetching 4" not in r.out and r.writes == 0
+    assert "fetching 4" not in r.out and r.writes == 0 and r.probes == 1
+
+
+# A dryrun runs the read-only probes, so a register dryrun that passes says the host and
+# the API answered, and a load dryrun the host; one that skipped them would read as a
+# connectivity check that never ran (#5).
+
+def _dryrun(env, api_url, mode):
+    items = _items(2)
+    ids = env / "ids.txt"
+    ids.write_text("a1\n")
+    return _run(env, mode, api_url, items, dryrun=True,
+                ids_file=ids if mode == "ids" else None)
+
+
+@pytest.mark.parametrize("mode", ["all", "ids", "drift"])
+def test_a_dryrun_reaches_the_host_and_the_api_and_says_so(env, api, mode):
+    _in_sync(api, _items(2))
+    r = _dryrun(env, api.url, mode)
+    assert r.rc == 0, r.all
+    assert r.probes == 1 and r.writes == 0
+    assert "/collections" in api.gets       # `_api_probe` alone: the collection exists
+    assert f"[dryrun] reached {api.url} and nobody@stub.invalid" in r.out
+
+
+@pytest.mark.parametrize("mode", ["all", "ids", "drift"])
+def test_a_dryrun_refuses_an_unreachable_host(env, api, monkeypatch, mode):
+    _in_sync(api, _items(2))
+    monkeypatch.setenv("SSH_PROBE_RC", "255")
+    r = _dryrun(env, api.url, mode)
+    assert r.rc == 1 and "cannot reach nobody@stub.invalid" in r.err, r.all
+    assert "[dryrun] would" not in r.out and r.writes == 0
+
+
+@pytest.mark.parametrize("mode", ["all", "ids", "drift"])
+def test_a_dryrun_refuses_an_api_that_does_not_answer(env, no_retry_sleep, mode):
+    r = _dryrun(env, "http://127.0.0.1:9", mode)
+    assert r.rc == 1 and "does not answer" in r.err, r.all
+    assert "[dryrun] would" not in r.out and r.writes == 0
+
+
+@pytest.mark.parametrize("kind", ["items", "queryables"])
+def test_a_load_dryrun_refuses_an_unreachable_host(env, monkeypatch, kind):
+    monkeypatch.setenv("SSH_PROBE_RC", "255")
+    said = []
+    with pytest.raises(reg.RegisterError, match="cannot reach"):
+        if kind == "items":
+            p = env / "a0.json"
+            p.write_text(json.dumps(_item("a0")))
+            reg.load(_transport(), "items", [p], dryrun=True, log=said.append)
+        else:
+            reg.load_queryables(_transport(), COLL, QUERYABLES, dryrun=True,
+                                log=said.append)
+    assert "[dryrun] nothing sent" not in said
+    assert not (env / "ssh_cmds.log").exists()
 
 
 def test_ids_registers_exactly_those_and_says_to_verify_after(env, api):
@@ -1235,7 +1293,9 @@ def test_queryables_dryrun_sends_nothing(env):
     assert reg.load_queryables(_transport(), COLL, QUERYABLES, dryrun=True,
                                log=said.append) == 0
     assert "[dryrun] nothing sent" in said
+    assert "[dryrun] reached nobody@stub.invalid" in said
     assert not (env / "loads.log").exists() and not (env / "ssh_cmds.log").exists()
+    assert (env / "ssh_cmds.log.probes").read_text() == "probe\n"
 
 
 def test_nothing_declared_sends_nothing(env):
@@ -1451,9 +1511,19 @@ def test_drift_dryrun_names_the_queryables_it_would_load(env, api):
     assert r.rc == 0 and "queryables lidarbc:delivery" in r.out and r.writes == 0
 
 
-def test_all_dryrun_names_the_queryables(env):
-    r = _run(env, "all", items=_items(1), queryables=QUERYABLES, dryrun=True)
+def test_all_dryrun_names_the_queryables(env, api):
+    r = _run(env, "all", api.url, items=_items(1), queryables=QUERYABLES, dryrun=True)
     assert r.rc == 0 and "and queryables lidarbc:delivery" in r.out
+
+
+def test_all_dryrun_does_not_name_queryables_served_as_declared(env, api):
+    items = _items(1)
+    _in_sync(api, items)
+    api.queryables[COLL] = json.loads(json.dumps(QUERYABLES))
+    r = _run(env, "all", api.url, items, queryables=QUERYABLES, dryrun=True)
+    assert r.rc == 0, r.all
+    assert "queryables : 0 missing, 0 changed" in r.out
+    assert "and queryables" not in r.out
 
 
 @pytest.mark.parametrize("mode", ["all", "drift"])

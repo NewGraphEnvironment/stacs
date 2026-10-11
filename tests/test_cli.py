@@ -7,7 +7,7 @@ import re
 
 import pytest
 
-from stacs import cli
+from stacs import cli, register
 
 CONFIG = """
 [catalogue]
@@ -32,6 +32,16 @@ def cfg_file(tmp_path):
     p = tmp_path / "stacs.toml"
     p.write_text(CONFIG)
     return p
+
+
+@pytest.fixture(autouse=True)
+def probes(monkeypatch):
+    """A `load --dryrun` probes the host, read-only. Recorded here, never run: the
+    hosts in these configs do not exist, and ssh is a subprocess the socket guard in
+    conftest.py cannot see."""
+    hosts = []
+    monkeypatch.setattr(register, "probe", lambda t: hosts.append(t.host))
+    return hosts
 
 
 @pytest.fixture
@@ -284,7 +294,7 @@ def test_validate_over_nothing_fails(tmp_path, capsys):
 # =============================================================================
 
 def test_load_items_dryrun_assembles_and_sends_nothing(tmp_path, cfg_file, monkeypatch,
-                                                       capsys):
+                                                       capsys, probes):
     paths = []
     for i in range(2):
         p = tmp_path / f"i{i}.json"
@@ -296,6 +306,7 @@ def test_load_items_dryrun_assembles_and_sends_nothing(tmp_path, cfg_file, monke
     out = capsys.readouterr().out
     assert rc == 0, out
     assert "items   : 2" in out and "[dryrun] nothing sent" in out
+    assert probes == ["user@host.example.invalid"]
 
 
 def test_load_items_refuses_another_collection(tmp_path, cfg_file, monkeypatch, capsys):
@@ -461,12 +472,13 @@ def test_host_and_db_flags_override_the_config(cfg_file, captured_run):
 
 
 def test_load_collection_dryrun_succeeds_for_the_declared_collection(tmp_path, cfg_file,
-                                                                     capsys):
+                                                                     capsys, probes):
     p = tmp_path / "c.json"
     p.write_text(json.dumps({"type": "Collection", "id": "any-collection"}))
     assert cli.main(["load", "collection", "--config", str(cfg_file), str(p),
                      "--dryrun"]) == 0
     assert "[dryrun] nothing sent" in capsys.readouterr().out
+    assert probes == ["user@host.example.invalid"]
 
 
 @pytest.mark.parametrize("content", [None, "{trunc", "[]"])
