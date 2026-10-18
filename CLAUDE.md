@@ -318,7 +318,11 @@ anything git-backed, `git fetch` first: reading a local clone and reporting it a
 with a longer fuse. **And before hand-rolling a parser for a probe, check whether the code
 already has one**: a bespoke parser silently narrows the population it can see.
 
-*9 lines of evidence for this rule are in `conventions/agent-operations.md`.*
+**A host that times out from one machine is not blocked until the local link is ruled out**:
+ping the gateway (`ping -c 30 -i 0.2 <gateway>`) and try a second machine. A lossy link passes
+short exchanges and kills long ones, which mimics a selective block.
+
+*15 lines of evidence for this rule are in `conventions/agent-operations.md`.*
 
 ### A share is not robust to an unresolved definition until you measure the spread
 
@@ -358,7 +362,7 @@ check is almost always to read the thing the prose describes.
   keeps finding them, list every quantified or inherited claim with a measured verdict
   (`code-check.md`, "A guard's scope, escape hatches, and remedies").
 
-*91 lines of evidence for this rule are in `conventions/agent-operations.md`.*
+*93 lines of evidence for this rule are in `conventions/agent-operations.md`.*
 
 ### "It can only be answered by testing" is a claim with an author
 
@@ -585,7 +589,7 @@ workaround", applied to a *broken* dependency.
 repro and the exact lines, report it, and carry on if it is not blocking. The rule is
 *do not hide it*, not *do not continue*.
 
-*5 lines of evidence for this rule are in `conventions/agent-operations.md`.*
+*10 lines of evidence for this rule are in `conventions/agent-operations.md`.*
 
 
 # CI Monitoring
@@ -802,6 +806,12 @@ Put a session-wide guard in the repository's root `conftest.py`, and pin it by b
 ### `mkdocs build --strict -q` passes a dead link
 Run `mkdocs build --strict` without `-q`, and set all seven `validation:` keys to `warn` in `mkdocs.yml`: `-q` raises the log level past WARNING, strict counts only the warnings it sees, and so it counts nothing.
 
+### `tempfile.mkstemp` then `os.replace` leaves the target at mode 0600
+Set the temp file's mode before the rename: the target's own (`os.stat(path).st_mode & 0o7777`) when it exists, `0o666 & ~umask` when it does not.
+
+### A line break inside an f-string's braces parses only on Python 3.12+
+Parse or test a script under its declared `requires-python` floor (`uv run --python 3.11 --script …`): PEP 701 (3.12) allows a newline inside an f-string's braces, so code that passes on 3.12 can be a SyntaxError on 3.11.
+
 # Code Check — R
 Traps in R: the language and base/utils behaviour, package internals (`R CMD build`, `.Rbuildignore`, roxygen, lintr, `data-raw/`, testthat, pak), and the DBI/duckdb/arrow data layer.
 
@@ -826,10 +836,10 @@ A script that reads a file, transforms it, and writes it **back to the same path
 `xml2::xml_find_first()` returns an `xml_missing` object when nothing matches — not `NULL`, not an error.
 
 ### `download.file(quiet = TRUE)` never tells you the HTTP status — read it from `curl`
-Read an HTTP status from `curl::curl_fetch_disk()`'s `status_code`, never from `download.file()` messages, whose first warning unwinds a `tryCatch` before the status arrives and whose quiet error omits it.
+Read an HTTP status from `curl::curl_fetch_disk()`'s `status_code`, never from `download.file()` messages.
 
 ### A URL handed to a reader goes through R's 60 s connection timeout
-Download a large remote file to a `tempfile()` with httr2 or curl and read the copy, never `jsonlite::fromJSON(url)`, `readRDS(url(u))` or `read.csv(u)`: those read through an R URL connection, which stops at `getOption("timeout")` (60 s by default) however fast the bytes are arriving.
+Download a large remote file to a `tempfile()` with httr2 or curl and read the copy, never `jsonlite::fromJSON(url)`, `readRDS(url(u))` or `read.csv(u)`.
 
 ### `on.exit()` at a script's top level never fires
 - `on.exit()` registers a handler on the *current frame*.
@@ -847,7 +857,7 @@ A lint warning of `no visible binding` for a constant added on this branch is us
 `expect_snapshot()` **skips on CRAN**, and `testthat` treats a non-interactive run as CRAN by default.
 
 ### testthat counts an uncaught error under `error`, not `failed`
-Count `r$failed > 0 | r$error` over `r <- as.data.frame(testthat::test_file(f))`, never `failed` alone: a restored defect that raises instead of failing an expectation scores zero failures, so a guard that fired reads as one that never did.
+Count `r$failed > 0 | r$error` over `r <- as.data.frame(testthat::test_file(f))`, never `failed` alone.
 
 ### A `skip_if_not()` skips only its own `test_that()` block
 Before blaming a failure, or its absence, on a skip, find the `test_that()` block the skip sits in.
@@ -912,8 +922,8 @@ Construct instants explicitly: a `Date` always becomes UTC midnight whatever `tz
 ### A `for` loop that builds `aes()` captures the loop variable lazily
 `aes()` quotes its arguments, so `aes(fill = lab[i])` is not evaluated until the plot is drawn — by which time `i` holds its **last** value.
 
-### ggplot2: forcing a legend key for an unused factor level
-Keep `drop = FALSE` on the scale and give the layer a named `show.legend` that also sets `FALSE` for each other legend: `drop = FALSE` alone lists the unused level with no glyph, and `show.legend = TRUE` stamps the layer's glyph into every other legend.
+### ggplot2 legends and labels: a key for an unused factor level, and ggrepel labels that must avoid each other
+Keep `drop = FALSE` on the scale and give the layer a named `show.legend` that also sets `FALSE` for each other legend.
 
 ### `paste()` with a zero-length argument returns length ONE, not zero
 `paste0("x", character(0))` is `"x"`, so a key built per element gains one phantom member when the vector is empty; guard the empty case before building keys.
@@ -985,7 +995,7 @@ Scan R source for non-ASCII the way `R CMD check` does (`tools:::.check_package_
 A `warning =` handler is not a filter — it replaces the whole expression, so a call that **succeeded** and merely warned returns the handler's value and the result is thrown away.
 
 ### Do not abort inside a handler for a warning raised from C++; note it and abort after the call returns
-Record a flag in the `withCallingHandlers()` handler, `invokeRestart("muffleWarning")`, and raise once the call has returned: for a warning from `Rcpp::warning()`, an abort from inside the handler longjmps through the C++ frames and skips their destructors.
+Record a flag in the `withCallingHandlers()` handler, `invokeRestart("muffleWarning")`, and raise once the call has returned.
 
 ### `match()` treats NA as a matchable VALUE, so two unknowns join to each other
 `match(NA, c("1", NA))` is **2**.
@@ -1035,8 +1045,8 @@ R removes its session `tempdir()` on exit, including after `stop()`.
 ### testthat's failure snapshots land in `tests/` and ride in on `git add -A`
 testthat 3e writes `tests/testthat/_problems/*.R` and `tests/testthat/testthat-problems.rds` when tests fail.
 
-### A pick whose `ORDER BY` ends on a key that is not unique in the group returns an arbitrary row
-`DISTINCT ON (k) … ORDER BY k, a, b` is deterministic only if `(a, b)` is unique within each `k`.
+### Postgres row order is never fixed unless the query fixes it, so a pick, a float sum and a presence check can each depend on it
+End every `ORDER BY` on a unique key, order any fetch whose rows are summed, and ask whether a value is loaded with an index walk, not `DISTINCT` or `EXISTS`.
 
 ### `sprintf("%g", x)` writes `Inf` and `NA` into SQL as bare words, which Postgres reads as column names
 A numeric formatter such as `sprintf("%.10g", x)` has no SQL form for non-finite values.
@@ -1096,7 +1106,7 @@ Read a TSV you wrote unquoted with `quote = "", na.strings = character(), commen
 Run `LOAD icu` on the connection before any query that needs it (`epoch()`, `year()`, a cast to `DATE` on a `TIMESTAMPTZ`), or use a function that needs no extension (`epoch_ms()`).
 
 ### `fs::path()` collapses the `//` after a URL scheme, so it cannot build URLs
-Join a URL with `paste(base, key, sep = "/")` or `file.path()`, never `fs::path()`: `fs::path("https://x.ca/b", "k.tif")` is `"https:/x.ca/b/k.tif"`, because fs normalises the doubled separator, and the result is not a valid URL.
+Join a URL with `paste(base, key, sep = "/")` or `file.path()`, never `fs::path()`.
 
 ### R's default curl user-agent fails on canada.ca, and the error names HTTP/2, not the agent
 Set a user-agent on every R fetch of a `canada.ca` page, because R's default fails there with an HTTP/2 error that never mentions the agent.
@@ -1123,7 +1133,7 @@ Move a directory into place with `base::file.rename()` and check its return valu
 Read an inode with `fs::file_info(x)$inode`.
 
 ### `cffr::cff_create()` writes a CRAN DOI for any package that shares a name with a CRAN package
-Drop the generated DOI (`x$doi <- NULL`) unless it is your own, and supply your own through `keys = list(doi = ...)`, because cffr assigns `10.32614/CRAN.package.<name>` whenever CRAN carries a package of that name, whatever your package is.
+Drop the generated DOI (`x$doi <- NULL`) unless it is your own, and supply your own through `keys = list(doi = ...)`.
 
 ### A `{python}` chunk needs reticulate even with `eval = FALSE`
 Set `python.reticulate = FALSE` on a Python chunk that only displays code, or declare reticulate.
@@ -1136,6 +1146,9 @@ Keep every `$ref` alone in a draft-07 schema tested with jsonvalidate and read b
 
 ### `load_all()` runs every `.R` file at the top of a package's `data/` as a data script
 Keep helper and ad hoc scripts out of `data/`, which pkgload treats as package data, so `load_all()` sources any `data/*.R` it finds there.
+
+### `ifelse()` with an all-NA test returns a logical vector, whatever `yes` and `no` are
+Resolve NA before an `ifelse()` whose result must keep a type (`blocked <- !is.na(blocked) & blocked`), or use `dplyr::if_else(..., missing = )`.
 
 # Code Check — Shell
 Tool-level traps in bash, sed, git and `gh`, and in the host toolchain those commands depend on.
@@ -1301,7 +1314,7 @@ Write `cd "$D" || exit 1` (or `cd "$D" && …`), never `cd "$D"; …`: without t
 ### macOS `/bin/bash` 3.2 quote-matches a heredoc inside `$( )`, so an apostrophe in the body is a syntax error
 Pass multi-line text through a file (`--body-file`, `-F`) rather than `"$(cat <<'EOF' … EOF)"`: bash 3.2 scans the command substitution for balanced quotes before it sees the heredoc, so `it's` in a quoted heredoc body fails with ``unexpected EOF while looking for matching `''``, while …`
 
-### A skill's bash blocks run as separate calls, so each block must check the state the last one left
+### A skill's bash blocks run as separate calls, and its `$` + digits are replaced by its arguments
 Open every block after the first with guards on what it inherits: re-set its variables, confirm the path is the expected tree, and refuse edits or commits the previous block did not check.
 
 ### An apostrophe in a `${VAR:?message}` inside double quotes is an unterminated quote
