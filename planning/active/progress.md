@@ -39,4 +39,27 @@
     URL, with six near-miss cases (host only, another path, unversioned, another file, a
     bucket, a host) shown still failing, and a case where the schema URL and a real bucket are
     in one file and the bucket is still reported.
+- **Plan review folded in** (`review-plan.md`). Spawned concurrently with Phase 2, delivered
+  after Phases 2 and 1 had landed; every finding reproduced before being acted on, and nothing
+  it reported was disproved. Three blockers, all confirmed by probe:
+  - `json.dumps` cannot write a receipt file: JCS spells `0.000001` and `1e-9` where
+    `json.dumps` writes `1e-06` and `1e-09`, and crate's worked-case receipt carries both.
+    Measured. `write` re-indents the canonical text. Its corollary matters more — `jsonschema`
+    4.26.0 accepts `4.0` for `{"type": "integer"}`, so `validate` is no guard against
+    `parse_int=float` leaking a float into `rows`, `bytes` or `seed`.
+  - crate's `equivalent` is **unreachable** from the mirrored-field pairing: four of the five
+    fields are `refuse` in the register, the fifth is `record`, and `within` needs members a
+    served item does not carry. Phase 6's "a rebuilt item → equivalent" could never have
+    passed. Phase 6 now reports its own ladder (`same` / `rebuilt` / `changed` /
+    `inconsistent`) and says so; `receipt.compare()` keeps crate's words for two receipts.
+  - Both API readers reduce a feature to `body_digest(f)` and discard it, `fetch_bodies` cannot
+    read an API and refuses a non-empty directory, and a `missing` id has no served side.
+  - Two real holes in my own vendoring guard, both fixed and mutation-checked: the `URLS` loop
+    was uncounted while the success line claimed both were checked, and `SOURCE`'s blob shas
+    were decorative. They are now verified offline against the files.
+  - The workflow guard now reads the step's own block: `continue-on-error: true` or an `if:` on
+    it is a failure rather than a step that is present and guards nothing.
+  - Also vendored, on its advice: crate's two worked-case receipts and its example item. Phase
+    3's byte-identical test would otherwise have been written against Python's own output.
+  Suite: 591 passed.
 - Next: Phase 3, write / read / validate.

@@ -15,3 +15,6 @@ git blob sha of each file as vendored:
   cca42ab60764c74d8b7358c59a839f2d0da00aaf  src/stacs/data/receipt/v1.0.0/stac_schema.json  (<- pkgdown/assets/stac/receipt/v1.0.0/schema.json)
   0c5b72fa025a0357ed4fb1a52301bbe3fd86e0bd  src/stacs/data/receipt/register.csv  (<- inst/extdata/receipt/register.csv)
   866571165787223cfbaedfc768a81ccd24e9ff69  src/stacs/data/receipt/mapping.csv  (<- inst/extdata/receipt/mapping.csv)
+  3f8756cbf0c4b546e51c1d2dfe71346342e054dc  tests/vectors/receipt/examples/worked_case/build_1/receipt.json  (<- inst/extdata/receipt/examples/worked_case/build_1/receipt.json)
+  ff55047913a0a3f7e4b5364bc24c6cb19ca7c24d  tests/vectors/receipt/examples/worked_case/build_2/receipt.json  (<- inst/extdata/receipt/examples/worked_case/build_2/receipt.json)
+  abe3efc7a3f242cc0f8a10c6ad652d95339ad961  tests/vectors/receipt/examples/item.json  (<- pkgdown/assets/stac/receipt/examples/item.json)

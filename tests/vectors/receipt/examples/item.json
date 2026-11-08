@@ -1,0 +1,73 @@
+{
+  "type": "Feature",
+  "stac_version": "1.1.0",
+  "stac_extensions": [
+    "https://stac-extensions.github.io/file/v2.1.0/schema.json",
+    "https://stac-extensions.github.io/processing/v1.2.0/schema.json",
+    "https://newgraphenvironment.github.io/crate/stac/receipt/v1.0.0/schema.json"
+  ],
+  "id": "floodplain-bulk-all_ff02",
+  "collection": "stac-floodplains-bc",
+  "bbox": [
+    -127.6,
+    54.0,
+    -126.1,
+    55.3
+  ],
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [
+          -127.6,
+          54.0
+        ],
+        [
+          -126.1,
+          54.0
+        ],
+        [
+          -126.1,
+          55.3
+        ],
+        [
+          -127.6,
+          55.3
+        ],
+        [
+          -127.6,
+          54.0
+        ]
+      ]
+    ]
+  },
+  "properties": {
+    "datetime": "2026-10-14T12:42:04Z",
+    "processing:datetime": "2026-10-14T12:42:04Z",
+    "processing:software": {
+      "flooded": "0.7.0"
+    },
+    "receipt:recipe_id": "b06f982dd07b5e44edf586519e5d6ab60b29715a051c3827fba647230636f977"
+  },
+  "links": [],
+  "assets": {
+    "floodplain": {
+      "href": "floodplain_all_ff02.tif",
+      "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+      "roles": [
+        "data"
+      ],
+      "file:size": 1843201,
+      "file:checksum": "12200c25a98462c912397ef421555f1392f80265a6506f5cf7a514d36651efd36567"
+    },
+    "receipt": {
+      "href": "receipt.json",
+      "type": "application/json",
+      "roles": [
+        "metadata"
+      ],
+      "title": "Provenance receipt",
+      "file:checksum": "12207d865e959b2466918c9863afca942d0fb89d7c9ac0c99bafc3749504ded97730"
+    }
+  }
+}

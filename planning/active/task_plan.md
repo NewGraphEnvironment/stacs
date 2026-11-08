@@ -97,17 +97,41 @@ Decided without asking (mechanism, with the reason):
       against the vendored copies; any mismatch fails the build.
 - [x] A guard test that the workflow still carries that step at the pinned tag, plus a mutation
       check on the guard itself.
+- [x] *(review)* Vendor crate's two worked-case receipts and its example STAC item: the only
+      artifacts that can pin the on-disk file format and the mirrored-field shapes. Without
+      them Phase 3's byte-identical test would have been written against Python's own output.
+- [x] *(review)* Count the frozen URLs the script checked against a literal, because the
+      success line claims both were checked; blanking `URLS` passed before.
+- [x] *(review)* Make `SOURCE` load-bearing: a test recomputes each git blob sha offline, so
+      an edited vendored file fails without the network, and editing `SOURCE` to match fails
+      the network diff instead.
+- [x] *(review)* The workflow guard reads the step's own block, so `continue-on-error: true`
+      or an `if:` on it is a failure rather than a step that is present and guards nothing.
 
 ## Phase 3: write, read, validate
 
-- [ ] `write(receipt, path)` — JCS pretty-printed at indent 2, `{}`/`[]` collapsed, one trailing
-      newline, temp file + `os.replace`, **with the temp file's mode set before the rename**
-      (`mkstemp` + `os.replace` otherwise leaves the target at 0600).
+- [ ] `write(receipt, path)` — the canonical bytes **re-indented as text** at indent 2, `{}`/`[]`
+      collapsed, one trailing newline, temp file + `os.replace`, **with the temp file's mode set
+      before the rename** (`mkstemp` + `os.replace` otherwise leaves the target at 0600).
+      *(review, measured)* Never `json.dumps` an object: JCS writes `0.000001` and `1e-9` where
+      `json.dumps` writes `1e-06` and `1e-09`, and crate's worked-case receipt carries both as
+      ordinary content. It computes `recipe.recipe_id` itself, and returns the SHA-256 of the
+      bytes it wrote, which is what lets an item carry its receipt asset's `file:checksum`.
 - [ ] `read(path)` — `load_json`, then refuse any `output.receipt_version` but `1.0.0`, as
       crate's reader aborts rather than warns.
 - [ ] `validate(receipt)` — `jsonschema` against the vendored schema. `jsonschema` is in
       `uv.lock` only transitively via `pystac[validation]`, so declare it directly in
-      `pyproject.toml` and re-run `uv lock`.
+      `pyproject.toml` and re-run `uv lock` **in the same commit** (CI runs `uv sync --locked`).
+      *(review)* Forgetting the declaration passes CI, because the transitive copy is there, so
+      a test asserts it is in `[project.dependencies]`.
+- [ ] *(review, measured)* `validate` is **not** a guard against a float where the schema says
+      `integer`: `jsonschema` 4.26.0 accepts `4.0` for `{"type": "integer"}`. `write` checks the
+      whole-number members itself (`result.fingerprint.*.rows`, `result.parts.*.bytes`,
+      `recipe.seed`), which `parse_int=float` makes a real case on any round trip.
+- [ ] *(review)* Load the vendored schema and register **lazily and cached**, never at import:
+      the deployment guard imports every module via `pkgutil.walk_packages` and
+      `--doctest-modules` imports them too, so an import-time read turns a missing data file
+      into a suite-wide collection error instead of one failing test.
 - [ ] Required-but-nullable members emitted as `null` (`output.scope`, `output.schema`,
       `recipe.code.<repo>.version`, `recipe.seed`, `context.lockfile_sha256`,
       `context.session`); `context.host` dropped entirely when publishing. Empty keyed
@@ -155,6 +179,26 @@ Decided without asking (mechanism, with the reason):
       receipt (null `recipe_id`) **omits** the field rather than publishing a null.
 - [ ] `EXTENSION_URL`, listed verbatim in `stac_extensions` — the field schema asserts
       `contains: {const: <that exact URL>}`, and any other `receipt:`-prefixed key fails it.
+- [ ] *(review)* **Three** extension URLs, not one: crate's example item lists
+      `file/v2.1.0` and `processing/v1.2.0` beside the receipt one, because `stac_fields` emits
+      `file:*` and `processing:*`. Each is a constant, and `audit` requires the ones whose
+      fields are present. An item emitting them without their URLs is non-conformant and the
+      vendored field schema cannot notice: it constrains only `receipt:`-prefixed keys.
+- [ ] *(review)* The receipt asset's own `file:checksum`. `mapping.csv` has no row for it and
+      `stac_fields` cannot compute it -- it never sees the receipt's bytes -- so it takes the
+      digest `write` returned. This is also what lets `verify` prove it fetched *the* receipt
+      the item claims, which is a stronger check than the mirrored compare.
+- [ ] *(review)* `audit` owns the formats the field schema does not reach: `^1220[0-9a-f]{64}$`
+      for a multihash, and the receipt schema's own `context.time` pattern for
+      `processing:datetime`. The `file`/`processing` extension schemas are unfetchable offline.
+- [ ] *(review)* `Target` gains the flag, `Target.check()` a type check, and `build_target`
+      plus the `[catalogue]` config key the wiring: `verify` reaches the catalogue only through
+      `Target`, so Phase 6 cannot see the declaration without this. A bool default is safe
+      under the deployment guard, which exempts bools.
+- [ ] *(review)* `_run`'s pre-write audit passes the rule too, or `stacs audit` would refuse an
+      item that `stacs register` loads.
+- [ ] *(review, out of scope, said rather than left silent)* `mapping.csv`'s sixth `STAC item`
+      row, `properties.version` from `context.legacy`, is a release label and not provenance.
 - [ ] `audit_items(..., require_receipt=False)`: for a collection that declares it carries
       receipts, an item fails when `receipt:recipe_id` is absent or ill-formed, the extension
       URL is not listed, or the receipt fields fail the **vendored** field schema. Offline, by
@@ -167,18 +211,54 @@ Decided without asking (mechanism, with the reason):
 
 ## Phase 6: `verify` reads receipts
 
-- [ ] For the ids that read `missing`/`changed` only, fetch `receipt.json` beside the item with
-      the existing `fetch_bodies` workers, and compare it against the mirrored identity fields
-      on the published body and on the body the API serves.
-- [ ] Per item a verdict and the field that differed, written beside `missing.txt` /
-      `changed.txt` / `orphaned.txt` in `out_dir`. `equivalent` (same `recipe_id`, different
-      bytes) is reported as a rebuild and still exits 1 — drift is drift. An unread receipt is
-      an error, never `identical`.
-- [ ] A collection that declares no receipts skips the axis and says so in the banner, the way
-      `queryables : none declared` already does.
-- [ ] Tests on the existing `file://` bucket + stub API harness with receipts beside the items:
-      a positive control (edit one receipt → `different`, naming the field), a rebuilt item
-      (→ `equivalent`), and an unreadable receipt (→ failure).
+**Corrected by the plan review** (`review-plan.md` B2, reproduced against the vendored
+`register.csv`). Comparing a full receipt against a five-field projection of itself is not a
+receipt pair, so it does not get crate's words: all four identity fields a served item carries
+are `refuse` in the register and the fifth is `record`, and `within` needs members a served
+item does not have (`result.summary` with its tolerance, `parts.*.table` with both
+`fingerprint` maps, or re-read tables). The reachable verdicts there are `identical` and
+`different` only, so the issue's `equivalent` cannot occur and a test asserting it could never
+pass. `receipt.compare()` keeps crate's three words for two receipts, which the vectors
+require; **`verify` reports its own ladder and says so in its output.**
+
+- [ ] `same`, `rebuilt`, `changed`, `inconsistent` — `rebuilt` is the case the issue is for
+      (`receipt:recipe_id` agrees on both sides, a mirrored result field differs), and
+      `inconsistent` is an item whose own mirrored fields disagree with the receipt it links.
+      The output names these as stacs' verdicts, not crate's.
+- [ ] *(review)* A served-side reader: both existing API readers reduce a feature to
+      `body_digest(f)` and discard it, so `fields_serving` returns the mirrored properties per
+      id over the existing paging.
+- [ ] *(review)* Resolve the receipt from the item's **asset with role `metadata`** and against
+      the item's own URL, not from "`receipt.json` beside the item" — that is a convention, the
+      asset link is the contract, and a catalogue with a `receipts/` prefix would break the
+      convention silently. It also makes the fixtures expressible: the existing harness writes
+      every item flat, so the convention would be one shared receipt for every item.
+- [ ] *(review)* Receipts fetch into their **own** directory: `fetch_bodies` refuses a
+      non-empty one, and `fetch_dir` is full by then. An unread receipt raises from the returned
+      failed list rather than relying on `fetch_bodies`' own stderr print, which bypasses the
+      injected `warn`.
+- [ ] *(review)* Verify the fetched receipt against the receipt asset's `file:checksum` before
+      comparing anything — otherwise there is no way to tell it fetched the receipt the item
+      claims.
+- [ ] *(review)* Skip the axis when the collection is not registered, and bound it: "only
+      `missing`/`changed`" is a filter, not a bound, and on an unregistered collection every id
+      is `missing`. A `missing` id has no served side at all, so it is checked for consistency
+      with its own receipt only, and the output says which check ran.
+- [ ] *(review)* Report a summary plus the first five through `warn`, as the DRIFT block does:
+      `_write_list` is a no-op when `out_dir is None`, which is `cmd_verify`'s default, so
+      per-item verdicts would otherwise go nowhere in the default invocation. Full lists still
+      go to `out_dir` when there is one.
+- [ ] *(review)* `same` on an id that reads `changed` is the common case — a bbox fix changes
+      the body and not the recipe — so it is reported as "the body differs and the recipe does
+      not", never as a bare verdict beside a DRIFT line.
+- [ ] Placement: inside `if mode == "verify":`, after the `_write_list` calls and before `rc` is
+      computed. In the shared `drift`/`verify` branch, `drift` would pay for the fetch on ids it
+      is about to overwrite, and an unreadable receipt would abort a legitimate registration.
+- [ ] Tests on the existing `file://` bucket + stub API harness, with each item linking its own
+      receipt asset: a positive control (edit one receipt → `changed`, naming the field), a
+      rebuilt item (same `recipe_id`, different `file:checksum` → `rebuilt`), an item whose
+      mirrored fields contradict its receipt (→ `inconsistent`), and an unreadable receipt
+      (→ failure, never `same`).
 
 ## Phase 7: docs, NEWS, research
 

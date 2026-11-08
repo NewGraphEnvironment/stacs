@@ -48,7 +48,14 @@ pkgdown/assets/receipt/v1.0.0/schema.json src/stacs/data/receipt/v1.0.0/schema.j
 pkgdown/assets/stac/receipt/v1.0.0/schema.json src/stacs/data/receipt/v1.0.0/stac_schema.json
 inst/extdata/receipt/register.csv src/stacs/data/receipt/register.csv
 inst/extdata/receipt/mapping.csv src/stacs/data/receipt/mapping.csv
+inst/extdata/receipt/examples/worked_case/build_1/receipt.json tests/vectors/receipt/examples/worked_case/build_1/receipt.json
+inst/extdata/receipt/examples/worked_case/build_2/receipt.json tests/vectors/receipt/examples/worked_case/build_2/receipt.json
+pkgdown/assets/stac/receipt/examples/item.json tests/vectors/receipt/examples/item.json
 '
+# The worked case and the example item are not vectors -- no expected value is computed from
+# them -- but they are the only fixtures that pin two things a vector cannot: the bytes a
+# receipt FILE has on disk (canonical JSON, pretty-printed at indent 2, empty containers
+# collapsed, one trailing newline), and a real item carrying the mirrored identity fields.
 
 # The frozen URLs the package writes into receipts and items, each with the vendored copy that
 # must still match it. These are the ones crate promises never to edit.
@@ -56,6 +63,9 @@ URLS='
 https://newgraphenvironment.github.io/crate/receipt/v1.0.0/schema.json src/stacs/data/receipt/v1.0.0/schema.json
 https://newgraphenvironment.github.io/crate/stac/receipt/v1.0.0/schema.json src/stacs/data/receipt/v1.0.0/stac_schema.json
 '
+# How many URLS above must actually be checked. A literal, compared with the number the loop
+# reached: the success line names "both frozen URLs", and a claim in a message is not a check.
+FROZEN_URLS=2
 
 SOURCE_FILE=src/stacs/data/receipt/SOURCE
 
@@ -121,9 +131,13 @@ EOF
 
   [ "$n" -gt 0 ] || { echo "FAIL: the file list is empty, so this check would pass on anything" >&2; exit 1; }
 
-  local url
+  # Counted, because the success line below claims both frozen URLs were checked. Without
+  # this, blanking or mangling URLS makes the script exit 0 while asserting it checked them --
+  # a guard that fails toward pass, found in review.
+  local u=0 url
   while read -r url dst; do
     [ -n "${url:-}" ] || continue
+    u=$((u + 1))
     fetch "$url" "$tmp/published" || { bad=$((bad + 1)); continue; }
     if ! diff -q "$tmp/published" "$dst" >/dev/null; then
       echo "FAIL: $url no longer serves the vendored $dst -- a frozen version was edited" >&2
@@ -132,6 +146,10 @@ EOF
   done <<EOF
 $(printf '%s\n' "$URLS")
 EOF
+  [ "$u" -eq "$FROZEN_URLS" ] || {
+    echo "FAIL: checked $u frozen URL(s), expected $FROZEN_URLS" >&2
+    bad=$((bad + 1))
+  }
 
   if [ "$mode" = vendor ]; then
     mkdir -p "$(dirname "$SOURCE_FILE")"
