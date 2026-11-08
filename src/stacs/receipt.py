@@ -20,11 +20,16 @@ The contract is crate's, vendored under `data/receipt/` at a pinned tag and chec
 in CI; crate's test vectors are the only thing keeping the two implementations in step.
 """
 
+import copy
 import datetime
 import hashlib
 import json
+import os
 import re
+import stat
 import struct
+import tempfile
+from pathlib import Path
 
 import rfc8785
 
@@ -444,3 +449,258 @@ def double_from_bits(bits: str) -> float:
     if not isinstance(bits, str) or not re.fullmatch(r"[0-9a-fA-F]{16}", bits):
         raise ReceiptError(f"a double's bits are 16 hex digits, got {bits!r}")
     return struct.unpack(">d", bytes.fromhex(bits))[0]
+
+
+# =============================================================================
+# The vendored contract, read lazily
+# =============================================================================
+
+# Read on first use and kept, never at import. Every module here is imported by the
+# deployment-name guard's `pkgutil.walk_packages` walk and again by `--doctest-modules`, so an
+# import-time read would turn a missing data file into a collection error across the whole
+# suite instead of one failing test.
+_DATA: dict = {}
+
+
+def _data_text(*parts: str) -> str:
+    """The text of one vendored contract file.
+
+    Through `importlib.resources`, so it is found the same way in a source tree and in an
+    installed wheel.
+    """
+    if parts not in _DATA:
+        from importlib import resources
+        ref = resources.files("stacs").joinpath("data", "receipt", *parts)
+        try:
+            _DATA[parts] = ref.read_text(encoding="utf-8")
+        except (OSError, ValueError) as e:
+            raise ReceiptError(
+                f"the vendored receipt contract is missing {'/'.join(parts)}: {e}. In a source "
+                f"tree, `bash tools/crate_receipt_vendor.sh vendor`") from e
+    return _DATA[parts]
+
+
+def _schema(name: str) -> dict:
+    """One of the two frozen schemas, parsed.
+
+    Plain `json.loads`, not `load_json`: a schema's numbers are keywords (`minLength: 1`), not
+    a receipt's data, and `jsonschema` wants `1` rather than `1.0` for a length.
+    """
+    key = ("parsed", name)
+    if key not in _DATA:
+        _DATA[key] = json.loads(_data_text(f"v{RECEIPT_VERSION}", name))
+    return _DATA[key]
+
+
+def schema() -> dict:
+    """The frozen receipt JSON Schema, as vendored.
+
+    Examples:
+        >>> schema()["$id"] == SCHEMA_URL
+        True
+        >>> sorted(schema()["required"])
+        ['context', 'output', 'recipe', 'result']
+    """
+    return _schema("schema.json")
+
+
+def stac_schema() -> dict:
+    """The frozen `receipt:` STAC field schema, as vendored.
+
+    Examples:
+        >>> stac_schema()["$id"] == EXTENSION_URL
+        True
+    """
+    return _schema("stac_schema.json")
+
+
+# =============================================================================
+# validate
+# =============================================================================
+
+def validate(receipt) -> None:
+    """Check a receipt against the frozen schema. Returns None, raises on the first failures.
+
+    Every error is collected and the message names the member paths, because a receipt that
+    fails in three places usually fails for one reason and the paths are the diagnosis.
+
+    The schema is the vendored copy, not the URL: the suite is offline, and a validator that
+    fetched its schema would be checking whatever is served today against bytes that are
+    supposed to be frozen. `tools/crate_receipt_vendor.sh check` is what compares the two.
+
+    Examples:
+        >>> validate({"output": {}})
+        Traceback (most recent call last):
+        ...
+        stacs.receipt.ReceiptError: not a valid receipt: ...
+    """
+    import jsonschema
+
+    validator = jsonschema.Draft7Validator(schema())
+    errors = sorted(validator.iter_errors(receipt), key=lambda e: list(e.absolute_path))
+    if errors:
+        where = "; ".join(
+            f"{'.'.join(str(p) for p in e.absolute_path) or '<receipt>'}: {e.message}"
+            for e in errors[:3])
+        raise ReceiptError(f"not a valid receipt: {len(errors)} problem(s); {where}")
+
+
+# =============================================================================
+# read and write
+# =============================================================================
+
+def read(path) -> dict:
+    """Read a receipt file, refusing any version but the one this module implements.
+
+    Refused rather than warned about, as crate's reader does: a later version may spell a
+    field the same way and mean something else, and a comparison across two versions would
+    report fields that agree as differing.
+    """
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except OSError as e:
+        raise ReceiptError(f"cannot read {path}: {e}") from e
+    doc = load_json(text)
+    if not isinstance(doc, dict):
+        raise ReceiptError(f"{path} is not a JSON object")
+    version = (doc.get("output") or {}).get("receipt_version") \
+        if isinstance(doc.get("output"), dict) else None
+    if version != RECEIPT_VERSION:
+        raise ReceiptError(f"{path} is receipt version {version!r}; this reads "
+                           f"{RECEIPT_VERSION!r}")
+    return doc
+
+
+def reindent(data: bytes) -> str:
+    """Canonical JSON re-indented at two spaces, with empty containers left collapsed.
+
+    A text transformation, and that is the point: the file must carry the canonical *number
+    spellings*, and re-serialising the parsed object does not. `json.dumps` writes `1e-06`
+    where JCS writes `0.000001`, and `1e-09` where JCS writes `1e-9` -- and crate's own
+    worked-case receipt holds both of those as ordinary tolerance values.
+
+    Examples:
+        >>> print(reindent(b'{"a":{},"b":[1,2],"c":{"d":1e-9}}'))
+        {
+          "a": {},
+          "b": [
+            1,
+            2
+          ],
+          "c": {
+            "d": 1e-9
+          }
+        }
+    """
+    text = data.decode("utf-8")
+    out = []
+    depth = 0
+    in_string = False
+    escaped = False
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if in_string:
+            out.append(ch)
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            i += 1
+            continue
+        if ch == '"':
+            in_string = True
+            out.append(ch)
+        elif ch in "{[":
+            # Canonical JSON carries no whitespace, so an empty container is exactly these two
+            # characters side by side. Collapsed, as crate's writer collapses them.
+            if i + 1 < len(text) and text[i + 1] == ("}" if ch == "{" else "]"):
+                out.append(ch + text[i + 1])
+                i += 2
+                continue
+            depth += 1
+            out.append(ch + "\n" + "  " * depth)
+        elif ch in "}]":
+            depth -= 1
+            out.append("\n" + "  " * depth + ch)
+        elif ch == ",":
+            out.append(",\n" + "  " * depth)
+        elif ch == ":":
+            out.append(": ")
+        else:
+            out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _atomic_write(path: Path, data: bytes) -> None:
+    """Write `data` to `path` through a temp file in the same directory.
+
+    `mkstemp` creates the temp file 0600, and `os.replace` carries that mode onto the target,
+    so a receipt published next to its item would become unreadable to everyone else. The mode
+    is set before the rename: the target's own where it exists, the umask default where it does
+    not.
+    """
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.", suffix=".part")
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+        try:
+            mode = stat.S_IMODE(os.stat(path).st_mode)
+        except FileNotFoundError:
+            umask = os.umask(0)
+            os.umask(umask)
+            mode = 0o666 & ~umask
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def write(receipt, path, publish: bool = True) -> str:
+    """Write a receipt, computing its `recipe_id`, and return the SHA-256 of the bytes written.
+
+    The caller supplies the values; the ids are computed here, so a builder cannot publish a
+    `recipe_id` that does not match the recipe beside it. The receipt is validated before
+    anything is written.
+
+    `publish` drops `context.host`, which is the one member a published receipt leaves out
+    rather than nulls: where a thing was built is not something an outside reader needs, and it
+    is never part of an identity.
+
+    The returned digest is what an item's `receipt` asset carries as `file:checksum`. Nothing
+    else can compute it -- the receipt's own bytes are not inside it -- and without it a reader
+    that fetches a receipt beside an item cannot tell it fetched *that* item's receipt.
+
+    The caller's dict is not modified.
+    """
+    path = Path(path)
+    if not isinstance(receipt, dict):
+        raise ReceiptError(f"a receipt is a JSON object, got {type(receipt).__name__}")
+    doc = copy.deepcopy(receipt)
+    output = doc.setdefault("output", {})
+    if not isinstance(output, dict):
+        raise ReceiptError(f"output is not an object, got {type(output).__name__}")
+    output.setdefault("receipt_version", RECEIPT_VERSION)
+    recipe = doc.get("recipe")
+    if not isinstance(recipe, dict):
+        raise ReceiptError(f"recipe is not an object, got {type(recipe).__name__}")
+    if "migrated_from" in output:
+        # A migrated receipt has no recipe identity, and null is the contract's way of saying
+        # so. Computing one would invent an identity for a recipe nobody recorded.
+        recipe["recipe_id"] = None
+    else:
+        recipe["recipe_id"] = recipe_id(recipe)
+    context = doc.get("context")
+    if publish and isinstance(context, dict):
+        context.pop("host", None)
+    validate(doc)
+    data = (reindent(canonical(doc)) + "\n").encode("utf-8")
+    _atomic_write(path, data)
+    return hashlib.sha256(data).hexdigest()

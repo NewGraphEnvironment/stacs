@@ -110,37 +110,40 @@ Decided without asking (mechanism, with the reason):
 
 ## Phase 3: write, read, validate
 
-- [ ] `write(receipt, path)` — the canonical bytes **re-indented as text** at indent 2, `{}`/`[]`
+- [x] `write(receipt, path)` — the canonical bytes **re-indented as text** at indent 2, `{}`/`[]`
       collapsed, one trailing newline, temp file + `os.replace`, **with the temp file's mode set
       before the rename** (`mkstemp` + `os.replace` otherwise leaves the target at 0600).
       *(review, measured)* Never `json.dumps` an object: JCS writes `0.000001` and `1e-9` where
       `json.dumps` writes `1e-06` and `1e-09`, and crate's worked-case receipt carries both as
       ordinary content. It computes `recipe.recipe_id` itself, and returns the SHA-256 of the
       bytes it wrote, which is what lets an item carry its receipt asset's `file:checksum`.
-- [ ] `read(path)` — `load_json`, then refuse any `output.receipt_version` but `1.0.0`, as
+- [x] `read(path)` — `load_json`, then refuse any `output.receipt_version` but `1.0.0`, as
       crate's reader aborts rather than warns.
-- [ ] `validate(receipt)` — `jsonschema` against the vendored schema. `jsonschema` is in
+- [x] `validate(receipt)` — `jsonschema` against the vendored schema. `jsonschema` is in
       `uv.lock` only transitively via `pystac[validation]`, so declare it directly in
       `pyproject.toml` and re-run `uv lock` **in the same commit** (CI runs `uv sync --locked`).
       *(review)* Forgetting the declaration passes CI, because the transitive copy is there, so
       a test asserts it is in `[project.dependencies]`.
-- [ ] *(review, measured)* `validate` is **not** a guard against a float where the schema says
-      `integer`: `jsonschema` 4.26.0 accepts `4.0` for `{"type": "integer"}`. `write` checks the
-      whole-number members itself (`result.fingerprint.*.rows`, `result.parts.*.bytes`,
-      `recipe.seed`), which `parse_int=float` makes a real case on any round trip.
-- [ ] *(review)* Load the vendored schema and register **lazily and cached**, never at import:
+- [x] *(review, measured — and the review's remedy dropped)* `jsonschema` 4.26.0 does accept
+      `4.0` for `{"type": "integer"}`, so `validate` is not a guard there. But a whole float and
+      an int are **byte-identical in JCS** (`rfc8785.dumps(3.0) == rfc8785.dumps(3)`), and the
+      schema *does* refuse `4.5`, so a "check the whole-number members" guard in `write` would
+      change nothing: the gap is unobservable in the bytes and in the hash. The property is
+      pinned by a test instead — a receipt read back and rewritten is byte-identical although
+      `parse_int=float` turned every number into a float.
+- [x] *(review)* Load the vendored schema and register **lazily and cached**, never at import:
       the deployment guard imports every module via `pkgutil.walk_packages` and
       `--doctest-modules` imports them too, so an import-time read turns a missing data file
       into a suite-wide collection error instead of one failing test.
-- [ ] Required-but-nullable members emitted as `null` (`output.scope`, `output.schema`,
+- [x] Required-but-nullable members emitted as `null` (`output.scope`, `output.schema`,
       `recipe.code.<repo>.version`, `recipe.seed`, `context.lockfile_sha256`,
       `context.session`); `context.host` dropped entirely when publishing. Empty keyed
       collections are `{}` — pinned by a test that an empty recipe hashes crate's
       `ecb53cd4…0493`.
-- [ ] `parse_int=float` means `rows`, `bytes` and `seed` read back as floats: a round-trip must
+- [x] `parse_int=float` means `rows`, `bytes` and `seed` read back as floats: a round-trip must
       write them as integers. Test that read → write is byte-identical for crate's two
       worked-case receipts.
-- [ ] Verify the wheel ships `src/stacs/data/**` (`uv build`, list the wheel) — `uv_build`'s
+- [x] Verify the wheel ships `src/stacs/data/**` (`uv build`, list the wheel) — `uv_build`'s
       package-data behaviour is unverified, and a receipt module that cannot find its schema
       once installed passes every test in the source tree.
 

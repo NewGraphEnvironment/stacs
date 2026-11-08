@@ -62,4 +62,16 @@
   - Also vendored, on its advice: crate's two worked-case receipts and its example item. Phase
     3's byte-identical test would otherwise have been written against Python's own output.
   Suite: 591 passed.
-- Next: Phase 3, write / read / validate.
+- **Phase 3.** `read`, `write`, `validate`, `reindent`, lazy cached access to the vendored
+  contract, `jsonschema` declared and `uv lock` in the same commit.
+  - **A read-and-rewrite of each of crate's two worked-case receipts is byte identical**,
+    2835/2835 and 2837/2837 bytes. That pins the indentation, the collapsed empty containers,
+    the canonical number spellings (`0.000001` and `1e-9`, which `json.dumps` breaks) and
+    `recipe_id` itself, which `write` recomputes — so this module's id agrees with crate's for
+    a real receipt and not only for the vectors.
+  - The review's proposed whole-number guard was **dropped after measuring**: a whole float and
+    an int are byte-identical in JCS and the schema refuses a non-whole one, so the guard would
+    have changed nothing. A test pins the property instead.
+  - Verified rather than assumed: a built wheel ships all five contract files under
+    `stacs/data/receipt/`.
+- Next: Phase 4, compare.

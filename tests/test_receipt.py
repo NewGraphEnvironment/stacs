@@ -6,7 +6,12 @@ that the frozen URLs say what they claim, and that a Python value with no place 
 contract is refused by name rather than hashed into something plausible.
 """
 
+import copy
 import datetime
+import hashlib
+import os
+import stat
+from pathlib import Path
 
 import pytest
 
@@ -265,3 +270,203 @@ def test_double_from_bits_refuses_anything_but_sixteen_hex_digits():
     for bad in ("3e7", "zzzzzzzzzzzzzzzz", 1.0, None):
         with pytest.raises(r.ReceiptError, match="16 hex digits"):
             r.double_from_bits(bad)
+
+
+# =============================================================================
+# The file on disk -- the one thing only crate's own receipts can pin
+# =============================================================================
+
+WORKED = (Path(__file__).resolve().parent / "vectors" / "receipt" / "examples"
+          / "worked_case")
+
+
+@pytest.mark.parametrize("build", ["build_1", "build_2"])
+def test_a_receipt_read_and_rewritten_is_byte_identical_to_crates_own(build, tmp_path):
+    """THE acceptance test for the file format, and the reason crate's worked-case receipts are
+    vendored rather than a fixture built here: a fixture made by pretty-printing with Python
+    would agree with whatever this module does.
+
+    It pins three things at once. The indentation and the collapsed empty containers; the
+    canonical *number spellings* (this file carries `"km_total": 0.000001` and `"km": 1e-9`,
+    which `json.dumps` writes as `1e-06` and `1e-09`); and `recipe_id`, which `write`
+    recomputes from the recipe -- so agreement here says this module's id matches crate's for a
+    real receipt and not only for the vectors.
+    """
+    src = WORKED / build / "receipt.json"
+    want = src.read_bytes()
+    out = tmp_path / "receipt.json"
+    digest = r.write(r.read(src), out)
+    assert out.read_bytes() == want
+    assert digest == hashlib.sha256(want).hexdigest()
+
+
+def test_the_round_trip_survives_every_number_coming_back_as_a_float():
+    """`load_json` reads every number as a double, so a receipt read back holds `3.0` where the
+    file said `3`. The bytes are identical anyway, because JCS spells a whole float and an int
+    alike -- which is why `write` has no whole-number coercion. If that ever stopped being
+    true, the test above would fail and this one says why."""
+    doc = r.read(WORKED / "build_1" / "receipt.json")
+    rows = doc["result"]["fingerprint"]["access_check"]["rows"]
+    assert isinstance(rows, float), "load_json should have made this a float"
+    assert r.canonical({"n": rows}) == r.canonical({"n": int(rows)})
+
+
+def test_the_digest_write_returns_is_the_digest_of_the_file(tmp_path):
+    """It becomes the receipt asset's `file:checksum`, and nothing else can compute it."""
+    out = tmp_path / "receipt.json"
+    digest = r.write(r.read(WORKED / "build_1" / "receipt.json"), out)
+    assert digest == hashlib.sha256(out.read_bytes()).hexdigest()
+
+
+def test_write_leaves_no_temp_file_behind(tmp_path):
+    r.write(r.read(WORKED / "build_1" / "receipt.json"), tmp_path / "receipt.json")
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["receipt.json"]
+
+
+def test_a_new_receipt_is_not_left_at_mode_0600(tmp_path):
+    """`mkstemp` creates 0600 and `os.replace` carries the mode onto the target, so a receipt
+    published beside its item would be unreadable to everyone else."""
+    out = tmp_path / "receipt.json"
+    r.write(r.read(WORKED / "build_1" / "receipt.json"), out)
+    umask = os.umask(0)
+    os.umask(umask)
+    assert stat.S_IMODE(out.stat().st_mode) == 0o666 & ~umask
+
+
+def test_overwriting_keeps_the_targets_own_mode(tmp_path):
+    out = tmp_path / "receipt.json"
+    out.write_text("{}")
+    out.chmod(0o640)
+    r.write(r.read(WORKED / "build_1" / "receipt.json"), out)
+    assert stat.S_IMODE(out.stat().st_mode) == 0o640
+
+
+def test_write_does_not_modify_the_callers_receipt(tmp_path):
+    doc = r.read(WORKED / "build_1" / "receipt.json")
+    doc["recipe"]["recipe_id"] = "0" * 64
+    before = copy.deepcopy(doc)
+    r.write(doc, tmp_path / "receipt.json")
+    assert doc == before
+
+
+# =============================================================================
+# write computes the identity, and publishes without the host
+# =============================================================================
+
+def test_write_recomputes_recipe_id_over_a_wrong_one(tmp_path):
+    """A builder that carried a stale id would publish an item whose provenance points at a
+    recipe it was not made by, and nothing downstream recomputes it."""
+    doc = r.read(WORKED / "build_1" / "receipt.json")
+    right = doc["recipe"]["recipe_id"]
+    doc["recipe"]["recipe_id"] = "0" * 64
+    out = tmp_path / "receipt.json"
+    r.write(doc, out)
+    assert r.read(out)["recipe"]["recipe_id"] == right
+
+
+def test_publishing_drops_the_host_rather_than_nulling_it(tmp_path):
+    doc = r.read(WORKED / "build_1" / "receipt.json")
+    doc["context"]["host"] = "a-build-machine"
+    out = tmp_path / "receipt.json"
+    r.write(doc, out)
+    assert "host" not in r.read(out)["context"]
+    r.write(doc, out, publish=False)
+    assert r.read(out)["context"]["host"] == "a-build-machine"
+
+
+def test_a_migrated_receipt_is_written_with_a_null_recipe_id(tmp_path):
+    """`migrated_from` is what switches the schema branch, and a migrated recipe holds no
+    identity: computing one would invent provenance for a record that never had it."""
+    doc = r.read(WORKED / "build_1" / "receipt.json")
+    doc["output"]["migrated_from"] = "manifest.json"
+    doc["recipe"] = {"code": {"link": {"commit": "a9b8c7d"}}, "recipe_id": None}
+    out = tmp_path / "receipt.json"
+    r.write(doc, out)
+    written = r.read(out)
+    assert written["recipe"]["recipe_id"] is None
+    assert written["output"]["migrated_from"] == "manifest.json"
+
+
+# =============================================================================
+# read and validate
+# =============================================================================
+
+def test_read_refuses_another_receipt_version(tmp_path):
+    """Refused, not warned about: a later version may spell a field the same way and mean
+    something else, and a comparison across versions would report agreeing fields as
+    differing."""
+    doc = r.read(WORKED / "build_1" / "receipt.json")
+    doc["output"]["receipt_version"] = "2.0.0"
+    out = tmp_path / "receipt.json"
+    out.write_text(r.reindent(r.canonical(doc)) + "\n")
+    with pytest.raises(r.ReceiptError, match="is receipt version '2.0.0'"):
+        r.read(out)
+
+
+@pytest.mark.parametrize("break_it,match", [
+    (lambda d: d["output"].pop("scope"), "output"),
+    (lambda d: d["recipe"].update(recipe_id="nothex"), "recipe"),
+    (lambda d: d["output"].update(extra=1), "output"),
+    (lambda d: d["result"].pop("tolerance"), "result"),
+    (lambda d: d["context"].update(time="2026-11-04 18:22:05"), "context"),
+], ids=["required member gone", "bad sha", "unknown member", "block member gone", "bad time"])
+def test_validate_refuses_a_receipt_the_schema_does_not_accept(break_it, match):
+    doc = r.read(WORKED / "build_1" / "receipt.json")
+    break_it(doc)
+    with pytest.raises(r.ReceiptError, match="not a valid receipt"):
+        r.validate(doc)
+    try:
+        r.validate(doc)
+    except r.ReceiptError as e:
+        assert match in str(e), str(e)
+
+
+def test_validate_accepts_both_of_crates_worked_receipts():
+    """A validator that refused everything would pass every test above."""
+    for build in ("build_1", "build_2"):
+        r.validate(r.read(WORKED / build / "receipt.json"))
+
+
+def test_write_validates_before_it_writes_anything(tmp_path):
+    out = tmp_path / "receipt.json"
+    doc = r.read(WORKED / "build_1" / "receipt.json")
+    doc["result"].pop("parts")
+    with pytest.raises(r.ReceiptError, match="not a valid receipt"):
+        r.write(doc, out)
+    assert not out.exists(), "a refused receipt must leave no file"
+
+
+def test_read_names_the_file_it_could_not_read(tmp_path):
+    with pytest.raises(r.ReceiptError, match="cannot read"):
+        r.read(tmp_path / "nope.json")
+
+
+# =============================================================================
+# reindent
+# =============================================================================
+
+@pytest.mark.parametrize("data,want", [
+    (b"{}", "{}"),
+    (b"[]", "[]"),
+    (b'{"a":{}}', '{\n  "a": {}\n}'),
+    (b'{"a":[]}', '{\n  "a": []\n}'),
+    # A brace, a bracket, a comma and a colon inside a string must not be re-indented, and an
+    # escaped quote must not end the string.
+    (b'{"a":"{[,:}"}', '{\n  "a": "{[,:}"\n}'),
+    (b'{"a":"say \\"x\\", then"}', '{\n  "a": "say \\"x\\", then"\n}'),
+    (b'{"a":"ends with a backslash \\\\"}', '{\n  "a": "ends with a backslash \\\\"\n}'),
+])
+def test_reindent_leaves_string_contents_alone(data, want):
+    assert r.reindent(data) == want
+
+
+def test_reindent_is_the_same_document():
+    """A re-indenter that changed a value would be caught by the byte-identical test only for
+    the documents crate ships."""
+    doc = r.read(WORKED / "build_1" / "receipt.json")
+    assert r.load_json(r.reindent(r.canonical(doc))) == doc
+
+
+def test_reindent_round_trips_a_nested_document():
+    doc = {"a": {"b": [1, [2, {"c": None}], {}], "d": "x"}, "e": []}
+    assert r.load_json(r.reindent(r.canonical(doc))) == doc
