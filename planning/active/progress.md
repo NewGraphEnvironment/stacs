@@ -17,4 +17,14 @@
   fields** (stateless, no stored baseline); all seven Proposed items land in this PR.
 - Created branch `12-read-write-and-compare-provenance-receip` off `origin/main` at `17e4e9f`.
 - Scaffolded the PWF baseline with the approved phases.
-- Next: start Phase 1.
+- **Phase 2** (done first: Phase 1's tests read its vectors). `tools/crate_receipt_vendor.sh`
+  vendors the contract at `v0.12.0` and re-checks it; 10 files, and both frozen schema URLs
+  still serve the vendored bytes. `test.yml` runs `check` before pytest, bounded at 5 minutes.
+  `tests/test_receipt_contract.py` guards it, 18 tests.
+  - Two defects found by running the guards rather than reading them: the EXIT handler read a
+    `local` that was out of scope by the time it fired, so a clean check exited 1
+    ("tmp: unbound variable"); and the CI ordering check matched the bare word `pytest`, which
+    is also the job's name, so it compared the step against the job header.
+  - Mutation-checked in all three arms: an edited vendored file, a missing one, and the CI step
+    removed, replaced or moved after pytest.
+- Next: Phase 1, the module itself.

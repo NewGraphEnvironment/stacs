@@ -1,0 +1,44 @@
+[
+  {
+    "name": "empty recipe",
+    "recipe_json": "{\"code\":{},\"config\":{\"files\":{},\"settings\":{}},\"inputs\":{},\"seed\":null}",
+    "jcs": "{\"code\":{},\"config\":{\"files\":{},\"settings\":{}},\"inputs\":{},\"seed\":null}",
+    "recipe_id": "ecb53cd4e03b09490f6c581b1195aa9635e5fff51790d64e19d2a2a79f8a0493"
+  },
+  {
+    "name": "worked case",
+    "recipe_json": "{\"code\":{\"knowledge\":{\"commit\":\"3f1c2a9e8b7d6c5f4e3d2c1b0a9f8e7d6c5b4a39\",\"version\":\"0.14.0\",\"dirty\":false},\"link\":{\"commit\":\"a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0\",\"version\":\"0.31.2\",\"dirty\":false}},\"config\":{\"files\":{\"inst/method/settings.csv\":\"5d41402abc4b2a76b9719d911017c592ae2f7c1b7b0c3c1b2f6d4e5a6b7c8d9e\"},\"settings\":{\"species\":[\"CO\",\"CH\",\"ST\"],\"watershed_group\":\"BULK\"}},\"inputs\":{\"flow\":{\"recipe_id\":\"0d6f1c9a8e7b5d4c3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b\"},\"fwa_stream_networks\":{\"version_id\":\"3HL4kqtJlcpXroDTDmJ.rmSpXd3dIbrHY\"}},\"seed\":null}",
+    "jcs": "{\"code\":{\"knowledge\":{\"commit\":\"3f1c2a9e8b7d6c5f4e3d2c1b0a9f8e7d6c5b4a39\",\"dirty\":false,\"version\":\"0.14.0\"},\"link\":{\"commit\":\"a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0\",\"dirty\":false,\"version\":\"0.31.2\"}},\"config\":{\"files\":{\"inst/method/settings.csv\":\"5d41402abc4b2a76b9719d911017c592ae2f7c1b7b0c3c1b2f6d4e5a6b7c8d9e\"},\"settings\":{\"species\":[\"CO\",\"CH\",\"ST\"],\"watershed_group\":\"BULK\"}},\"inputs\":{\"flow\":{\"recipe_id\":\"0d6f1c9a8e7b5d4c3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b\"},\"fwa_stream_networks\":{\"version_id\":\"3HL4kqtJlcpXroDTDmJ.rmSpXd3dIbrHY\"}},\"seed\":null}",
+    "recipe_id": "eff3a5b85b2bb8e2f085537378568703b2ed97583dcb455266d86289a91a638f"
+  },
+  {
+    "name": "worked case, members in another order",
+    "recipe_json": "{\"seed\":null,\"inputs\":{\"fwa_stream_networks\":{\"version_id\":\"3HL4kqtJlcpXroDTDmJ.rmSpXd3dIbrHY\"},\"flow\":{\"recipe_id\":\"0d6f1c9a8e7b5d4c3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b\"}},\"config\":{\"settings\":{\"watershed_group\":\"BULK\",\"species\":[\"CO\",\"CH\",\"ST\"]},\"files\":{\"inst/method/settings.csv\":\"5d41402abc4b2a76b9719d911017c592ae2f7c1b7b0c3c1b2f6d4e5a6b7c8d9e\"}},\"code\":{\"link\":{\"dirty\":false,\"version\":\"0.31.2\",\"commit\":\"a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0\"},\"knowledge\":{\"version\":\"0.14.0\",\"dirty\":false,\"commit\":\"3f1c2a9e8b7d6c5f4e3d2c1b0a9f8e7d6c5b4a39\"}}}",
+    "jcs": "{\"code\":{\"knowledge\":{\"commit\":\"3f1c2a9e8b7d6c5f4e3d2c1b0a9f8e7d6c5b4a39\",\"dirty\":false,\"version\":\"0.14.0\"},\"link\":{\"commit\":\"a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0\",\"dirty\":false,\"version\":\"0.31.2\"}},\"config\":{\"files\":{\"inst/method/settings.csv\":\"5d41402abc4b2a76b9719d911017c592ae2f7c1b7b0c3c1b2f6d4e5a6b7c8d9e\"},\"settings\":{\"species\":[\"CO\",\"CH\",\"ST\"],\"watershed_group\":\"BULK\"}},\"inputs\":{\"flow\":{\"recipe_id\":\"0d6f1c9a8e7b5d4c3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b\"},\"fwa_stream_networks\":{\"version_id\":\"3HL4kqtJlcpXroDTDmJ.rmSpXd3dIbrHY\"}},\"seed\":null}",
+    "recipe_id": "eff3a5b85b2bb8e2f085537378568703b2ed97583dcb455266d86289a91a638f"
+  },
+  {
+    "name": "worked case carrying its own recipe_id, which the hash leaves out",
+    "recipe_json": "{\"code\":{},\"config\":{\"files\":{},\"settings\":{}},\"inputs\":{},\"seed\":null,\"recipe_id\":\"0000000000000000000000000000000000000000000000000000000000000000\"}",
+    "jcs": "{\"code\":{},\"config\":{\"files\":{},\"settings\":{}},\"inputs\":{},\"seed\":null}",
+    "recipe_id": "ecb53cd4e03b09490f6c581b1195aa9635e5fff51790d64e19d2a2a79f8a0493"
+  },
+  {
+    "name": "a seed makes another recipe",
+    "recipe_json": "{\"code\":{},\"config\":{\"files\":{},\"settings\":{}},\"inputs\":{},\"seed\":20261105}",
+    "jcs": "{\"code\":{},\"config\":{\"files\":{},\"settings\":{}},\"inputs\":{},\"seed\":20261105}",
+    "recipe_id": "c6933614eb4cbb656cda8ea6a2b63ce19d36c437b7662dddcbfe19de10a80f11"
+  },
+  {
+    "name": "inputs with no receipt",
+    "recipe_json": "{\"code\":{},\"config\":{\"files\":{},\"settings\":{}},\"inputs\":{\"dem\":{\"sha256\":\"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"},\"lulc\":{\"none\":\"live Planetary Computer collection, not versioned\"}},\"seed\":null}",
+    "jcs": "{\"code\":{},\"config\":{\"files\":{},\"settings\":{}},\"inputs\":{\"dem\":{\"sha256\":\"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"},\"lulc\":{\"none\":\"live Planetary Computer collection, not versioned\"}},\"seed\":null}",
+    "recipe_id": "13a57a0d1aef14b67dc18a6f95c60928636e296e45c56f5ca6af9d25999659a9"
+  },
+  {
+    "name": "settings with numbers and non-ASCII keys",
+    "recipe_json": "{\"code\":{},\"config\":{\"files\":{},\"settings\":{\"r\\u00e9gion\":\"Skeena\",\"threshold\":0.1,\"max_km\":1e21,\"orders\":[3,4,5],\"dry_run\":false,\"label\":null}},\"inputs\":{},\"seed\":null}",
+    "jcs": "{\"code\":{},\"config\":{\"files\":{},\"settings\":{\"dry_run\":false,\"label\":null,\"max_km\":1e+21,\"orders\":[3,4,5],\"région\":\"Skeena\",\"threshold\":0.1}},\"inputs\":{},\"seed\":null}",
+    "recipe_id": "f0af70127600d84a202e59d6b8bf12c326ea6e4e4e926ac5b7a2f784a7bba4a1"
+  }
+]

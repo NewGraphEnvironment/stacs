@@ -85,17 +85,18 @@ Decided without asking (mechanism, with the reason):
 
 ## Phase 2: crate's vectors and contract data, vendored at `v0.12.0` and diffed in CI
 
-- [ ] `tests/vectors/receipt/v1.0.0/` — `numbers.json` (2,637), `jcs.json` (10),
+- [x] `tests/vectors/receipt/v1.0.0/` — `numbers.json` (2,637), `jcs.json` (10),
       `recipe_id.json` (7), `fingerprint.json` (13), `compare.json` (9), `README.md`, plus a
       `SOURCE` file naming the repo, tag and each file's blob sha.
-- [ ] `src/stacs/data/` — the frozen receipt schema, the STAC `receipt:` field schema,
+- [x] `src/stacs/data/` — the frozen receipt schema, the STAC `receipt:` field schema,
       `register.csv` (43 rows) and `mapping.csv`, each at its versioned path.
 - [ ] Runner tests read from disk and **fail on an absent or empty vector file** (the
       `assert files, "…this check would pass on anything"` shape the repo already uses).
-- [ ] A step in `test.yml` **before** pytest (network allowed there, not inside it) that
+      *(the absent/empty guard landed with the vendoring; the runners land with Phase 1)*
+- [x] A step in `test.yml` **before** pytest (network allowed there, not inside it) that
       re-downloads the vectors and both published schemas at the pinned tag and diffs them
       against the vendored copies; any mismatch fails the build.
-- [ ] A guard test that the workflow still carries that step at the pinned tag, plus a mutation
+- [x] A guard test that the workflow still carries that step at the pinned tag, plus a mutation
       check on the guard itself.
 
 ## Phase 3: write, read, validate

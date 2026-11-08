@@ -1,0 +1,369 @@
+[
+  {
+    "name": "mixed types",
+    "table": {
+      "columns": {
+        "id": {
+          "type": "character",
+          "values": [
+            "b",
+            "a",
+            "c"
+          ]
+        },
+        "n": {
+          "type": "integer",
+          "values": [
+            2,
+            null,
+            1
+          ]
+        },
+        "v": {
+          "type": "double",
+          "values": [
+            "3ff8000000000000",
+            "3fb999999999999a",
+            null
+          ]
+        },
+        "ok": {
+          "type": "logical",
+          "values": [
+            true,
+            false,
+            null
+          ]
+        },
+        "d": {
+          "type": "date",
+          "values": [
+            "2026-11-04",
+            null,
+            "1999-12-31"
+          ]
+        },
+        "t": {
+          "type": "datetime",
+          "values": [
+            "2026-11-04T18:22:05Z",
+            "1970-01-01T00:00:00Z",
+            null
+          ]
+        }
+      }
+    },
+    "tolerance": {},
+    "canonical": "{\"columns\":[\"d\",\"id\",\"n\",\"ok\",\"t\",\"v\"],\"rows\":[[\"1999-12-31\",\"c\",\"1\",null,null,null],[\"2026-11-04\",\"b\",\"2\",\"true\",\"2026-11-04T18:22:05Z\",\"1.5\"],[null,\"a\",null,\"false\",\"1970-01-01T00:00:00Z\",\"0.1\"]]}",
+    "sha256": "93763492acfb60c061233a069ba2019150108509e64dbabf4515fce9672a5c33"
+  },
+  {
+    "name": "worked case, first build, exact",
+    "table": {
+      "columns": {
+        "segment": {
+          "type": "character",
+          "values": [
+            "s1",
+            "s2",
+            "s3"
+          ]
+        },
+        "km": {
+          "type": "double",
+          "values": [
+            "4028b0fcd32f2476",
+            "401d000000000000",
+            "3fa47ae14889fb7a"
+          ]
+        },
+        "n": {
+          "type": "integer",
+          "values": [
+            3,
+            0,
+            12
+          ]
+        }
+      }
+    },
+    "tolerance": {},
+    "canonical": "{\"columns\":[\"km\",\"n\",\"segment\"],\"rows\":[[\"0.0400000001\",\"12\",\"s3\"],[\"12.3456789012\",\"3\",\"s1\"],[\"7.25\",\"0\",\"s2\"]]}",
+    "sha256": "e041a3ac30dc0e257ff096627f465556d9ae2fb4193c68b0de74a5bad6c3d633"
+  },
+  {
+    "name": "worked case, second build, exact",
+    "table": {
+      "columns": {
+        "n": {
+          "type": "integer",
+          "values": [
+            0,
+            12,
+            3
+          ]
+        },
+        "km": {
+          "type": "double",
+          "values": [
+            "401d000000000000",
+            "3fa47ae14889fb7a",
+            "4028b0fcd32ff55e"
+          ]
+        },
+        "segment": {
+          "type": "character",
+          "values": [
+            "s2",
+            "s3",
+            "s1"
+          ]
+        }
+      }
+    },
+    "tolerance": {},
+    "canonical": "{\"columns\":[\"km\",\"n\",\"segment\"],\"rows\":[[\"0.0400000001\",\"12\",\"s3\"],[\"12.345678901294999\",\"3\",\"s1\"],[\"7.25\",\"0\",\"s2\"]]}",
+    "sha256": "452ec9b1de743da7d063be1600ebe15a1564e4ca04750fbc17e70239712a966b"
+  },
+  {
+    "name": "worked case, first build, km to 1e-9",
+    "table": {
+      "columns": {
+        "segment": {
+          "type": "character",
+          "values": [
+            "s1",
+            "s2",
+            "s3"
+          ]
+        },
+        "km": {
+          "type": "double",
+          "values": [
+            "4028b0fcd32f2476",
+            "401d000000000000",
+            "3fa47ae14889fb7a"
+          ]
+        },
+        "n": {
+          "type": "integer",
+          "values": [
+            3,
+            0,
+            12
+          ]
+        }
+      }
+    },
+    "tolerance": {
+      "km": 1e-09
+    },
+    "canonical": "{\"columns\":[\"km\",\"n\",\"segment\"],\"rows\":[[\"0.040000000\",\"12\",\"s3\"],[\"12.345678901\",\"3\",\"s1\"],[\"7.250000000\",\"0\",\"s2\"]]}",
+    "sha256": "b2516b55c8a424464865e135426bf512a2702d2678c4fcaeba9008cbf8a265bb"
+  },
+  {
+    "name": "worked case, second build, km to 1e-9",
+    "table": {
+      "columns": {
+        "n": {
+          "type": "integer",
+          "values": [
+            0,
+            12,
+            3
+          ]
+        },
+        "km": {
+          "type": "double",
+          "values": [
+            "401d000000000000",
+            "3fa47ae14889fb7a",
+            "4028b0fcd32ff55e"
+          ]
+        },
+        "segment": {
+          "type": "character",
+          "values": [
+            "s2",
+            "s3",
+            "s1"
+          ]
+        }
+      }
+    },
+    "tolerance": {
+      "km": 1e-09
+    },
+    "canonical": "{\"columns\":[\"km\",\"n\",\"segment\"],\"rows\":[[\"0.040000000\",\"12\",\"s3\"],[\"12.345678901\",\"3\",\"s1\"],[\"7.250000000\",\"0\",\"s2\"]]}",
+    "sha256": "b2516b55c8a424464865e135426bf512a2702d2678c4fcaeba9008cbf8a265bb"
+  },
+  {
+    "name": "rounding ties to even on the binary value",
+    "table": {
+      "columns": {
+        "v": {
+          "type": "double",
+          "values": [
+            "3fe0000000000000",
+            "3ff8000000000000",
+            "4004000000000000",
+            "3fc0000000000000",
+            "3fd8000000000000",
+            "3ff0000000225c18",
+            "4005666666666666"
+          ]
+        }
+      }
+    },
+    "tolerance": {
+      "v": 1
+    },
+    "canonical": "{\"columns\":[\"v\"],\"rows\":[[\"0\"],[\"0\"],[\"0\"],[\"1\"],[\"2\"],[\"2\"],[\"3\"]]}",
+    "sha256": "0ae4fddc340072212bae26de2180ddcbf87df9ac0ba97556e9eb65064641bc2a"
+  },
+  {
+    "name": "same, to 2 decimals",
+    "table": {
+      "columns": {
+        "v": {
+          "type": "double",
+          "values": [
+            "3fe0000000000000",
+            "3ff8000000000000",
+            "4004000000000000",
+            "3fc0000000000000",
+            "3fd8000000000000",
+            "3ff0000000225c18",
+            "4005666666666666"
+          ]
+        }
+      }
+    },
+    "tolerance": {
+      "v": 0.01
+    },
+    "canonical": "{\"columns\":[\"v\"],\"rows\":[[\"0.12\"],[\"0.38\"],[\"0.50\"],[\"1.00\"],[\"1.50\"],[\"2.50\"],[\"2.67\"]]}",
+    "sha256": "0fa0e773734c0e1f7e86e528997d5cd27c6bc5da4d4f2f03259f07ef1fe109a7"
+  },
+  {
+    "name": "signed zeros",
+    "table": {
+      "columns": {
+        "v": {
+          "type": "double",
+          "values": [
+            "8000000000000000",
+            "0000000000000000",
+            "bf50624dd2f1a9fc",
+            "bfd999999999999a"
+          ]
+        }
+      }
+    },
+    "tolerance": {},
+    "canonical": "{\"columns\":[\"v\"],\"rows\":[[\"-0.001\"],[\"-0.4\"],[\"0\"],[\"0\"]]}",
+    "sha256": "dabf3bd6a64dcc36ac28cc6490824ddec83fb24fad8fbce3311e8e44ff37fa0a"
+  },
+  {
+    "name": "signed zeros, rounded",
+    "table": {
+      "columns": {
+        "v": {
+          "type": "double",
+          "values": [
+            "8000000000000000",
+            "0000000000000000",
+            "bf50624dd2f1a9fc",
+            "bfd999999999999a"
+          ]
+        }
+      }
+    },
+    "tolerance": {
+      "v": 1
+    },
+    "canonical": "{\"columns\":[\"v\"],\"rows\":[[\"0\"],[\"0\"],[\"0\"],[\"0\"]]}",
+    "sha256": "ba4bc3b451674b602e4ee4af1fa388118e52987c52779bd3ecefad1517c469d5"
+  },
+  {
+    "name": "NA, empty and the string NA",
+    "table": {
+      "columns": {
+        "s": {
+          "type": "character",
+          "values": [
+            null,
+            "",
+            "NA",
+            "null"
+          ]
+        }
+      }
+    },
+    "tolerance": {},
+    "canonical": "{\"columns\":[\"s\"],\"rows\":[[\"\"],[\"NA\"],[\"null\"],[null]]}",
+    "sha256": "73ed2fdc8724b422d77082cd12d33b3f59ac57d04c1054dfab3d1206de8e92ff"
+  },
+  {
+    "name": "row order is byte order",
+    "table": {
+      "columns": {
+        "s": {
+          "type": "character",
+          "values": [
+            "été",
+            "Zed",
+            "apple",
+            "😀",
+            "水",
+            "a b",
+            "a"
+          ]
+        }
+      }
+    },
+    "tolerance": {},
+    "canonical": "{\"columns\":[\"s\"],\"rows\":[[\"Zed\"],[\"a b\"],[\"a\"],[\"apple\"],[\"été\"],[\"水\"],[\"😀\"]]}",
+    "sha256": "2ace88f7b1b729c5d922feed6441d84c7a8190d67cc88fcf2176db4596d77b00"
+  },
+  {
+    "name": "number spellings without a tolerance",
+    "table": {
+      "columns": {
+        "v": {
+          "type": "double",
+          "values": [
+            "444b1ae4d6e2ef50",
+            "4415af1d78b58c40",
+            "3e7ad7f29abcaf48",
+            "3eb0c6f7a0b5ed8d",
+            "43b0000000000000",
+            "3fd5555555555555",
+            "4059000000000000"
+          ]
+        }
+      }
+    },
+    "tolerance": {},
+    "canonical": "{\"columns\":[\"v\"],\"rows\":[[\"0.000001\"],[\"0.3333333333333333\"],[\"100\"],[\"100000000000000000000\"],[\"1152921504606847000\"],[\"1e+21\"],[\"1e-7\"]]}",
+    "sha256": "c5caa89a4d3026ac1b086b2e54316dfa4ec87afb48a3e90432297dade1efebeb"
+  },
+  {
+    "name": "an empty table",
+    "table": {
+      "columns": {
+        "a": {
+          "type": "character",
+          "values": []
+        },
+        "b": {
+          "type": "double",
+          "values": []
+        }
+      }
+    },
+    "tolerance": {},
+    "canonical": "{\"columns\":[\"a\",\"b\"],\"rows\":[]}",
+    "sha256": "4b50177c31441e4ae3e6691a6f82a75a30a21f197dd400e7a9a781c99eff4d36"
+  }
+]

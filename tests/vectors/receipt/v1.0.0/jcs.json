@@ -1,0 +1,52 @@
+[
+  {
+    "name": "rfc8785 3.2.2 sample",
+    "input_json": "{\"numbers\":[333333333.33333329,1E30,4.50,2e-3,0.000000000000000000000000001],\"string\":\"\\u20ac$\\u000F\\u000aA'\\u0042\\u0022\\u005c\\\\\\\"\\/\",\"literals\":[null,true,false]}",
+    "expected": "{\"literals\":[null,true,false],\"numbers\":[333333333.3333333,1e+30,4.5,0.002,1e-27],\"string\":\"€$\\u000f\\nA'B\\\"\\\\\\\\\\\"/\"}"
+  },
+  {
+    "name": "rfc8785 3.2.3 key order",
+    "input_json": "{\"\\u20ac\":\"Euro Sign\",\"\\r\":\"Carriage Return\",\"\\ufb33\":\"Hebrew Letter Dalet With Dagesh\",\"1\":\"One\",\"\\ud83d\\ude00\":\"Emoji: Grinning Face\",\"\\u0080\":\"Control\",\"\\u00f6\":\"Latin Small Letter O With Diaeresis\"}",
+    "expected": "{\"\\r\":\"Carriage Return\",\"1\":\"One\",\"\":\"Control\",\"ö\":\"Latin Small Letter O With Diaeresis\",\"€\":\"Euro Sign\",\"😀\":\"Emoji: Grinning Face\",\"דּ\":\"Hebrew Letter Dalet With Dagesh\"}"
+  },
+  {
+    "name": "escaping",
+    "input_json": "{\"s\":\"\\u0001\\u001f\\u007f\\u2028\\b\\t\\n\\f\\r\\\"\\\\/\"}",
+    "expected": "{\"s\":\"\\u0001\\u001f \\b\\t\\n\\f\\r\\\"\\\\/\"}"
+  },
+  {
+    "name": "empty containers and literals",
+    "input_json": "{\"a\":{},\"b\":[],\"c\":null,\"d\":true,\"e\":false,\"f\":\"\"}",
+    "expected": "{\"a\":{},\"b\":[],\"c\":null,\"d\":true,\"e\":false,\"f\":\"\"}"
+  },
+  {
+    "name": "nested, unsorted at every level",
+    "input_json": "{\"z\":{\"b\":[{\"d\":1,\"c\":2}],\"a\":0},\"y\":[3,[2,[1]]]}",
+    "expected": "{\"y\":[3,[2,[1]]],\"z\":{\"a\":0,\"b\":[{\"c\":2,\"d\":1}]}}"
+  },
+  {
+    "name": "integers and whole doubles",
+    "input_json": "{\"n\":[0,-0,1,-1,100,1.0,4.50,1e2,9007199254740992]}",
+    "expected": "{\"n\":[0,0,1,-1,100,1,4.5,100,9007199254740992]}"
+  },
+  {
+    "name": "number spelling boundaries",
+    "input_json": "{\"n\":[1e20,1e21,1e-6,1e-7,0.1,1152921504606846976,5e-324]}",
+    "expected": "{\"n\":[100000000000000000000,1e+21,0.000001,1e-7,0.1,1152921504606847000,5e-324]}"
+  },
+  {
+    "name": "non-ASCII text",
+    "input_json": "{\"caf\\u00e9\":\"\\u00e9t\\u00e9\",\"emoji\":\"\\ud83d\\ude00\",\"cjk\":\"\\u6c34\"}",
+    "expected": "{\"café\":\"été\",\"cjk\":\"水\",\"emoji\":\"😀\"}"
+  },
+  {
+    "name": "scalar string",
+    "input_json": "\"top-level string\"",
+    "expected": "\"top-level string\""
+  },
+  {
+    "name": "scalar number",
+    "input_json": "333333333.33333329",
+    "expected": "333333333.3333333"
+  }
+]

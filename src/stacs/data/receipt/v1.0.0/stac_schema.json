@@ -1,0 +1,107 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://newgraphenvironment.github.io/crate/stac/receipt/v1.0.0/schema.json",
+  "title": "Receipt",
+  "description": "The identity fields of an output's provenance receipt (crate#43) that have no standard STAC home, for STAC Items, their Assets, and Collections. The receipt itself is published beside the item as an asset with role `metadata`; these fields mirror its identity so a STAC client or a pgstac queryable needs no second fetch. Each field is optional.",
+  "type": "object",
+  "required": [
+    "stac_extensions",
+    "type"
+  ],
+  "properties": {
+    "stac_extensions": {
+      "type": "array",
+      "contains": {
+        "const": "https://newgraphenvironment.github.io/crate/stac/receipt/v1.0.0/schema.json"
+      }
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "Collection",
+        "Feature"
+      ]
+    },
+    "assets": {
+      "$comment": "Item assets and Collection assets.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/fields"
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "$comment": "Item properties.",
+      "type": "object",
+      "required": [
+        "type",
+        "properties"
+      ],
+      "properties": {
+        "type": {
+          "const": "Feature"
+        },
+        "properties": {
+          "$ref": "#/definitions/fields"
+        }
+      }
+    },
+    {
+      "$comment": "Collection summaries and item_assets.",
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "const": "Collection"
+        },
+        "summaries": {
+          "$ref": "#/definitions/summaries"
+        },
+        "item_assets": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/fields"
+          }
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "receipt:recipe_id": {
+      "title": "Recipe id",
+      "description": "The `recipe.recipe_id` of the output's receipt: SHA-256, in lowercase hex, over the RFC 8785 canonical JSON of how the output was made (code, config, inputs, seed). Two items with the same value were made the same way.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "fields": {
+      "type": "object",
+      "properties": {
+        "receipt:recipe_id": {
+          "$ref": "#/definitions/receipt:recipe_id"
+        }
+      },
+      "patternProperties": {
+        "^(?!receipt:)": {}
+      },
+      "additionalProperties": false
+    },
+    "summaries": {
+      "type": "object",
+      "properties": {
+        "receipt:recipe_id": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/receipt:recipe_id"
+          }
+        }
+      },
+      "patternProperties": {
+        "^(?!receipt:)": {}
+      },
+      "additionalProperties": false
+    }
+  }
+}

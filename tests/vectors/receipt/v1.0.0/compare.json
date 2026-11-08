@@ -1,0 +1,2248 @@
+[
+  {
+    "name": "worked case: one recipe, km within tolerance",
+    "a": {
+      "context": {
+        "inputs": {},
+        "lockfile_sha256": null,
+        "run": {
+          "link_run_id": "20261104T181900Z-bulk"
+        },
+        "session": null,
+        "time": "2026-11-04T18:22:05Z",
+        "toolchain": {
+          "R": "4.5.2"
+        }
+      },
+      "output": {
+        "name": "link_evidence",
+        "receipt_version": "1.0.0",
+        "schema": null,
+        "scope": "BULK"
+      },
+      "recipe": {
+        "code": {
+          "knowledge": {
+            "commit": "3f1c2a9e8b7d6c5f4e3d2c1b0a9f8e7d6c5b4a39",
+            "dirty": false,
+            "version": "0.14.0"
+          },
+          "link": {
+            "commit": "a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0",
+            "dirty": false,
+            "version": "0.31.2"
+          }
+        },
+        "config": {
+          "files": {
+            "settings.csv": "8651eb611123f94b84ad5b969c8814721a006df8859beada54a99b534e39fdf2"
+          },
+          "settings": {
+            "species": [
+              "CO",
+              "CH",
+              "ST"
+            ],
+            "watershed_group": "BULK"
+          }
+        },
+        "inputs": {
+          "flow": {
+            "recipe_id": "0d6f1c9a8e7b5d4c3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b"
+          },
+          "fwa_stream_networks": {
+            "version_id": "3HL4kqtJlcpXroDTDmJ.rmSpXd3dIbrHY"
+          }
+        },
+        "recipe_id": "b06f982dd07b5e44edf586519e5d6ab60b29715a051c3827fba647230636f977",
+        "seed": null
+      },
+      "result": {
+        "fingerprint": {
+          "access_check": {
+            "rows": 4,
+            "sha256": "ac3a4b6d2811f6eb530a3d2a70a6cdfe226b652d33d2f20f9744560cb67c31d9"
+          },
+          "visits_link": {
+            "rows": 4,
+            "sha256": "3eaeffc2123edd359b987a312d97a24548657b9fa60c3e391a8ff0a9657a3427"
+          },
+          "visits_species": {
+            "rows": 5,
+            "sha256": "5004a660fa2cea88322b92623dffbf83456395693536c095914430b7df53c840"
+          },
+          "walks": {
+            "rows": 3,
+            "sha256": "9ac5394f5ec3b05e6f6ee55f72c129a4a4e2d6d42788eb0592e2f99d5165a3a9"
+          }
+        },
+        "parts": {
+          "access_check.csv": {
+            "bytes": 124,
+            "sha256": "04994ff01cdee55d69fc410add51ad261ec4b33a751135fc224e97305823c3e2",
+            "table": "access_check"
+          },
+          "visits_link.csv": {
+            "bytes": 57,
+            "sha256": "813a829f3e82c4724dd0ff48927234fd2e3437570a272cfc842d2ac46ee2d53e",
+            "table": "visits_link"
+          },
+          "visits_species.csv": {
+            "bytes": 100,
+            "sha256": "2dc87bec72be15a4323b92647532862797b290cc9ba45df61adfc1e7044228a9",
+            "table": "visits_species"
+          },
+          "walks.csv": {
+            "bytes": 46,
+            "sha256": "c9b13fc40825f9c33eddfa27fdfb2f10348f771bca3c5ab77ce173b7c56c5f5f",
+            "table": "walks"
+          }
+        },
+        "summary": {
+          "km_total": 47.3767792597,
+          "rows": 4
+        },
+        "tolerance": {
+          "summary": {
+            "km_total": 1e-06
+          },
+          "tables": {
+            "access_check": {
+              "km": 1e-09
+            }
+          }
+        }
+      }
+    },
+    "b": {
+      "context": {
+        "inputs": {},
+        "lockfile_sha256": null,
+        "run": {
+          "link_run_id": "20261104T214400Z-bulk"
+        },
+        "session": null,
+        "time": "2026-11-04T21:47:31Z",
+        "toolchain": {
+          "R": "4.5.2"
+        }
+      },
+      "output": {
+        "name": "link_evidence",
+        "receipt_version": "1.0.0",
+        "schema": null,
+        "scope": "BULK"
+      },
+      "recipe": {
+        "code": {
+          "knowledge": {
+            "commit": "3f1c2a9e8b7d6c5f4e3d2c1b0a9f8e7d6c5b4a39",
+            "dirty": false,
+            "version": "0.14.0"
+          },
+          "link": {
+            "commit": "a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0",
+            "dirty": false,
+            "version": "0.31.2"
+          }
+        },
+        "config": {
+          "files": {
+            "settings.csv": "8651eb611123f94b84ad5b969c8814721a006df8859beada54a99b534e39fdf2"
+          },
+          "settings": {
+            "species": [
+              "CO",
+              "CH",
+              "ST"
+            ],
+            "watershed_group": "BULK"
+          }
+        },
+        "inputs": {
+          "flow": {
+            "recipe_id": "0d6f1c9a8e7b5d4c3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b"
+          },
+          "fwa_stream_networks": {
+            "version_id": "3HL4kqtJlcpXroDTDmJ.rmSpXd3dIbrHY"
+          }
+        },
+        "recipe_id": "b06f982dd07b5e44edf586519e5d6ab60b29715a051c3827fba647230636f977",
+        "seed": null
+      },
+      "result": {
+        "fingerprint": {
+          "access_check": {
+            "rows": 4,
+            "sha256": "ac3a4b6d2811f6eb530a3d2a70a6cdfe226b652d33d2f20f9744560cb67c31d9"
+          },
+          "visits_link": {
+            "rows": 4,
+            "sha256": "3eaeffc2123edd359b987a312d97a24548657b9fa60c3e391a8ff0a9657a3427"
+          },
+          "visits_species": {
+            "rows": 5,
+            "sha256": "5004a660fa2cea88322b92623dffbf83456395693536c095914430b7df53c840"
+          },
+          "walks": {
+            "rows": 3,
+            "sha256": "9ac5394f5ec3b05e6f6ee55f72c129a4a4e2d6d42788eb0592e2f99d5165a3a9"
+          }
+        },
+        "parts": {
+          "access_check.csv": {
+            "bytes": 128,
+            "sha256": "6801fb7bb092626441fd804d5ffbf8c4c05213ff18fa7c7ca524a9c2aa32f5e4",
+            "table": "access_check"
+          },
+          "visits_link.csv": {
+            "bytes": 57,
+            "sha256": "813a829f3e82c4724dd0ff48927234fd2e3437570a272cfc842d2ac46ee2d53e",
+            "table": "visits_link"
+          },
+          "visits_species.csv": {
+            "bytes": 100,
+            "sha256": "2dc87bec72be15a4323b92647532862797b290cc9ba45df61adfc1e7044228a9",
+            "table": "visits_species"
+          },
+          "walks.csv": {
+            "bytes": 46,
+            "sha256": "c9b13fc40825f9c33eddfa27fdfb2f10348f771bca3c5ab77ce173b7c56c5f5f",
+            "table": "walks"
+          }
+        },
+        "summary": {
+          "km_total": 47.376779259805,
+          "rows": 4
+        },
+        "tolerance": {
+          "summary": {
+            "km_total": 1e-06
+          },
+          "tables": {
+            "access_check": {
+              "km": 1e-09
+            }
+          }
+        }
+      }
+    },
+    "verdict": "equivalent",
+    "differences": [
+      {
+        "field": "context.run",
+        "action": "record"
+      },
+      {
+        "field": "context.time",
+        "action": "record"
+      },
+      {
+        "field": "result.parts[access_check.csv].bytes",
+        "action": "within"
+      },
+      {
+        "field": "result.parts[access_check.csv].sha256",
+        "action": "within"
+      },
+      {
+        "field": "result.summary[km_total]",
+        "action": "within"
+      }
+    ]
+  },
+  {
+    "name": "a receipt and itself",
+    "a": {
+      "context": {
+        "inputs": {},
+        "lockfile_sha256": null,
+        "run": {
+          "link_run_id": "20261104T181900Z-bulk"
+        },
+        "session": null,
+        "time": "2026-11-04T18:22:05Z",
+        "toolchain": {
+          "R": "4.5.2"
+        }
+      },
+      "output": {
+        "name": "link_evidence",
+        "receipt_version": "1.0.0",
+        "schema": null,
+        "scope": "BULK"
+      },
+      "recipe": {
+        "code": {
+          "knowledge": {
+            "commit": "3f1c2a9e8b7d6c5f4e3d2c1b0a9f8e7d6c5b4a39",
+            "dirty": false,
+            "version": "0.14.0"
+          },
+          "link": {
+            "commit": "a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0",
+            "dirty": false,
+            "version": "0.31.2"
+          }
+        },
+        "config": {
+          "files": {
+            "settings.csv": "8651eb611123f94b84ad5b969c8814721a006df8859beada54a99b534e39fdf2"
+          },
+          "settings": {
+            "species": [
+              "CO",
+              "CH",
+              "ST"
+            ],
+            "watershed_group": "BULK"
+          }
+        },
+        "inputs": {
+          "flow": {
+            "recipe_id": "0d6f1c9a8e7b5d4c3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b"
+          },
+          "fwa_stream_networks": {
+            "version_id": "3HL4kqtJlcpXroDTDmJ.rmSpXd3dIbrHY"
+          }
+        },
+        "recipe_id": "b06f982dd07b5e44edf586519e5d6ab60b29715a051c3827fba647230636f977",
+        "seed": null
+      },
+      "result": {
+        "fingerprint": {
+          "access_check": {
+            "rows": 4,
+            "sha256": "ac3a4b6d2811f6eb530a3d2a70a6cdfe226b652d33d2f20f9744560cb67c31d9"
+          },
+          "visits_link": {
+            "rows": 4,
+            "sha256": "3eaeffc2123edd359b987a312d97a24548657b9fa60c3e391a8ff0a9657a3427"
+          },
+          "visits_species": {
+            "rows": 5,
+            "sha256": "5004a660fa2cea88322b92623dffbf83456395693536c095914430b7df53c840"
+          },
+          "walks": {
+            "rows": 3,
+            "sha256": "9ac5394f5ec3b05e6f6ee55f72c129a4a4e2d6d42788eb0592e2f99d5165a3a9"
+          }
+        },
+        "parts": {
+          "access_check.csv": {
+            "bytes": 124,
+            "sha256": "04994ff01cdee55d69fc410add51ad261ec4b33a751135fc224e97305823c3e2",
+            "table": "access_check"
+          },
+          "visits_link.csv": {
+            "bytes": 57,
+            "sha256": "813a829f3e82c4724dd0ff48927234fd2e3437570a272cfc842d2ac46ee2d53e",
+            "table": "visits_link"
+          },
+          "visits_species.csv": {
+            "bytes": 100,
+            "sha256": "2dc87bec72be15a4323b92647532862797b290cc9ba45df61adfc1e7044228a9",
+            "table": "visits_species"
+          },
+          "walks.csv": {
+            "bytes": 46,
+            "sha256": "c9b13fc40825f9c33eddfa27fdfb2f10348f771bca3c5ab77ce173b7c56c5f5f",
+            "table": "walks"
+          }
+        },
+        "summary": {
+          "km_total": 47.3767792597,
+          "rows": 4
+        },
+        "tolerance": {
+          "summary": {
+            "km_total": 1e-06
+          },
+          "tables": {
+            "access_check": {
+              "km": 1e-09
+            }
+          }
+        }
+      }
+    },
+    "b": {
+      "context": {
+        "inputs": {},
+        "lockfile_sha256": null,
+        "run": {
+          "link_run_id": "20261104T181900Z-bulk"
+        },
+        "session": null,
+        "time": "2026-11-04T18:22:05Z",
+        "toolchain": {
+          "R": "4.5.2"
+        }
+      },
+      "output": {
+        "name": "link_evidence",
+        "receipt_version": "1.0.0",
+        "schema": null,
+        "scope": "BULK"
+      },
+      "recipe": {
+        "code": {
+          "knowledge": {
+            "commit": "3f1c2a9e8b7d6c5f4e3d2c1b0a9f8e7d6c5b4a39",
+            "dirty": false,
+            "version": "0.14.0"
+          },
+          "link": {
+            "commit": "a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0",
+            "dirty": false,
+            "version": "0.31.2"
+          }
+        },
+        "config": {
+          "files": {
+            "settings.csv": "8651eb611123f94b84ad5b969c8814721a006df8859beada54a99b534e39fdf2"
+          },
+          "settings": {
+            "species": [
+              "CO",
+              "CH",
+              "ST"
+            ],
+            "watershed_group": "BULK"
+          }
+        },
+        "inputs": {
+          "flow": {
+            "recipe_id": "0d6f1c9a8e7b5d4c3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b"
+          },
+          "fwa_stream_networks": {
+            "version_id": "3HL4kqtJlcpXroDTDmJ.rmSpXd3dIbrHY"
+          }
+        },
+        "recipe_id": "b06f982dd07b5e44edf586519e5d6ab60b29715a051c3827fba647230636f977",
+        "seed": null
+      },
+      "result": {
+        "fingerprint": {
+          "access_check": {
+            "rows": 4,
+            "sha256": "ac3a4b6d2811f6eb530a3d2a70a6cdfe226b652d33d2f20f9744560cb67c31d9"
+          },
+          "visits_link": {
+            "rows": 4,
+            "sha256": "3eaeffc2123edd359b987a312d97a24548657b9fa60c3e391a8ff0a9657a3427"
+          },
+          "visits_species": {
+            "rows": 5,
+            "sha256": "5004a660fa2cea88322b92623dffbf83456395693536c095914430b7df53c840"
+          },
+          "walks": {
+            "rows": 3,
+            "sha256": "9ac5394f5ec3b05e6f6ee55f72c129a4a4e2d6d42788eb0592e2f99d5165a3a9"
+          }
+        },
+        "parts": {
+          "access_check.csv": {
+            "bytes": 124,
+            "sha256": "04994ff01cdee55d69fc410add51ad261ec4b33a751135fc224e97305823c3e2",
+            "table": "access_check"
+          },
+          "visits_link.csv": {
+            "bytes": 57,
+            "sha256": "813a829f3e82c4724dd0ff48927234fd2e3437570a272cfc842d2ac46ee2d53e",
+            "table": "visits_link"
+          },
+          "visits_species.csv": {
+            "bytes": 100,
+            "sha256": "2dc87bec72be15a4323b92647532862797b290cc9ba45df61adfc1e7044228a9",
+            "table": "visits_species"
+          },
+          "walks.csv": {
+            "bytes": 46,
+            "sha256": "c9b13fc40825f9c33eddfa27fdfb2f10348f771bca3c5ab77ce173b7c56c5f5f",
+            "table": "walks"
+          }
+        },
+        "summary": {
+          "km_total": 47.3767792597,
+          "rows": 4
+        },
+        "tolerance": {
+          "summary": {
+            "km_total": 1e-06
+          },
+          "tables": {
+            "access_check": {
+              "km": 1e-09
+            }
+          }
+        }
+      }
+    },
+    "verdict": "identical",
+    "differences": []
+  },
+  {
+    "name": "toolchain only",
+    "a": {
+      "context": {
+        "inputs": {},
+        "lockfile_sha256": null,
+        "run": {
+          "link_run_id": "20261104T181900Z-bulk"
+        },
+        "session": null,
+        "time": "2026-11-04T18:22:05Z",
+        "toolchain": {
+          "R": "4.5.2"
+        }
+      },
+      "output": {
+        "name": "link_evidence",
+        "receipt_version": "1.0.0",
+        "schema": null,
+        "scope": "BULK"
+      },
+      "recipe": {
+        "code": {
+          "knowledge": {
+            "commit": "3f1c2a9e8b7d6c5f4e3d2c1b0a9f8e7d6c5b4a39",
+            "dirty": false,
+            "version": "0.14.0"
+          },
+          "link": {
+            "commit": "a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0",
+            "dirty": false,
+            "version": "0.31.2"
+          }
+        },
+        "config": {
+          "files": {
+            "settings.csv": "8651eb611123f94b84ad5b969c8814721a006df8859beada54a99b534e39fdf2"
+          },
+          "settings": {
+            "species": [
+              "CO",
+              "CH",
+              "ST"
+            ],
+            "watershed_group": "BULK"
+          }
+        },
+        "inputs": {
+          "flow": {
+            "recipe_id": "0d6f1c9a8e7b5d4c3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b"
+          },
+          "fwa_stream_networks": {
+            "version_id": "3HL4kqtJlcpXroDTDmJ.rmSpXd3dIbrHY"
+          }
+        },
+        "recipe_id": "b06f982dd07b5e44edf586519e5d6ab60b29715a051c3827fba647230636f977",
+        "seed": null
+      },
+      "result": {
+        "fingerprint": {
+          "access_check": {
+            "rows": 4,
+            "sha256": "ac3a4b6d2811f6eb530a3d2a70a6cdfe226b652d33d2f20f9744560cb67c31d9"
+          },
+          "visits_link": {
+            "rows": 4,
+            "sha256": "3eaeffc2123edd359b987a312d97a24548657b9fa60c3e391a8ff0a9657a3427"
+          },
+          "visits_species": {
+            "rows": 5,
+            "sha256": "5004a660fa2cea88322b92623dffbf83456395693536c095914430b7df53c840"
+          },
+          "walks": {
+            "rows": 3,
+            "sha256": "9ac5394f5ec3b05e6f6ee55f72c129a4a4e2d6d42788eb0592e2f99d5165a3a9"
+          }
+        },
+        "parts": {
+          "access_check.csv": {
+            "bytes": 124,
+            "sha256": "04994ff01cdee55d69fc410add51ad261ec4b33a751135fc224e97305823c3e2",
+            "table": "access_check"
+          },
+          "visits_link.csv": {
+            "bytes": 57,
+            "sha256": "813a829f3e82c4724dd0ff48927234fd2e3437570a272cfc842d2ac46ee2d53e",
+            "table": "visits_link"
+          },
+          "visits_species.csv": {
+            "bytes": 100,
+            "sha256": "2dc87bec72be15a4323b92647532862797b290cc9ba45df61adfc1e7044228a9",
+            "table": "visits_species"
+          },
+          "walks.csv": {
+            "bytes": 46,
+            "sha256": "c9b13fc40825f9c33eddfa27fdfb2f10348f771bca3c5ab77ce173b7c56c5f5f",
+            "table": "walks"
+          }
+        },
+        "summary": {
+          "km_total": 47.3767792597,
+          "rows": 4
+        },
+        "tolerance": {
+          "summary": {
+            "km_total": 1e-06
+          },
+          "tables": {
+            "access_check": {
+              "km": 1e-09
+            }
+          }
+        }
+      }
+    },
+    "b": {
+      "context": {
+        "inputs": {},
+        "lockfile_sha256": null,
+        "run": {
+          "link_run_id": "20261104T181900Z-bulk"
+        },
+        "session": null,
+        "time": "2026-11-04T18:22:05Z",
+        "toolchain": {
+          "R": "4.5.2",
+          "GDAL": "3.9.2"
+        }
+      },
+      "output": {
+        "name": "link_evidence",
+        "receipt_version": "1.0.0",
+        "schema": null,
+        "scope": "BULK"
+      },
+      "recipe": {
+        "code": {
+          "knowledge": {
+            "commit": "3f1c2a9e8b7d6c5f4e3d2c1b0a9f8e7d6c5b4a39",
+            "dirty": false,
+            "version": "0.14.0"
+          },
+          "link": {
+            "commit": "a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0",
+            "dirty": false,
+            "version": "0.31.2"
+          }
+        },
+        "config": {
+          "files": {
+            "settings.csv": "8651eb611123f94b84ad5b969c8814721a006df8859beada54a99b534e39fdf2"
+          },
+          "settings": {
+            "species": [
+              "CO",
+              "CH",
+              "ST"
+            ],
+            "watershed_group": "BULK"
+          }
+        },
+        "inputs": {
+          "flow": {
+            "recipe_id": "0d6f1c9a8e7b5d4c3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b"
+          },
+          "fwa_stream_networks": {
+            "version_id": "3HL4kqtJlcpXroDTDmJ.rmSpXd3dIbrHY"
+          }
+        },
+        "recipe_id": "b06f982dd07b5e44edf586519e5d6ab60b29715a051c3827fba647230636f977",
+        "seed": null
+      },
+      "result": {
+        "fingerprint": {
+          "access_check": {
+            "rows": 4,
+            "sha256": "ac3a4b6d2811f6eb530a3d2a70a6cdfe226b652d33d2f20f9744560cb67c31d9"
+          },
+          "visits_link": {
+            "rows": 4,
+            "sha256": "3eaeffc2123edd359b987a312d97a24548657b9fa60c3e391a8ff0a9657a3427"
+          },
+          "visits_species": {
+            "rows": 5,
+            "sha256": "5004a660fa2cea88322b92623dffbf83456395693536c095914430b7df53c840"
+          },
+          "walks": {
+            "rows": 3,
+            "sha256": "9ac5394f5ec3b05e6f6ee55f72c129a4a4e2d6d42788eb0592e2f99d5165a3a9"
+          }
+        },
+        "parts": {
+          "access_check.csv": {
+            "bytes": 124,
+            "sha256": "04994ff01cdee55d69fc410add51ad261ec4b33a751135fc224e97305823c3e2",
+            "table": "access_check"
+          },
+          "visits_link.csv": {
+            "bytes": 57,
+            "sha256": "813a829f3e82c4724dd0ff48927234fd2e3437570a272cfc842d2ac46ee2d53e",
+            "table": "visits_link"
+          },
+          "visits_species.csv": {
+            "bytes": 100,
+            "sha256": "2dc87bec72be15a4323b92647532862797b290cc9ba45df61adfc1e7044228a9",
+            "table": "visits_species"
+          },
+          "walks.csv": {
+            "bytes": 46,
+            "sha256": "c9b13fc40825f9c33eddfa27fdfb2f10348f771bca3c5ab77ce173b7c56c5f5f",
+            "table": "walks"
+          }
+        },
+        "summary": {
+          "km_total": 47.3767792597,
+          "rows": 4
+        },
+        "tolerance": {
+          "summary": {
+            "km_total": 1e-06
+          },
+          "tables": {
+            "access_check": {
+              "km": 1e-09
+            }
+          }
+        }
+      }
+    },
+    "verdict": "identical",
+    "differences": [
+      {
+        "field": "context.toolchain",
+        "action": "record"
+      }
+    ]
+  },
+  {
+    "name": "another run setting",
+    "a": {
+      "context": {
+        "inputs": {},
+        "lockfile_sha256": null,
+        "run": {
+          "link_run_id": "20261104T181900Z-bulk"
+        },
+        "session": null,
+        "time": "2026-11-04T18:22:05Z",
+        "toolchain": {
+          "R": "4.5.2"
+        }
+      },
+      "output": {
+        "name": "link_evidence",
+        "receipt_version": "1.0.0",
+        "schema": null,
+        "scope": "BULK"
+      },
+      "recipe": {
+        "code": {
+          "knowledge": {
+            "commit": "3f1c2a9e8b7d6c5f4e3d2c1b0a9f8e7d6c5b4a39",
+            "dirty": false,
+            "version": "0.14.0"
+          },
+          "link": {
+            "commit": "a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0",
+            "dirty": false,
+            "version": "0.31.2"
+          }
+        },
+        "config": {
+          "files": {
+            "settings.csv": "8651eb611123f94b84ad5b969c8814721a006df8859beada54a99b534e39fdf2"
+          },
+          "settings": {
+            "species": [
+              "CO",
+              "CH",
+              "ST"
+            ],
+            "watershed_group": "BULK"
+          }
+        },
+        "inputs": {
+          "flow": {
+            "recipe_id": "0d6f1c9a8e7b5d4c3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b"
+          },
+          "fwa_stream_networks": {
+            "version_id": "3HL4kqtJlcpXroDTDmJ.rmSpXd3dIbrHY"
+          }
+        },
+        "recipe_id": "b06f982dd07b5e44edf586519e5d6ab60b29715a051c3827fba647230636f977",
+        "seed": null
+      },
+      "result": {
+        "fingerprint": {
+          "access_check": {
+            "rows": 4,
+            "sha256": "ac3a4b6d2811f6eb530a3d2a70a6cdfe226b652d33d2f20f9744560cb67c31d9"
+          },
+          "visits_link": {
+            "rows": 4,
+            "sha256": "3eaeffc2123edd359b987a312d97a24548657b9fa60c3e391a8ff0a9657a3427"
+          },
+          "visits_species": {
+            "rows": 5,
+            "sha256": "5004a660fa2cea88322b92623dffbf83456395693536c095914430b7df53c840"
+          },
+          "walks": {
+            "rows": 3,
+            "sha256": "9ac5394f5ec3b05e6f6ee55f72c129a4a4e2d6d42788eb0592e2f99d5165a3a9"
+          }
+        },
+        "parts": {
+          "access_check.csv": {
+            "bytes": 124,
+            "sha256": "04994ff01cdee55d69fc410add51ad261ec4b33a751135fc224e97305823c3e2",
+            "table": "access_check"
+          },
+          "visits_link.csv": {
+            "bytes": 57,
+            "sha256": "813a829f3e82c4724dd0ff48927234fd2e3437570a272cfc842d2ac46ee2d53e",
+            "table": "visits_link"
+          },
+          "visits_species.csv": {
+            "bytes": 100,
+            "sha256": "2dc87bec72be15a4323b92647532862797b290cc9ba45df61adfc1e7044228a9",
+            "table": "visits_species"
+          },
+          "walks.csv": {
+            "bytes": 46,
+            "sha256": "c9b13fc40825f9c33eddfa27fdfb2f10348f771bca3c5ab77ce173b7c56c5f5f",
+            "table": "walks"
+          }
+        },
+        "summary": {
+          "km_total": 47.3767792597,
+          "rows": 4
+        },
+        "tolerance": {
+          "summary": {
+            "km_total": 1e-06
+          },
+          "tables": {
+            "access_check": {
+              "km": 1e-09
+            }
+          }
+        }
+      }
+    },
+    "b": {
+      "context": {
+        "inputs": {},
+        "lockfile_sha256": null,
+        "run": {
+          "link_run_id": "20261104T214400Z-bulk"
+        },
+        "session": null,
+        "time": "2026-11-04T21:47:31Z",
+        "toolchain": {
+          "R": "4.5.2"
+        }
+      },
+      "output": {
+        "name": "link_evidence",
+        "receipt_version": "1.0.0",
+        "schema": null,
+        "scope": "BULK"
+      },
+      "recipe": {
+        "code": {
+          "knowledge": {
+            "commit": "3f1c2a9e8b7d6c5f4e3d2c1b0a9f8e7d6c5b4a39",
+            "dirty": false,
+            "version": "0.14.0"
+          },
+          "link": {
+            "commit": "a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0",
+            "dirty": false,
+            "version": "0.31.2"
+          }
+        },
+        "config": {
+          "files": {
+            "settings.csv": "8651eb611123f94b84ad5b969c8814721a006df8859beada54a99b534e39fdf2"
+          },
+          "settings": {
+            "species": [
+              "CO",
+              "CH",
+              "ST"
+            ],
+            "watershed_group": "MORR"
+          }
+        },
+        "inputs": {
+          "flow": {
+            "recipe_id": "0d6f1c9a8e7b5d4c3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b"
+          },
+          "fwa_stream_networks": {
+            "version_id": "3HL4kqtJlcpXroDTDmJ.rmSpXd3dIbrHY"
+          }
+        },
+        "recipe_id": "67a693fefe8904048db779adbc25b98e4957a344dd2df816a0b48f335464fbe1",
+        "seed": null
+      },
+      "result": {
+        "fingerprint": {
+          "access_check": {
+            "rows": 4,
+            "sha256": "ac3a4b6d2811f6eb530a3d2a70a6cdfe226b652d33d2f20f9744560cb67c31d9"
+          },
+          "visits_link": {
+            "rows": 4,
+            "sha256": "3eaeffc2123edd359b987a312d97a24548657b9fa60c3e391a8ff0a9657a3427"
+          },
+          "visits_species": {
+            "rows": 5,
+            "sha256": "5004a660fa2cea88322b92623dffbf83456395693536c095914430b7df53c840"
+          },
+          "walks": {
+            "rows": 3,
+            "sha256": "9ac5394f5ec3b05e6f6ee55f72c129a4a4e2d6d42788eb0592e2f99d5165a3a9"
+          }
+        },
+        "parts": {
+          "access_check.csv": {
+            "bytes": 128,
+            "sha256": "6801fb7bb092626441fd804d5ffbf8c4c05213ff18fa7c7ca524a9c2aa32f5e4",
+            "table": "access_check"
+          },
+          "visits_link.csv": {
+            "bytes": 57,
+            "sha256": "813a829f3e82c4724dd0ff48927234fd2e3437570a272cfc842d2ac46ee2d53e",
+            "table": "visits_link"
+          },
+          "visits_species.csv": {
+            "bytes": 100,
+            "sha256": "2dc87bec72be15a4323b92647532862797b290cc9ba45df61adfc1e7044228a9",
+            "table": "visits_species"
+          },
+          "walks.csv": {
+            "bytes": 46,
+            "sha256": "c9b13fc40825f9c33eddfa27fdfb2f10348f771bca3c5ab77ce173b7c56c5f5f",
+            "table": "walks"
+          }
+        },
+        "summary": {
+          "km_total": 47.376779259805,
+          "rows": 4
+        },
+        "tolerance": {
+          "summary": {
+            "km_total": 1e-06
+          },
+          "tables": {
+            "access_check": {
+              "km": 1e-09
+            }
+          }
+        }
+      }
+    },
+    "verdict": "different",
+    "differences": [
+      {
+        "field": "context.run",
+        "action": "record"
+      },
+      {
+        "field": "context.time",
+        "action": "record"
+      },
+      {
+        "field": "recipe.config.settings[watershed_group]",
+        "action": "refuse"
+      },
+      {
+        "field": "recipe.recipe_id",
+        "action": "refuse"
+      },
+      {
+        "field": "result.parts[access_check.csv].bytes",
+        "action": "within"
+      },
+      {
+        "field": "result.parts[access_check.csv].sha256",
+        "action": "within"
+      },
+      {
+        "field": "result.summary[km_total]",
+        "action": "within"
+      }
+    ]
+  },
+  {
+    "name": "another seed",
+    "a": {
+      "context": {
+        "inputs": {},
+        "lockfile_sha256": null,
+        "run": {
+          "link_run_id": "20261104T181900Z-bulk"
+        },
+        "session": null,
+        "time": "2026-11-04T18:22:05Z",
+        "toolchain": {
+          "R": "4.5.2"
+        }
+      },
+      "output": {
+        "name": "link_evidence",
+        "receipt_version": "1.0.0",
+        "schema": null,
+        "scope": "BULK"
+      },
+      "recipe": {
+        "code": {
+          "knowledge": {
+            "commit": "3f1c2a9e8b7d6c5f4e3d2c1b0a9f8e7d6c5b4a39",
+            "dirty": false,
+            "version": "0.14.0"
+          },
+          "link": {
+            "commit": "a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0",
+            "dirty": false,
+            "version": "0.31.2"
+          }
+        },
+        "config": {
+          "files": {
+            "settings.csv": "8651eb611123f94b84ad5b969c8814721a006df8859beada54a99b534e39fdf2"
+          },
+          "settings": {
+            "species": [
+              "CO",
+              "CH",
+              "ST"
+            ],
+            "watershed_group": "BULK"
+          }
+        },
+        "inputs": {
+          "flow": {
+            "recipe_id": "0d6f1c9a8e7b5d4c3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b"
+          },
+          "fwa_stream_networks": {
+            "version_id": "3HL4kqtJlcpXroDTDmJ.rmSpXd3dIbrHY"
+          }
+        },
+        "recipe_id": "b06f982dd07b5e44edf586519e5d6ab60b29715a051c3827fba647230636f977",
+        "seed": null
+      },
+      "result": {
+        "fingerprint": {
+          "access_check": {
+            "rows": 4,
+            "sha256": "ac3a4b6d2811f6eb530a3d2a70a6cdfe226b652d33d2f20f9744560cb67c31d9"
+          },
+          "visits_link": {
+            "rows": 4,
+            "sha256": "3eaeffc2123edd359b987a312d97a24548657b9fa60c3e391a8ff0a9657a3427"
+          },
+          "visits_species": {
+            "rows": 5,
+            "sha256": "5004a660fa2cea88322b92623dffbf83456395693536c095914430b7df53c840"
+          },
+          "walks": {
+            "rows": 3,
+            "sha256": "9ac5394f5ec3b05e6f6ee55f72c129a4a4e2d6d42788eb0592e2f99d5165a3a9"
+          }
+        },
+        "parts": {
+          "access_check.csv": {
+            "bytes": 124,
+            "sha256": "04994ff01cdee55d69fc410add51ad261ec4b33a751135fc224e97305823c3e2",
+            "table": "access_check"
+          },
+          "visits_link.csv": {
+            "bytes": 57,
+            "sha256": "813a829f3e82c4724dd0ff48927234fd2e3437570a272cfc842d2ac46ee2d53e",
+            "table": "visits_link"
+          },
+          "visits_species.csv": {
+            "bytes": 100,
+            "sha256": "2dc87bec72be15a4323b92647532862797b290cc9ba45df61adfc1e7044228a9",
+            "table": "visits_species"
+          },
+          "walks.csv": {
+            "bytes": 46,
+            "sha256": "c9b13fc40825f9c33eddfa27fdfb2f10348f771bca3c5ab77ce173b7c56c5f5f",
+            "table": "walks"
+          }
+        },
+        "summary": {
+          "km_total": 47.3767792597,
+          "rows": 4
+        },
+        "tolerance": {
+          "summary": {
+            "km_total": 1e-06
+          },
+          "tables": {
+            "access_check": {
+              "km": 1e-09
+            }
+          }
+        }
+      }
+    },
+    "b": {
+      "context": {
+        "inputs": {},
+        "lockfile_sha256": null,
+        "run": {
+          "link_run_id": "20261104T181900Z-bulk"
+        },
+        "session": null,
+        "time": "2026-11-04T18:22:05Z",
+        "toolchain": {
+          "R": "4.5.2"
+        }
+      },
+      "output": {
+        "name": "link_evidence",
+        "receipt_version": "1.0.0",
+        "schema": null,
+        "scope": "BULK"
+      },
+      "recipe": {
+        "code": {
+          "knowledge": {
+            "commit": "3f1c2a9e8b7d6c5f4e3d2c1b0a9f8e7d6c5b4a39",
+            "dirty": false,
+            "version": "0.14.0"
+          },
+          "link": {
+            "commit": "a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0",
+            "dirty": false,
+            "version": "0.31.2"
+          }
+        },
+        "config": {
+          "files": {
+            "settings.csv": "8651eb611123f94b84ad5b969c8814721a006df8859beada54a99b534e39fdf2"
+          },
+          "settings": {
+            "species": [
+              "CO",
+              "CH",
+              "ST"
+            ],
+            "watershed_group": "BULK"
+          }
+        },
+        "inputs": {
+          "flow": {
+            "recipe_id": "0d6f1c9a8e7b5d4c3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b"
+          },
+          "fwa_stream_networks": {
+            "version_id": "3HL4kqtJlcpXroDTDmJ.rmSpXd3dIbrHY"
+          }
+        },
+        "recipe_id": "8471df6f327acc826ef0611529b641404c6c0b5c0ba7047a76314d3761b21ca0",
+        "seed": 20261105
+      },
+      "result": {
+        "fingerprint": {
+          "access_check": {
+            "rows": 4,
+            "sha256": "ac3a4b6d2811f6eb530a3d2a70a6cdfe226b652d33d2f20f9744560cb67c31d9"
+          },
+          "visits_link": {
+            "rows": 4,
+            "sha256": "3eaeffc2123edd359b987a312d97a24548657b9fa60c3e391a8ff0a9657a3427"
+          },
+          "visits_species": {
+            "rows": 5,
+            "sha256": "5004a660fa2cea88322b92623dffbf83456395693536c095914430b7df53c840"
+          },
+          "walks": {
+            "rows": 3,
+            "sha256": "9ac5394f5ec3b05e6f6ee55f72c129a4a4e2d6d42788eb0592e2f99d5165a3a9"
+          }
+        },
+        "parts": {
+          "access_check.csv": {
+            "bytes": 124,
+            "sha256": "04994ff01cdee55d69fc410add51ad261ec4b33a751135fc224e97305823c3e2",
+            "table": "access_check"
+          },
+          "visits_link.csv": {
+            "bytes": 57,
+            "sha256": "813a829f3e82c4724dd0ff48927234fd2e3437570a272cfc842d2ac46ee2d53e",
+            "table": "visits_link"
+          },
+          "visits_species.csv": {
+            "bytes": 100,
+            "sha256": "2dc87bec72be15a4323b92647532862797b290cc9ba45df61adfc1e7044228a9",
+            "table": "visits_species"
+          },
+          "walks.csv": {
+            "bytes": 46,
+            "sha256": "c9b13fc40825f9c33eddfa27fdfb2f10348f771bca3c5ab77ce173b7c56c5f5f",
+            "table": "walks"
+          }
+        },
+        "summary": {
+          "km_total": 47.3767792597,
+          "rows": 4
+        },
+        "tolerance": {
+          "summary": {
+            "km_total": 1e-06
+          },
+          "tables": {
+            "access_check": {
+              "km": 1e-09
+            }
+          }
+        }
+      }
+    },
+    "verdict": "different",
+    "differences": [
+      {
+        "field": "recipe.recipe_id",
+        "action": "refuse"
+      },
+      {
+        "field": "recipe.seed",
+        "action": "refuse"
+      }
+    ]
+  },
+  {
+    "name": "bytes moved in a file that names no table",
+    "a": {
+      "context": {
+        "inputs": {},
+        "lockfile_sha256": null,
+        "run": {
+          "link_run_id": "20261104T181900Z-bulk"
+        },
+        "session": null,
+        "time": "2026-11-04T18:22:05Z",
+        "toolchain": {
+          "R": "4.5.2"
+        }
+      },
+      "output": {
+        "name": "link_evidence",
+        "receipt_version": "1.0.0",
+        "schema": null,
+        "scope": "BULK"
+      },
+      "recipe": {
+        "code": {
+          "knowledge": {
+            "commit": "3f1c2a9e8b7d6c5f4e3d2c1b0a9f8e7d6c5b4a39",
+            "dirty": false,
+            "version": "0.14.0"
+          },
+          "link": {
+            "commit": "a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0",
+            "dirty": false,
+            "version": "0.31.2"
+          }
+        },
+        "config": {
+          "files": {
+            "settings.csv": "8651eb611123f94b84ad5b969c8814721a006df8859beada54a99b534e39fdf2"
+          },
+          "settings": {
+            "species": [
+              "CO",
+              "CH",
+              "ST"
+            ],
+            "watershed_group": "BULK"
+          }
+        },
+        "inputs": {
+          "flow": {
+            "recipe_id": "0d6f1c9a8e7b5d4c3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b"
+          },
+          "fwa_stream_networks": {
+            "version_id": "3HL4kqtJlcpXroDTDmJ.rmSpXd3dIbrHY"
+          }
+        },
+        "recipe_id": "b06f982dd07b5e44edf586519e5d6ab60b29715a051c3827fba647230636f977",
+        "seed": null
+      },
+      "result": {
+        "fingerprint": {
+          "access_check": {
+            "rows": 4,
+            "sha256": "ac3a4b6d2811f6eb530a3d2a70a6cdfe226b652d33d2f20f9744560cb67c31d9"
+          },
+          "visits_link": {
+            "rows": 4,
+            "sha256": "3eaeffc2123edd359b987a312d97a24548657b9fa60c3e391a8ff0a9657a3427"
+          },
+          "visits_species": {
+            "rows": 5,
+            "sha256": "5004a660fa2cea88322b92623dffbf83456395693536c095914430b7df53c840"
+          },
+          "walks": {
+            "rows": 3,
+            "sha256": "9ac5394f5ec3b05e6f6ee55f72c129a4a4e2d6d42788eb0592e2f99d5165a3a9"
+          }
+        },
+        "parts": {
+          "access_check.csv": {
+            "bytes": 124,
+            "sha256": "04994ff01cdee55d69fc410add51ad261ec4b33a751135fc224e97305823c3e2"
+          },
+          "visits_link.csv": {
+            "bytes": 57,
+            "sha256": "813a829f3e82c4724dd0ff48927234fd2e3437570a272cfc842d2ac46ee2d53e",
+            "table": "visits_link"
+          },
+          "visits_species.csv": {
+            "bytes": 100,
+            "sha256": "2dc87bec72be15a4323b92647532862797b290cc9ba45df61adfc1e7044228a9",
+            "table": "visits_species"
+          },
+          "walks.csv": {
+            "bytes": 46,
+            "sha256": "c9b13fc40825f9c33eddfa27fdfb2f10348f771bca3c5ab77ce173b7c56c5f5f",
+            "table": "walks"
+          }
+        },
+        "summary": {
+          "km_total": 47.3767792597,
+          "rows": 4
+        },
+        "tolerance": {
+          "summary": {
+            "km_total": 1e-06
+          },
+          "tables": {
+            "access_check": {
+              "km": 1e-09
+            }
+          }
+        }
+      }
+    },
+    "b": {
+      "context": {
+        "inputs": {},
+        "lockfile_sha256": null,
+        "run": {
+          "link_run_id": "20261104T214400Z-bulk"
+        },
+        "session": null,
+        "time": "2026-11-04T21:47:31Z",
+        "toolchain": {
+          "R": "4.5.2"
+        }
+      },
+      "output": {
+        "name": "link_evidence",
+        "receipt_version": "1.0.0",
+        "schema": null,
+        "scope": "BULK"
+      },
+      "recipe": {
+        "code": {
+          "knowledge": {
+            "commit": "3f1c2a9e8b7d6c5f4e3d2c1b0a9f8e7d6c5b4a39",
+            "dirty": false,
+            "version": "0.14.0"
+          },
+          "link": {
+            "commit": "a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0",
+            "dirty": false,
+            "version": "0.31.2"
+          }
+        },
+        "config": {
+          "files": {
+            "settings.csv": "8651eb611123f94b84ad5b969c8814721a006df8859beada54a99b534e39fdf2"
+          },
+          "settings": {
+            "species": [
+              "CO",
+              "CH",
+              "ST"
+            ],
+            "watershed_group": "BULK"
+          }
+        },
+        "inputs": {
+          "flow": {
+            "recipe_id": "0d6f1c9a8e7b5d4c3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b"
+          },
+          "fwa_stream_networks": {
+            "version_id": "3HL4kqtJlcpXroDTDmJ.rmSpXd3dIbrHY"
+          }
+        },
+        "recipe_id": "b06f982dd07b5e44edf586519e5d6ab60b29715a051c3827fba647230636f977",
+        "seed": null
+      },
+      "result": {
+        "fingerprint": {
+          "access_check": {
+            "rows": 4,
+            "sha256": "ac3a4b6d2811f6eb530a3d2a70a6cdfe226b652d33d2f20f9744560cb67c31d9"
+          },
+          "visits_link": {
+            "rows": 4,
+            "sha256": "3eaeffc2123edd359b987a312d97a24548657b9fa60c3e391a8ff0a9657a3427"
+          },
+          "visits_species": {
+            "rows": 5,
+            "sha256": "5004a660fa2cea88322b92623dffbf83456395693536c095914430b7df53c840"
+          },
+          "walks": {
+            "rows": 3,
+            "sha256": "9ac5394f5ec3b05e6f6ee55f72c129a4a4e2d6d42788eb0592e2f99d5165a3a9"
+          }
+        },
+        "parts": {
+          "access_check.csv": {
+            "bytes": 128,
+            "sha256": "6801fb7bb092626441fd804d5ffbf8c4c05213ff18fa7c7ca524a9c2aa32f5e4"
+          },
+          "visits_link.csv": {
+            "bytes": 57,
+            "sha256": "813a829f3e82c4724dd0ff48927234fd2e3437570a272cfc842d2ac46ee2d53e",
+            "table": "visits_link"
+          },
+          "visits_species.csv": {
+            "bytes": 100,
+            "sha256": "2dc87bec72be15a4323b92647532862797b290cc9ba45df61adfc1e7044228a9",
+            "table": "visits_species"
+          },
+          "walks.csv": {
+            "bytes": 46,
+            "sha256": "c9b13fc40825f9c33eddfa27fdfb2f10348f771bca3c5ab77ce173b7c56c5f5f",
+            "table": "walks"
+          }
+        },
+        "summary": {
+          "km_total": 47.376779259805,
+          "rows": 4
+        },
+        "tolerance": {
+          "summary": {
+            "km_total": 1e-06
+          },
+          "tables": {
+            "access_check": {
+              "km": 1e-09
+            }
+          }
+        }
+      }
+    },
+    "verdict": "different",
+    "differences": [
+      {
+        "field": "context.run",
+        "action": "record"
+      },
+      {
+        "field": "context.time",
+        "action": "record"
+      },
+      {
+        "field": "result.parts[access_check.csv].bytes",
+        "action": "refuse"
+      },
+      {
+        "field": "result.parts[access_check.csv].sha256",
+        "action": "refuse"
+      },
+      {
+        "field": "result.summary[km_total]",
+        "action": "within"
+      }
+    ]
+  },
+  {
+    "name": "summary value past its tolerance",
+    "a": {
+      "context": {
+        "inputs": {},
+        "lockfile_sha256": null,
+        "run": {
+          "link_run_id": "20261104T181900Z-bulk"
+        },
+        "session": null,
+        "time": "2026-11-04T18:22:05Z",
+        "toolchain": {
+          "R": "4.5.2"
+        }
+      },
+      "output": {
+        "name": "link_evidence",
+        "receipt_version": "1.0.0",
+        "schema": null,
+        "scope": "BULK"
+      },
+      "recipe": {
+        "code": {
+          "knowledge": {
+            "commit": "3f1c2a9e8b7d6c5f4e3d2c1b0a9f8e7d6c5b4a39",
+            "dirty": false,
+            "version": "0.14.0"
+          },
+          "link": {
+            "commit": "a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0",
+            "dirty": false,
+            "version": "0.31.2"
+          }
+        },
+        "config": {
+          "files": {
+            "settings.csv": "8651eb611123f94b84ad5b969c8814721a006df8859beada54a99b534e39fdf2"
+          },
+          "settings": {
+            "species": [
+              "CO",
+              "CH",
+              "ST"
+            ],
+            "watershed_group": "BULK"
+          }
+        },
+        "inputs": {
+          "flow": {
+            "recipe_id": "0d6f1c9a8e7b5d4c3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b"
+          },
+          "fwa_stream_networks": {
+            "version_id": "3HL4kqtJlcpXroDTDmJ.rmSpXd3dIbrHY"
+          }
+        },
+        "recipe_id": "b06f982dd07b5e44edf586519e5d6ab60b29715a051c3827fba647230636f977",
+        "seed": null
+      },
+      "result": {
+        "fingerprint": {
+          "access_check": {
+            "rows": 4,
+            "sha256": "ac3a4b6d2811f6eb530a3d2a70a6cdfe226b652d33d2f20f9744560cb67c31d9"
+          },
+          "visits_link": {
+            "rows": 4,
+            "sha256": "3eaeffc2123edd359b987a312d97a24548657b9fa60c3e391a8ff0a9657a3427"
+          },
+          "visits_species": {
+            "rows": 5,
+            "sha256": "5004a660fa2cea88322b92623dffbf83456395693536c095914430b7df53c840"
+          },
+          "walks": {
+            "rows": 3,
+            "sha256": "9ac5394f5ec3b05e6f6ee55f72c129a4a4e2d6d42788eb0592e2f99d5165a3a9"
+          }
+        },
+        "parts": {
+          "access_check.csv": {
+            "bytes": 124,
+            "sha256": "04994ff01cdee55d69fc410add51ad261ec4b33a751135fc224e97305823c3e2",
+            "table": "access_check"
+          },
+          "visits_link.csv": {
+            "bytes": 57,
+            "sha256": "813a829f3e82c4724dd0ff48927234fd2e3437570a272cfc842d2ac46ee2d53e",
+            "table": "visits_link"
+          },
+          "visits_species.csv": {
+            "bytes": 100,
+            "sha256": "2dc87bec72be15a4323b92647532862797b290cc9ba45df61adfc1e7044228a9",
+            "table": "visits_species"
+          },
+          "walks.csv": {
+            "bytes": 46,
+            "sha256": "c9b13fc40825f9c33eddfa27fdfb2f10348f771bca3c5ab77ce173b7c56c5f5f",
+            "table": "walks"
+          }
+        },
+        "summary": {
+          "km_total": 47.3767792597,
+          "rows": 4
+        },
+        "tolerance": {
+          "summary": {
+            "km_total": 1e-06
+          },
+          "tables": {
+            "access_check": {
+              "km": 1e-09
+            }
+          }
+        }
+      }
+    },
+    "b": {
+      "context": {
+        "inputs": {},
+        "lockfile_sha256": null,
+        "run": {
+          "link_run_id": "20261104T214400Z-bulk"
+        },
+        "session": null,
+        "time": "2026-11-04T21:47:31Z",
+        "toolchain": {
+          "R": "4.5.2"
+        }
+      },
+      "output": {
+        "name": "link_evidence",
+        "receipt_version": "1.0.0",
+        "schema": null,
+        "scope": "BULK"
+      },
+      "recipe": {
+        "code": {
+          "knowledge": {
+            "commit": "3f1c2a9e8b7d6c5f4e3d2c1b0a9f8e7d6c5b4a39",
+            "dirty": false,
+            "version": "0.14.0"
+          },
+          "link": {
+            "commit": "a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0",
+            "dirty": false,
+            "version": "0.31.2"
+          }
+        },
+        "config": {
+          "files": {
+            "settings.csv": "8651eb611123f94b84ad5b969c8814721a006df8859beada54a99b534e39fdf2"
+          },
+          "settings": {
+            "species": [
+              "CO",
+              "CH",
+              "ST"
+            ],
+            "watershed_group": "BULK"
+          }
+        },
+        "inputs": {
+          "flow": {
+            "recipe_id": "0d6f1c9a8e7b5d4c3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b"
+          },
+          "fwa_stream_networks": {
+            "version_id": "3HL4kqtJlcpXroDTDmJ.rmSpXd3dIbrHY"
+          }
+        },
+        "recipe_id": "b06f982dd07b5e44edf586519e5d6ab60b29715a051c3827fba647230636f977",
+        "seed": null
+      },
+      "result": {
+        "fingerprint": {
+          "access_check": {
+            "rows": 4,
+            "sha256": "ac3a4b6d2811f6eb530a3d2a70a6cdfe226b652d33d2f20f9744560cb67c31d9"
+          },
+          "visits_link": {
+            "rows": 4,
+            "sha256": "3eaeffc2123edd359b987a312d97a24548657b9fa60c3e391a8ff0a9657a3427"
+          },
+          "visits_species": {
+            "rows": 5,
+            "sha256": "5004a660fa2cea88322b92623dffbf83456395693536c095914430b7df53c840"
+          },
+          "walks": {
+            "rows": 3,
+            "sha256": "9ac5394f5ec3b05e6f6ee55f72c129a4a4e2d6d42788eb0592e2f99d5165a3a9"
+          }
+        },
+        "parts": {
+          "access_check.csv": {
+            "bytes": 128,
+            "sha256": "6801fb7bb092626441fd804d5ffbf8c4c05213ff18fa7c7ca524a9c2aa32f5e4",
+            "table": "access_check"
+          },
+          "visits_link.csv": {
+            "bytes": 57,
+            "sha256": "813a829f3e82c4724dd0ff48927234fd2e3437570a272cfc842d2ac46ee2d53e",
+            "table": "visits_link"
+          },
+          "visits_species.csv": {
+            "bytes": 100,
+            "sha256": "2dc87bec72be15a4323b92647532862797b290cc9ba45df61adfc1e7044228a9",
+            "table": "visits_species"
+          },
+          "walks.csv": {
+            "bytes": 46,
+            "sha256": "c9b13fc40825f9c33eddfa27fdfb2f10348f771bca3c5ab77ce173b7c56c5f5f",
+            "table": "walks"
+          }
+        },
+        "summary": {
+          "km_total": 47.386779259805,
+          "rows": 4
+        },
+        "tolerance": {
+          "summary": {
+            "km_total": 1e-06
+          },
+          "tables": {
+            "access_check": {
+              "km": 1e-09
+            }
+          }
+        }
+      }
+    },
+    "verdict": "different",
+    "differences": [
+      {
+        "field": "context.run",
+        "action": "record"
+      },
+      {
+        "field": "context.time",
+        "action": "record"
+      },
+      {
+        "field": "result.parts[access_check.csv].bytes",
+        "action": "within"
+      },
+      {
+        "field": "result.parts[access_check.csv].sha256",
+        "action": "within"
+      },
+      {
+        "field": "result.summary[km_total]",
+        "action": "refuse"
+      }
+    ]
+  },
+  {
+    "name": "fingerprints differ, receipts only",
+    "a": {
+      "context": {
+        "inputs": {},
+        "lockfile_sha256": null,
+        "run": {
+          "link_run_id": "20261104T181900Z-bulk"
+        },
+        "session": null,
+        "time": "2026-11-04T18:22:05Z",
+        "toolchain": {
+          "R": "4.5.2"
+        }
+      },
+      "output": {
+        "name": "link_evidence",
+        "receipt_version": "1.0.0",
+        "schema": null,
+        "scope": "BULK"
+      },
+      "recipe": {
+        "code": {
+          "knowledge": {
+            "commit": "3f1c2a9e8b7d6c5f4e3d2c1b0a9f8e7d6c5b4a39",
+            "dirty": false,
+            "version": "0.14.0"
+          },
+          "link": {
+            "commit": "a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0",
+            "dirty": false,
+            "version": "0.31.2"
+          }
+        },
+        "config": {
+          "files": {
+            "settings.csv": "8651eb611123f94b84ad5b969c8814721a006df8859beada54a99b534e39fdf2"
+          },
+          "settings": {
+            "species": [
+              "CO",
+              "CH",
+              "ST"
+            ],
+            "watershed_group": "BULK"
+          }
+        },
+        "inputs": {
+          "flow": {
+            "recipe_id": "0d6f1c9a8e7b5d4c3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b"
+          },
+          "fwa_stream_networks": {
+            "version_id": "3HL4kqtJlcpXroDTDmJ.rmSpXd3dIbrHY"
+          }
+        },
+        "recipe_id": "b06f982dd07b5e44edf586519e5d6ab60b29715a051c3827fba647230636f977",
+        "seed": null
+      },
+      "result": {
+        "fingerprint": {
+          "access_check": {
+            "rows": 4,
+            "sha256": "ac3a4b6d2811f6eb530a3d2a70a6cdfe226b652d33d2f20f9744560cb67c31d9"
+          },
+          "visits_link": {
+            "rows": 4,
+            "sha256": "3eaeffc2123edd359b987a312d97a24548657b9fa60c3e391a8ff0a9657a3427"
+          },
+          "visits_species": {
+            "rows": 5,
+            "sha256": "5004a660fa2cea88322b92623dffbf83456395693536c095914430b7df53c840"
+          },
+          "walks": {
+            "rows": 3,
+            "sha256": "9ac5394f5ec3b05e6f6ee55f72c129a4a4e2d6d42788eb0592e2f99d5165a3a9"
+          }
+        },
+        "parts": {
+          "access_check.csv": {
+            "bytes": 124,
+            "sha256": "04994ff01cdee55d69fc410add51ad261ec4b33a751135fc224e97305823c3e2",
+            "table": "access_check"
+          },
+          "visits_link.csv": {
+            "bytes": 57,
+            "sha256": "813a829f3e82c4724dd0ff48927234fd2e3437570a272cfc842d2ac46ee2d53e",
+            "table": "visits_link"
+          },
+          "visits_species.csv": {
+            "bytes": 100,
+            "sha256": "2dc87bec72be15a4323b92647532862797b290cc9ba45df61adfc1e7044228a9",
+            "table": "visits_species"
+          },
+          "walks.csv": {
+            "bytes": 46,
+            "sha256": "c9b13fc40825f9c33eddfa27fdfb2f10348f771bca3c5ab77ce173b7c56c5f5f",
+            "table": "walks"
+          }
+        },
+        "summary": {
+          "km_total": 47.3767792597,
+          "rows": 4
+        },
+        "tolerance": {
+          "summary": {
+            "km_total": 1e-06
+          },
+          "tables": {
+            "access_check": {
+              "km": 1e-09
+            }
+          }
+        }
+      }
+    },
+    "b": {
+      "context": {
+        "inputs": {},
+        "lockfile_sha256": null,
+        "run": {
+          "link_run_id": "20261104T214400Z-bulk"
+        },
+        "session": null,
+        "time": "2026-11-04T21:47:31Z",
+        "toolchain": {
+          "R": "4.5.2"
+        }
+      },
+      "output": {
+        "name": "link_evidence",
+        "receipt_version": "1.0.0",
+        "schema": null,
+        "scope": "BULK"
+      },
+      "recipe": {
+        "code": {
+          "knowledge": {
+            "commit": "3f1c2a9e8b7d6c5f4e3d2c1b0a9f8e7d6c5b4a39",
+            "dirty": false,
+            "version": "0.14.0"
+          },
+          "link": {
+            "commit": "a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0",
+            "dirty": false,
+            "version": "0.31.2"
+          }
+        },
+        "config": {
+          "files": {
+            "settings.csv": "8651eb611123f94b84ad5b969c8814721a006df8859beada54a99b534e39fdf2"
+          },
+          "settings": {
+            "species": [
+              "CO",
+              "CH",
+              "ST"
+            ],
+            "watershed_group": "BULK"
+          }
+        },
+        "inputs": {
+          "flow": {
+            "recipe_id": "0d6f1c9a8e7b5d4c3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b"
+          },
+          "fwa_stream_networks": {
+            "version_id": "3HL4kqtJlcpXroDTDmJ.rmSpXd3dIbrHY"
+          }
+        },
+        "recipe_id": "b06f982dd07b5e44edf586519e5d6ab60b29715a051c3827fba647230636f977",
+        "seed": null
+      },
+      "result": {
+        "fingerprint": {
+          "access_check": {
+            "rows": 4,
+            "sha256": "f994636c4fd0152899837d9eccc3541de7562c7503a84ce37388885f5a9e34ef"
+          },
+          "visits_link": {
+            "rows": 4,
+            "sha256": "3eaeffc2123edd359b987a312d97a24548657b9fa60c3e391a8ff0a9657a3427"
+          },
+          "visits_species": {
+            "rows": 5,
+            "sha256": "5004a660fa2cea88322b92623dffbf83456395693536c095914430b7df53c840"
+          },
+          "walks": {
+            "rows": 3,
+            "sha256": "9ac5394f5ec3b05e6f6ee55f72c129a4a4e2d6d42788eb0592e2f99d5165a3a9"
+          }
+        },
+        "parts": {
+          "access_check.csv": {
+            "bytes": 128,
+            "sha256": "6801fb7bb092626441fd804d5ffbf8c4c05213ff18fa7c7ca524a9c2aa32f5e4",
+            "table": "access_check"
+          },
+          "visits_link.csv": {
+            "bytes": 57,
+            "sha256": "813a829f3e82c4724dd0ff48927234fd2e3437570a272cfc842d2ac46ee2d53e",
+            "table": "visits_link"
+          },
+          "visits_species.csv": {
+            "bytes": 100,
+            "sha256": "2dc87bec72be15a4323b92647532862797b290cc9ba45df61adfc1e7044228a9",
+            "table": "visits_species"
+          },
+          "walks.csv": {
+            "bytes": 46,
+            "sha256": "c9b13fc40825f9c33eddfa27fdfb2f10348f771bca3c5ab77ce173b7c56c5f5f",
+            "table": "walks"
+          }
+        },
+        "summary": {
+          "km_total": 47.376779259805,
+          "rows": 4
+        },
+        "tolerance": {
+          "summary": {
+            "km_total": 1e-06
+          },
+          "tables": {
+            "access_check": {
+              "km": 1e-09
+            }
+          }
+        }
+      }
+    },
+    "verdict": "different",
+    "differences": [
+      {
+        "field": "context.run",
+        "action": "record"
+      },
+      {
+        "field": "context.time",
+        "action": "record"
+      },
+      {
+        "field": "result.fingerprint[access_check].sha256",
+        "action": "refuse"
+      },
+      {
+        "field": "result.parts[access_check.csv].bytes",
+        "action": "refuse"
+      },
+      {
+        "field": "result.parts[access_check.csv].sha256",
+        "action": "refuse"
+      },
+      {
+        "field": "result.summary[km_total]",
+        "action": "within"
+      }
+    ]
+  },
+  {
+    "name": "a migrated receipt",
+    "a": {
+      "context": {
+        "inputs": {},
+        "lockfile_sha256": null,
+        "run": {
+          "link_run_id": "20261104T181900Z-bulk"
+        },
+        "session": null,
+        "time": "2026-11-04T18:22:05Z",
+        "toolchain": {
+          "R": "4.5.2"
+        }
+      },
+      "output": {
+        "name": "link_evidence",
+        "receipt_version": "1.0.0",
+        "schema": null,
+        "scope": "BULK"
+      },
+      "recipe": {
+        "code": {
+          "knowledge": {
+            "commit": "3f1c2a9e8b7d6c5f4e3d2c1b0a9f8e7d6c5b4a39",
+            "dirty": false,
+            "version": "0.14.0"
+          },
+          "link": {
+            "commit": "a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0",
+            "dirty": false,
+            "version": "0.31.2"
+          }
+        },
+        "config": {
+          "files": {
+            "settings.csv": "8651eb611123f94b84ad5b969c8814721a006df8859beada54a99b534e39fdf2"
+          },
+          "settings": {
+            "species": [
+              "CO",
+              "CH",
+              "ST"
+            ],
+            "watershed_group": "BULK"
+          }
+        },
+        "inputs": {
+          "flow": {
+            "recipe_id": "0d6f1c9a8e7b5d4c3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b"
+          },
+          "fwa_stream_networks": {
+            "version_id": "3HL4kqtJlcpXroDTDmJ.rmSpXd3dIbrHY"
+          }
+        },
+        "recipe_id": "b06f982dd07b5e44edf586519e5d6ab60b29715a051c3827fba647230636f977",
+        "seed": null
+      },
+      "result": {
+        "fingerprint": {
+          "access_check": {
+            "rows": 4,
+            "sha256": "ac3a4b6d2811f6eb530a3d2a70a6cdfe226b652d33d2f20f9744560cb67c31d9"
+          },
+          "visits_link": {
+            "rows": 4,
+            "sha256": "3eaeffc2123edd359b987a312d97a24548657b9fa60c3e391a8ff0a9657a3427"
+          },
+          "visits_species": {
+            "rows": 5,
+            "sha256": "5004a660fa2cea88322b92623dffbf83456395693536c095914430b7df53c840"
+          },
+          "walks": {
+            "rows": 3,
+            "sha256": "9ac5394f5ec3b05e6f6ee55f72c129a4a4e2d6d42788eb0592e2f99d5165a3a9"
+          }
+        },
+        "parts": {
+          "access_check.csv": {
+            "bytes": 124,
+            "sha256": "04994ff01cdee55d69fc410add51ad261ec4b33a751135fc224e97305823c3e2",
+            "table": "access_check"
+          },
+          "visits_link.csv": {
+            "bytes": 57,
+            "sha256": "813a829f3e82c4724dd0ff48927234fd2e3437570a272cfc842d2ac46ee2d53e",
+            "table": "visits_link"
+          },
+          "visits_species.csv": {
+            "bytes": 100,
+            "sha256": "2dc87bec72be15a4323b92647532862797b290cc9ba45df61adfc1e7044228a9",
+            "table": "visits_species"
+          },
+          "walks.csv": {
+            "bytes": 46,
+            "sha256": "c9b13fc40825f9c33eddfa27fdfb2f10348f771bca3c5ab77ce173b7c56c5f5f",
+            "table": "walks"
+          }
+        },
+        "summary": {
+          "km_total": 47.3767792597,
+          "rows": 4
+        },
+        "tolerance": {
+          "summary": {
+            "km_total": 1e-06
+          },
+          "tables": {
+            "access_check": {
+              "km": 1e-09
+            }
+          }
+        }
+      }
+    },
+    "b": {
+      "context": {
+        "inputs": {},
+        "lockfile_sha256": null,
+        "run": {
+          "link_run_id": "20261104T214400Z-bulk"
+        },
+        "session": null,
+        "time": "2026-11-04T21:47:31Z",
+        "toolchain": {
+          "R": "4.5.2"
+        }
+      },
+      "output": {
+        "name": "link_evidence",
+        "receipt_version": "1.0.0",
+        "schema": null,
+        "scope": "BULK",
+        "migrated_from": "manifest.json"
+      },
+      "recipe": {
+        "code": {
+          "link": {
+            "commit": "a9b8c7d"
+          }
+        },
+        "recipe_id": null
+      },
+      "result": {
+        "fingerprint": {
+          "access_check": {
+            "rows": 4,
+            "sha256": "ac3a4b6d2811f6eb530a3d2a70a6cdfe226b652d33d2f20f9744560cb67c31d9"
+          },
+          "visits_link": {
+            "rows": 4,
+            "sha256": "3eaeffc2123edd359b987a312d97a24548657b9fa60c3e391a8ff0a9657a3427"
+          },
+          "visits_species": {
+            "rows": 5,
+            "sha256": "5004a660fa2cea88322b92623dffbf83456395693536c095914430b7df53c840"
+          },
+          "walks": {
+            "rows": 3,
+            "sha256": "9ac5394f5ec3b05e6f6ee55f72c129a4a4e2d6d42788eb0592e2f99d5165a3a9"
+          }
+        },
+        "parts": {
+          "access_check.csv": {
+            "bytes": 128,
+            "sha256": "6801fb7bb092626441fd804d5ffbf8c4c05213ff18fa7c7ca524a9c2aa32f5e4",
+            "table": "access_check"
+          },
+          "visits_link.csv": {
+            "bytes": 57,
+            "sha256": "813a829f3e82c4724dd0ff48927234fd2e3437570a272cfc842d2ac46ee2d53e",
+            "table": "visits_link"
+          },
+          "visits_species.csv": {
+            "bytes": 100,
+            "sha256": "2dc87bec72be15a4323b92647532862797b290cc9ba45df61adfc1e7044228a9",
+            "table": "visits_species"
+          },
+          "walks.csv": {
+            "bytes": 46,
+            "sha256": "c9b13fc40825f9c33eddfa27fdfb2f10348f771bca3c5ab77ce173b7c56c5f5f",
+            "table": "walks"
+          }
+        },
+        "summary": {
+          "km_total": 47.376779259805,
+          "rows": 4
+        },
+        "tolerance": {
+          "summary": {
+            "km_total": 1e-06
+          },
+          "tables": {
+            "access_check": {
+              "km": 1e-09
+            }
+          }
+        }
+      }
+    },
+    "verdict": "different",
+    "differences": [
+      {
+        "field": "context.run",
+        "action": "record"
+      },
+      {
+        "field": "context.time",
+        "action": "record"
+      },
+      {
+        "field": "output.migrated_from",
+        "action": "warn"
+      },
+      {
+        "field": "recipe.code",
+        "action": "refuse"
+      },
+      {
+        "field": "recipe.code[link].commit",
+        "action": "refuse"
+      },
+      {
+        "field": "recipe.code[link].dirty",
+        "action": "refuse"
+      },
+      {
+        "field": "recipe.code[link].version",
+        "action": "refuse"
+      },
+      {
+        "field": "recipe.config.files",
+        "action": "refuse"
+      },
+      {
+        "field": "recipe.config.settings",
+        "action": "refuse"
+      },
+      {
+        "field": "recipe.config.settings",
+        "action": "refuse"
+      },
+      {
+        "field": "recipe.inputs",
+        "action": "refuse"
+      },
+      {
+        "field": "recipe.inputs",
+        "action": "refuse"
+      },
+      {
+        "field": "recipe.recipe_id",
+        "action": "refuse"
+      },
+      {
+        "field": "result.parts[access_check.csv].bytes",
+        "action": "within"
+      },
+      {
+        "field": "result.parts[access_check.csv].sha256",
+        "action": "within"
+      },
+      {
+        "field": "result.summary[km_total]",
+        "action": "within"
+      }
+    ]
+  }
+]

@@ -1,0 +1,56 @@
+source_format,source_field,receipt_key,transform,stac_key,note
+link manifest.json,id,output.name,,,the export's dataset id
+link manifest.json,built,context.time,,processing:datetime,
+link manifest.json,provenance.link_sha,recipe.code[link].commit,,,
+link manifest.json,provenance.link_version,recipe.code[link].version,,processing:software,
+link manifest.json,provenance.link_dirty,recipe.code[link].dirty,,,
+link manifest.json,manifest_version,context.legacy,,,the manifest's format version; a receipt's is output.receipt_version
+link manifest.json,datasets,context.legacy,,,the dataset id and column contract file; output.schema once the contract is a crate schema
+link manifest.json,parts,context.legacy,,,"per part: key, rows, bytes and md5; a receipt's parts need sha256, so re-hash the files to write them"
+link manifest.json,files,context.legacy,,,provenance and config files with md5; re-hash to write parts
+link manifest.json,configs,context.legacy,,,per-config runs and bundles; each run's own receipt will carry them
+floodplains provenance.json,wsg,output.scope,,,
+floodplains provenance.json,habitat,context.legacy,,,"the network's habitat record, a sibling output with its own inputs and outputs"
+floodplains provenance.json,link_log_note,context.legacy,,,
+floodplains provenance.json,area,context.legacy,,,the area the file describes; the same as wsg for a group
+floodplains provenance.json,schema_version,context.legacy,,,the file's format version
+floodplains provenance.json,inputs.{repo}.sha,recipe.code[{repo}].commit,,,"a package of ours (flooded, drift, link, fresh) stamped by fp_pkg_stamp()"
+floodplains provenance.json,inputs.{repo}.version,recipe.code[{repo}].version,,processing:software,
+floodplains provenance.json,inputs.{repo}.dirty,recipe.code[{repo}].dirty,,,
+floodplains provenance.json,inputs.{repo}.sha_source,context.legacy,,,where the sha was read from
+floodplains provenance.json,inputs.{name}_content_sha256,recipe.inputs[{name}].sha256,strip_prefix,,"a digest of the input's content (a DEM's cells, a network's segments), not of its file bytes"
+floodplains provenance.json,inputs.*,recipe.config.settings[*],,,the step's resolved run settings
+floodplains provenance.json,inputs_hash,context.legacy,,,floodplains' hash over its inputs block; not a recipe_id
+floodplains provenance.json,outputs.{name}_content_sha256,context.legacy,,,"a digest of a raster's cells or a layer's rows, not a crate table fingerprint"
+floodplains provenance.json,outputs.*,result.summary[*],number,,a count the step reports
+floodplains provenance.json,outputs_hash,context.legacy,,,floodplains' hash over its outputs block
+floodplains provenance.json,run.datetime_utc,context.time,,processing:datetime,
+floodplains provenance.json,run.toolchain.*,context.toolchain[*],,,
+floodplains provenance.json,run.dem_cache,context.legacy,,,"the DEM cache event: its key, path, ETag and Last-Modified"
+floodplains provenance.json,run.repairs,context.legacy,,,in-place repairs to the step's rasters
+floodplains provenance.json,run.network_guard,context.legacy,,,the step's guard on the network it read
+floodplains provenance.json,run.freshness,context.legacy,,,the step's freshness check
+floodplains provenance.json,run.*,context.legacy,,,the step's run guards
+floodplains provenance.json,link_log.link_sha,recipe.code[link].commit,,,link's log row for the build the network was read from
+floodplains provenance.json,link_log.host,context.legacy,,,"the host of link's build, not of this step"
+floodplains provenance.json,link_log.run_id,context.run[link_run_id],,,
+floodplains provenance.json,link_log.run_uid,context.run[link_run_uid],,,
+floodplains provenance.json,link_log.*,context.legacy,,,"the rest of link's log row (config_hash, dates, schema)"
+STAC item,properties.processing:datetime,context.time,,processing:datetime,
+STAC item,properties.processing:software.{repo},recipe.code[{repo}].version,,processing:software,"a repository of ours; a third-party tool goes to context.toolchain"
+STAC item,properties.receipt:recipe_id,recipe.recipe_id,,receipt:recipe_id,
+STAC item,assets.*.file:checksum,result.parts[*].sha256,multihash,file:checksum,the asset's href relative to the item is the part's path
+STAC item,assets.*.file:size,result.parts[*].bytes,,file:size,
+STAC item,properties.version,context.legacy,,version,"a release label, not provenance"
+any record,{repo}_sha,recipe.code[{repo}].commit,,,"link_sha, fresh_sha, fwapg_sha: a commit of one of our repositories"
+any record,{repo}_version,recipe.code[{repo}].version,,processing:software,
+any record,{repo}_dirty,recipe.code[{repo}].dirty,,,
+any record,host,context.host,,,
+any record,built,context.time,,processing:datetime,
+any record,built_at,context.time,,processing:datetime,
+any record,date_utc,context.time,,processing:datetime,
+any record,datetime_utc,context.time,,processing:datetime,
+any record,run_id,context.run[run_id],,,
+any record,run_uid,context.run[run_uid],,,
+any record,rows,result.summary[rows],number,,
+any record,seed,recipe.seed,,,
