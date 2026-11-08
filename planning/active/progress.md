@@ -141,3 +141,35 @@
     what is **not** covered (`compare`'s bytes mode, migration, the non-STAC mapping rows),
     where they genuinely differ (crate#50's R-only 2^31-1 limit; the scalar-vs-array
     `config.settings` hazard that gives one intent two `recipe_id`s), and every measured trap.
+- **`/code-check branch` round 1** (`review-round1.md`): 8 findings, 4 bug-level. **Every one
+  reproduced before it was touched**, and all 8 were real — nothing to dismiss.
+  - `item_verdict` chose "the item's receipt asset" with its own loop keeping the **last**
+    `metadata`/`application/json` asset while `receipt_href` returned the **first**. Two
+    producers for one fact, firing on *good* input: an item also carrying a QA report read
+    `inconsistent` and set a non-zero status. Now one producer, `receipt_asset`.
+  - `_check_keyed`'s `for ... else` did not run after a `break`, so `recipe.config` written as
+    a list disabled the checks under it and the list was hashed in written order — measured,
+    two ids for one intent. Depth is now refused at every level, and an absent member is still
+    allowed (a migrated recipe).
+  - `item_verdict` called `stac_fields(receipt)` with no `assets=`, so `file:checksum` and
+    `file:size` were never compared with `result.parts`: an item contradicting its own receipt
+    in both, on both sides, read `same` with `ok` true. Two of the five fields the docstring
+    and the research file both quantified over.
+  - `_diff` iterated the union of both sides' keys, which is empty when neither side is an
+    object, so a scalar-vs-scalar difference at a branch node was dropped — `compare` answered
+    `identical` for `output: "x"` against `output: "y"`.
+  - A non-numeric tolerance leaked a `TypeError` out of an API that reports everything else
+    as a `ReceiptError`.
+  - `_receipt_verdicts` ran the whole unbounded `changed` set in one pass, holding every
+    published and served body at once (which `items_serving`'s own docstring warns against),
+    and aborted on the first unreadable receipt — discarding a drift answer already computed.
+    Now batched by `target.chunk`, and an unreadable receipt marks its own item
+    `inconsistent`, which is still never agreement.
+  - Two test guards whose claims were wider than their fixtures: the wheel claim (the
+    editable install reads the source tree, so it pins the layout; a second test pins that
+    nothing excludes the data from the build) and a hardcoded import set (now derived with an
+    `ast` walk, which finds exactly the four).
+  - **A fifth bug of the same class, found by my own regression test for the fourth:**
+    `compare`'s post-processing read each block with `doc.get(x) or {}`, which keeps a truthy
+    non-mapping, so a scalar `recipe` crashed the one function whose job is to refuse. Every
+    member read now goes through one `_mapping` helper. Suite: 743 passed.

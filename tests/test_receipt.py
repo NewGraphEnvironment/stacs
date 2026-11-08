@@ -613,3 +613,169 @@ def test_receipt_href_is_none_when_nothing_links_a_receipt():
     assert r.receipt_href({"assets": {}}) is None
     assert r.receipt_href({}) is None
     assert r.receipt_href({"assets": {"x": {"roles": ["metadata"]}}}) is None
+
+
+# =============================================================================
+# Regressions from the branch review (round 1)
+# =============================================================================
+
+def test_a_second_metadata_json_asset_does_not_make_an_item_inconsistent():
+    """Round 1. `item_verdict` chose "the item's receipt asset" with its own loop, which kept
+    the LAST match, while the receipt actually fetched came from `receipt_href`, which returns
+    the FIRST. Two producers for one fact, so it fired on good input: an item carrying a QA
+    report or a legacy manifest as a second `metadata`/`application/json` asset was reported
+    `inconsistent`, and `verify` turned that into a non-zero status."""
+    rec = {"output": {}, "recipe": {"recipe_id": "a" * 64}, "result": {}, "context": {}}
+    item = {"properties": {"receipt:recipe_id": "a" * 64},
+            "assets": {"receipt": {"href": "a0_receipt.json", "type": "application/json",
+                                   "roles": ["metadata"],
+                                   "file:checksum": r.multihash("b" * 64)},
+                       "qa": {"href": "qa.json", "type": "application/json",
+                              "roles": ["metadata"],
+                              "file:checksum": r.multihash("c" * 64)}}}
+    assert r.receipt_href(item) == "a0_receipt.json"
+    assert r.receipt_asset(item)["href"] == "a0_receipt.json"
+    assert r.item_verdict(item, item, rec, receipt_sha256="b" * 64).verdict == "same"
+
+
+def test_one_producer_decides_which_asset_links_the_receipt():
+    """The fix is structural: everything that needs that answer calls one function. An asset
+    `receipt_asset` rejects must not be reachable by any other route."""
+    no_href = {"assets": {"receipt": {"href": "", "type": "application/json",
+                                      "roles": ["metadata"]}}}
+    assert r.receipt_asset(no_href) is None
+    assert r.receipt_href(no_href) is None
+    assert any("no asset links the receipt" in p for p in r.item_problems(no_href))
+
+
+@pytest.mark.parametrize("recipe,where", [
+    ({**EMPTY, "config": ["settings.csv", "other.csv"]}, "recipe.config"),
+    ({**EMPTY, "config": {"files": ["a.csv"], "settings": {}}}, "recipe.config.files"),
+    ({**EMPTY, "config": "settings.csv"}, "recipe.config"),
+])
+def test_a_keyed_collection_is_refused_at_every_depth(recipe, where):
+    """Round 1. An intermediate node that was not an object skipped the checks under it --
+    `for ... else` does not run after a `break` -- so `recipe.config` as a list disabled both
+    the `config.files` and `config.settings` checks and the list was hashed in written order,
+    which is the exact failure the guard exists to prevent."""
+    with pytest.raises(r.ReceiptError, match=f"{where} must be an object keyed by name"):
+        r.recipe_id(recipe)
+
+
+def test_the_order_a_list_was_written_in_can_no_longer_reach_the_hash():
+    """The consequence, measured: two orders of the same intent used to give two ids."""
+    for one, two in (({**EMPTY, "config": ["a", "b"]}, {**EMPTY, "config": ["b", "a"]}),):
+        for recipe in (one, two):
+            with pytest.raises(r.ReceiptError):
+                r.recipe_id(recipe)
+
+
+def test_an_absent_recipe_member_is_still_allowed():
+    """A migrated recipe has every member optional, so whether one may be missing is the
+    schema's question. The depth fix must not have turned absence into a refusal."""
+    assert r.recipe_id({"code": {}, "inputs": {}, "seed": None})
+    assert r.recipe_id({})
+
+
+def test_an_items_asset_fields_are_checked_against_the_receipts_parts():
+    """Round 1. `item_verdict` called `stac_fields(receipt)` with no `assets=`, so the claimed
+    asset fields were always `{}` and `file:checksum` / `file:size` were never compared with
+    `result.parts` -- two of the five mirrored fields. An item contradicting its own receipt
+    in both, on BOTH sides, read `same` with `ok` true, and `same` sets no exit status."""
+    rec = {"output": {}, "recipe": {"recipe_id": "a" * 64}, "context": {},
+           "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 12}}}}
+    good = {"properties": {"receipt:recipe_id": "a" * 64},
+            "assets": {"data": {"href": "x.tif", "file:checksum": r.multihash("b" * 64),
+                                "file:size": 12}}}
+    assert r.item_verdict(good, good, rec).verdict == "same"
+
+    for field, broken in (
+            ("assets[data].file:checksum",
+             {"href": "x.tif", "file:checksum": r.multihash("f" * 64), "file:size": 12}),
+            ("assets[data].file:size",
+             {"href": "x.tif", "file:checksum": r.multihash("b" * 64), "file:size": 999})):
+        item = {"properties": {"receipt:recipe_id": "a" * 64}, "assets": {"data": broken}}
+        got = r.item_verdict(item, item, rec)
+        assert got.verdict == "inconsistent", field
+        assert not got.ok
+        assert field in got.fields, (field, got.fields)
+
+
+def test_an_asset_the_receipt_does_not_describe_is_not_a_disagreement():
+    """An overview, a thumbnail, or the receipt itself: not a part, so there is nothing to
+    compare it with. Refusing them would make every real item inconsistent."""
+    rec = {"output": {}, "recipe": {"recipe_id": "a" * 64}, "context": {},
+           "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 12}}}}
+    item = {"properties": {"receipt:recipe_id": "a" * 64},
+            "assets": {"data": {"href": "x.tif", "file:checksum": r.multihash("b" * 64)},
+                       "thumb": {"href": "t.png", "file:checksum": r.multihash("e" * 64),
+                                 "file:size": 5}}}
+    assert r.item_verdict(item, item, rec).verdict == "same"
+
+
+@pytest.mark.parametrize("block", ["output", "recipe", "result", "context"])
+def test_a_block_that_is_a_scalar_on_both_sides_is_still_compared(block):
+    """Round 1. `_diff`'s branch arm iterated the union of both sides' keys, which is empty
+    when NEITHER side is an object -- so a difference at any branch node that was a scalar on
+    both sides was dropped, and the function whose job is to refuse answered `identical`."""
+    base = {"output": {}, "recipe": {}, "result": {}, "context": {}}
+    one, two = {**base, block: "x"}, {**base, block: "y"}
+    got = r.compare(one, two)
+    assert got.verdict == "different", got
+    assert (block, "refuse") in got.fields, got.fields
+
+
+def test_a_nested_branch_that_is_a_scalar_on_both_sides_is_still_compared():
+    base = {"output": {}, "recipe": {}, "result": {}, "context": {}}
+    got = r.compare({**base, "recipe": {"config": "x"}},
+                    {**base, "recipe": {"config": "y"}})
+    assert got.verdict == "different"
+    assert ("recipe.config", "refuse") in got.fields, got.fields
+
+
+def test_two_equal_scalars_at_a_branch_node_are_not_a_difference():
+    """The other direction: the fix must not invent a difference where there is none."""
+    base = {"output": "x", "recipe": {}, "result": {}, "context": {}}
+    assert r.compare(base, dict(base)).verdict == "identical"
+    empty = {"output": {}, "recipe": {}, "result": {}, "context": {}}
+    assert r.compare(empty, dict(empty)).differences == ()
+
+
+def test_a_tolerance_that_is_not_a_number_does_not_leak_a_typeerror():
+    """Round 1. `read` validates nothing, so a hand-edited receipt reaches `compare`; the
+    tolerance was used in `abs(va - vb) <= tol` without a type check, and a string raised a
+    TypeError out of an API that reports everything else malformed as a ReceiptError."""
+    def doc(km, tol):
+        return {"output": {}, "recipe": {}, "context": {},
+                "result": {"summary": {"km": km}, "tolerance": {"summary": {"km": tol}}}}
+    for tol in ("1e-9", None, True, [1e-9]):
+        got = r.compare(doc(1.0, tol), doc(2.0, tol))
+        assert got.verdict == "different", tol
+
+
+@pytest.mark.parametrize("block", ["output", "recipe", "result", "context"])
+@pytest.mark.parametrize("value", ["a string", [1, 2], 7, None])
+def test_compare_refuses_a_malformed_block_rather_than_crashing(block, value):
+    """Found by the test above, and it is the same class as the finding that prompted it:
+    `compare`'s post-processing read every block with `doc.get(x) or {}`, which keeps a truthy
+    non-mapping, so a scalar `recipe` raised AttributeError out of the one function whose job
+    is to refuse malformed input. `read` checks only the version, so such a receipt reaches
+    here."""
+    base = {"output": {}, "recipe": {}, "result": {}, "context": {}}
+    got = r.compare({**base, block: value}, base)
+    assert got.verdict in r.ITEM_VERDICTS or got.verdict in \
+        ("identical", "equivalent", "different")
+
+
+@pytest.mark.parametrize("value", ["a string", [1, 2], 7])
+def test_item_verdict_refuses_a_malformed_receipt_rather_than_crashing(value):
+    item = {"properties": {"receipt:recipe_id": "a" * 64}}
+    for receipt_doc in ({"result": value}, {"recipe": value}, {"assets": value}):
+        got = r.item_verdict(item, item, receipt_doc)
+        assert got.verdict in r.ITEM_VERDICTS
+
+
+@pytest.mark.parametrize("value", ["a string", [1, 2], 7])
+def test_item_problems_and_stac_fields_survive_a_malformed_member(value):
+    assert r.item_problems({"properties": value, "assets": value})
+    assert r.stac_fields({"recipe": value, "result": value, "context": value})

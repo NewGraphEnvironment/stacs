@@ -211,7 +211,7 @@ has one receipt and the identity fields an item mirrors on each side:
 | `same` | the body differs in something the receipt does not describe |
 | `rebuilt` | one recipe, different output: built again from the same inputs |
 | `changed` | the published and served items name different recipes |
-| `inconsistent` | an item disagrees with the receipt it links; neither side can be trusted |
+| `inconsistent` | the item's provenance could not be established: it disagrees with the receipt it links, that receipt could not be read, or it links none |
 
 A catalogue declares that it carries receipts with `require_receipt = true` under
 `[catalogue]`, or `--require-receipt`. `audit` then refuses an item whose receipt fields are

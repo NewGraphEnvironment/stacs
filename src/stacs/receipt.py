@@ -64,6 +64,21 @@ _DATETIME = re.compile(r"^-?\d{4,}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 CELL_TYPES = ("character", "integer", "double", "logical", "date", "datetime")
 
 
+def _mapping(node, key=None):
+    """`node`, or `node[key]`, when it is a mapping -- otherwise `{}`.
+
+    `node.get(key) or {}` is not this: it keeps a truthy non-mapping, so a string where an
+    object belongs reaches the next `.get` and raises `AttributeError`. Every member read
+    below comes through here, because a receipt that has been hand-edited, migrated, or
+    written by something else reaches `compare` and `item_verdict` unvalidated -- `read`
+    checks only the version -- and those are the functions that have to refuse it rather
+    than crash on it (round 1).
+    """
+    if key is not None:
+        node = node.get(key) if isinstance(node, dict) else None
+    return node if isinstance(node, dict) else {}
+
+
 class ReceiptError(ValueError):
     """A receipt, recipe or table that has no canonical form, or does not meet the contract.
 
@@ -206,18 +221,33 @@ def _shortest(x: float) -> str:
 _KEYED = (("code",), ("inputs",), ("config", "files"), ("config", "settings"))
 
 
+def _refuse_keyed(where, node):
+    raise ReceiptError(f"{where} must be an object keyed by name, got "
+                       f"{type(node).__name__}: a list would hash in the order it was "
+                       f"written")
+
+
 def _check_keyed(recipe):
+    """Refuse a keyed collection written as anything but an object, at every depth.
+
+    An INTERMEDIATE node matters as much as the leaf: `recipe.config` written as a list used
+    to skip the checks on `config.files` and `config.settings` entirely -- the `for ... else`
+    did not run after a `break` -- and the list was then hashed in written order, which is
+    exactly what this guard exists to prevent (round 1).
+
+    An ABSENT intermediate is not an error here: a migrated recipe has every member optional,
+    and whether it may be missing is the schema's question, not this one's.
+    """
     for path in _KEYED:
         node = recipe
-        for part in path:
-            if not isinstance(node, dict):
+        for i, part in enumerate(path):
+            if node is None:
                 break
+            if not isinstance(node, dict):
+                _refuse_keyed(f"recipe.{'.'.join(path[:i])}", node)
             node = node.get(part)
-        else:
-            if node is not None and not isinstance(node, dict):
-                raise ReceiptError(
-                    f"recipe.{'.'.join(path)} must be an object keyed by name, got "
-                    f"{type(node).__name__}: a list would hash in the order it was written")
+        if node is not None and not isinstance(node, dict):
+            _refuse_keyed(f"recipe.{'.'.join(path)}", node)
 
 
 def recipe_id(recipe) -> str:
@@ -566,7 +596,7 @@ def read(path) -> dict:
     doc = load_json(text)
     if not isinstance(doc, dict):
         raise ReceiptError(f"{path} is not a JSON object")
-    version = (doc.get("output") or {}).get("receipt_version") \
+    version = _mapping(doc, "output").get("receipt_version") \
         if isinstance(doc.get("output"), dict) else None
     if version != RECEIPT_VERSION:
         raise ReceiptError(f"{path} is receipt version {version!r}; this reads "
@@ -832,7 +862,16 @@ def _diff(a, b, table) -> list:
             if canonical(x) != canonical(y):
                 found.append((field, pattern, f"{_show(x)} vs {_show(y)}", key))
         else:
-            for name in list(dict.fromkeys(keys(x) + keys(y))):
+            names = list(dict.fromkeys(keys(x) + keys(y)))
+            if not names:
+                # Neither side is an object at a node the register treats as a branch, so
+                # there is nothing to walk into. Compare the nodes themselves: without this,
+                # `output` as a string on both sides read `identical` however the two
+                # differed, in the one function whose job is to refuse (round 1).
+                if canonical(x) != canonical(y):
+                    found.append((field, pattern, f"{_show(x)} vs {_show(y)}", key))
+                return
+            for name in names:
                 walk(x.get(name) if isinstance(x, dict) else None,
                      y.get(name) if isinstance(y, dict) else None,
                      f"{field}.{name}", f"{pattern}.{name}", key)
@@ -849,11 +888,16 @@ def _summary_tolerance(a, b, name):
     would let a build widen what counts as unchanged.
     """
     def declared(doc):
-        tol = ((doc.get("result") or {}).get("tolerance") or {}).get("summary") or {}
+        tol = _mapping(_mapping(_mapping(doc, "result"), "tolerance"), "summary")
         return tol.get(name) if isinstance(tol, dict) else None
 
     ta, tb = declared(a), declared(b)
     if ta is None or canonical(ta) != canonical(tb):
+        return None
+    if isinstance(ta, bool) or not isinstance(ta, (int, float)):
+        # The schema types a tolerance as a power of ten, but `read` validates nothing, so a
+        # hand-edited receipt reaches here. Comparing against it would raise a TypeError out
+        # of an API that reports everything else malformed as a ReceiptError (round 1).
         return None
     return ta
 
@@ -907,7 +951,7 @@ def compare(a, b, overrides=None) -> Comparison:
     # A migrated receipt: one refusal at recipe.recipe_id whatever the walk said, because a
     # null id is not a value that can agree with anything.
     missing_id = [s for s, doc in (("a", a), ("b", b))
-                  if (doc.get("recipe") or {}).get("recipe_id", "absent") is None]
+                  if _mapping(doc, "recipe").get("recipe_id", "absent") is None]
     if missing_id:
         rows = [r_ for r_ in rows if r_["pattern"] != "recipe.recipe_id"]
         rows.append({"field": "recipe.recipe_id", "pattern": "recipe.recipe_id",
@@ -918,8 +962,8 @@ def compare(a, b, overrides=None) -> Comparison:
     for row in rows:
         if row["pattern"] == "result.summary.*":
             tol = _summary_tolerance(a, b, row["key"])
-            va = ((a.get("result") or {}).get("summary") or {}).get(row["key"])
-            vb = ((b.get("result") or {}).get("summary") or {}).get(row["key"])
+            va = _mapping(_mapping(a, "result"), "summary").get(row["key"])
+            vb = _mapping(_mapping(b, "result"), "summary").get(row["key"])
             numbers = all(isinstance(v, (int, float)) and not isinstance(v, bool)
                           for v in (va, vb))
             if tol is not None and numbers and abs(va - vb) <= tol:
@@ -935,7 +979,7 @@ def compare(a, b, overrides=None) -> Comparison:
         if name is None:
             return False
         for doc in (a, b):
-            if name not in ((doc.get("result") or {}).get("fingerprint") or {}):
+            if name not in _mapping(_mapping(doc, "result"), "fingerprint"):
                 return False
         return all(row["action"] == "within" for row in rows
                    if row["key"] == name
@@ -945,7 +989,7 @@ def compare(a, b, overrides=None) -> Comparison:
         if row["pattern"] not in ("result.parts.*.bytes", "result.parts.*.sha256"):
             continue
         part = row["key"]
-        names = [((doc.get("result") or {}).get("parts") or {}).get(part, {}).get("table")
+        names = [_mapping(_mapping(_mapping(doc, "result"), "parts"), part).get("table")
                  for doc in (a, b)]
         if names[0] is not None and names[0] == names[1] and table_agrees(names[0]):
             row["action"] = "within"
@@ -1040,9 +1084,9 @@ def stac_fields(receipt, assets=None, receipt_asset=None, receipt_sha256=None) -
     """
     if not isinstance(receipt, dict):
         raise ReceiptError(f"a receipt is a JSON object, got {type(receipt).__name__}")
-    recipe = receipt.get("recipe") or {}
-    result = receipt.get("result") or {}
-    context = receipt.get("context") or {}
+    recipe = _mapping(receipt, "recipe")
+    result = _mapping(receipt, "result")
+    context = _mapping(receipt, "context")
 
     properties, extensions = {}, []
     recipe_identity = recipe.get("recipe_id")
@@ -1064,7 +1108,7 @@ def stac_fields(receipt, assets=None, receipt_asset=None, receipt_sha256=None) -
         properties["processing:software"] = software
 
     out_assets = {}
-    parts = result.get("parts") or {}
+    parts = _mapping(result, "parts")
     for key, href in (assets or {}).items():
         part = parts.get(href)
         if not isinstance(part, dict):
@@ -1090,22 +1134,39 @@ def stac_fields(receipt, assets=None, receipt_asset=None, receipt_sha256=None) -
     return {"stac_extensions": extensions, "properties": properties, "assets": out_assets}
 
 
-def receipt_href(item):
-    """The href of the asset that links an item's receipt, or None.
+def receipt_asset(item):
+    """The asset that links an item's receipt, or None.
 
     The contract is the asset link, not a filename: the receipt is published beside the item
     "as an asset with role `metadata`". A catalogue that publishes under a `receipts/` prefix
     would break a `receipt.json`-beside-the-item assumption silently.
+
+    THE ONE PRODUCER of that answer. `receipt_href`, `item_problems` and `item_verdict` all
+    come through here, because they have to agree about which asset it is: a second loop that
+    kept the LAST match instead of the first reported an item as `inconsistent` whenever it
+    carried another `metadata` JSON asset -- a QA report, a legacy manifest -- and that is
+    good input (round 1).
+
+    The first match wins, and it must satisfy every condition: a non-empty href, role
+    `metadata`, type `application/json`.
     """
-    for asset in (item.get("assets") or {}).values() if isinstance(item, dict) else []:
+    if not isinstance(item, dict):
+        return None
+    for asset in _mapping(item, "assets").values():
         if not isinstance(asset, dict):
             continue
-        roles = asset.get("roles") or []
         href = asset.get("href")
-        if RECEIPT_ROLE in roles and asset.get("type") == "application/json" \
+        if RECEIPT_ROLE in (asset.get("roles") or []) \
+                and asset.get("type") == "application/json" \
                 and isinstance(href, str) and href:
-            return href
+            return asset
     return None
+
+
+def receipt_href(item):
+    """The href of the asset that links an item's receipt, or None."""
+    asset = receipt_asset(item)
+    return None if asset is None else asset["href"]
 
 
 def item_problems(item) -> list:
@@ -1128,9 +1189,9 @@ def item_problems(item) -> list:
     if not isinstance(item, dict):
         return [f"not a JSON object: {type(item).__name__}"]
     problems = []
-    properties = item.get("properties") if isinstance(item.get("properties"), dict) else {}
+    properties = _mapping(item, "properties")
     extensions = item.get("stac_extensions") or []
-    assets = item.get("assets") if isinstance(item.get("assets"), dict) else {}
+    assets = _mapping(item, "assets")
 
     identity = properties.get("receipt:recipe_id")
     if identity is None:
@@ -1215,8 +1276,10 @@ class ItemVerdict:
     - `rebuilt`: the recipe is the same on both sides and a result field moved, so the item
       was built again from the same inputs.
     - `changed`: the recipe itself differs between the two sides.
-    - `inconsistent`: an item disagrees with the receipt it links, so neither side's
-      provenance can be trusted. Never reported as agreement.
+    - `inconsistent`: the item's provenance could not be established -- it disagrees with
+      the receipt it links, that receipt could not be read, or it links none at all. One
+      category because they have one consequence; the notes say which it was. Never reported
+      as agreement.
     """
     verdict: str
     fields: tuple
@@ -1231,11 +1294,11 @@ class ItemVerdict:
 def _mirrored(item) -> dict:
     """The mirrored identity fields of an item, flattened to one comparable mapping."""
     out = {}
-    properties = item.get("properties") if isinstance(item.get("properties"), dict) else {}
+    properties = _mapping(item, "properties")
     for key in (_IDENTITY_PROPERTY, "processing:datetime", "processing:software"):
         if key in properties:
             out[f"properties.{key}"] = properties[key]
-    for key, asset in (item.get("assets") or {}).items():
+    for key, asset in _mapping(item, "assets").items():
         if not isinstance(asset, dict):
             continue
         for field_name in _RESULT_ASSET_FIELDS:
@@ -1271,11 +1334,8 @@ def item_verdict(published, served, receipt, receipt_sha256=None) -> ItemVerdict
     notes = []
 
     if receipt_sha256 is not None:
-        asset_digest = None
-        for asset in (published.get("assets") or {}).values():
-            if isinstance(asset, dict) and RECEIPT_ROLE in (asset.get("roles") or []) \
-                    and asset.get("type") == "application/json":
-                asset_digest = asset.get("file:checksum")
+        linked = receipt_asset(published)
+        asset_digest = None if linked is None else linked.get("file:checksum")
         want = multihash(receipt_sha256)
         if asset_digest is not None and asset_digest != want:
             return ItemVerdict("inconsistent", ("assets[receipt].file:checksum",),
@@ -1288,13 +1348,44 @@ def item_verdict(published, served, receipt, receipt_sha256=None) -> ItemVerdict
     # The published item against the receipt it links. A mirrored field is a copy of the
     # receipt, so a disagreement means one of the two was written by something that did not
     # read the other.
+    #
+    # BOTH halves of the mirrored set, not just the properties. `stac_fields(receipt)` with no
+    # `assets=` returns no asset fields at all, so `file:checksum` and `file:size` -- which
+    # `_mirrored` compares between the two sides -- were never checked against `result.parts`,
+    # and an item contradicting its own receipt in those two read `same` (round 1).
     claimed = stac_fields(receipt)
     disagree = []
-    properties = published.get("properties") if isinstance(published.get("properties"),
-                                                           dict) else {}
+    properties = _mapping(published, "properties")
     for key, value in claimed["properties"].items():
         if key in properties and canonical(properties[key]) != canonical(value):
             disagree.append(f"properties.{key}")
+
+    parts = _mapping(_mapping(receipt, "result"), "parts")
+    for key, asset in _mapping(published, "assets").items():
+        if not isinstance(asset, dict):
+            continue
+        part = parts.get(asset.get("href"))
+        if not isinstance(part, dict):
+            # Not an output this receipt describes: an overview, a thumbnail, or the receipt
+            # itself, whose own digest is checked above. Nothing to compare it with.
+            continue
+        if "file:checksum" in asset:
+            try:
+                want_checksum = multihash(part.get("sha256"))
+            except ReceiptError:
+                want_checksum = None       # a part with no usable digest cannot vouch
+            if asset["file:checksum"] != want_checksum:
+                disagree.append(f"assets[{key}].file:checksum")
+        if "file:size" in asset:
+            try:
+                want_size = _whole(part.get("bytes"), f"result.parts[{asset['href']}].bytes")
+            except ReceiptError:
+                want_size = None
+            size = asset["file:size"]
+            if want_size is None or isinstance(size, bool) \
+                    or not isinstance(size, (int, float)) or float(size) != want_size:
+                disagree.append(f"assets[{key}].file:size")
+
     if disagree:
         return ItemVerdict("inconsistent", tuple(sorted(disagree)),
                            ("the published item's fields differ from the receipt it links",))

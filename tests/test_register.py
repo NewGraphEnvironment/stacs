@@ -1938,12 +1938,38 @@ def test_a_receipt_whose_digest_does_not_match_the_item_is_inconsistent(env, api
     assert r.rc == 1
 
 
-def test_a_receipt_that_cannot_be_read_is_an_error_and_never_agreement(env, api):
+def test_a_receipt_that_cannot_be_read_marks_its_item_and_never_reads_as_agreement(env, api):
+    """An unread receipt is never agreement -- but it marks its own item rather than ending
+    the run. Over a catalogue's worth of fetches a partial failure is close to certain, and
+    aborting here used to throw away the drift answer the operator ran `verify` for, stderr
+    summary included (round 1)."""
     data, digest, rid = _receipt_bytes(env, _receipt_doc())
     published = [_item_with_receipt("a0", digest, rid)]
     r = _receipt_run(env, api, published, [_edited(published[0])])  # no receipts published
     assert r.rc == 1
-    assert "could not be read" in r.err and "never agreement" in r.err, r.err
+    assert "1 inconsistent" in r.out, r.out
+    assert "its receipt could not be read" in r.err, r.err
+    # The run still answered the question it was asked.
+    assert "DRIFT: 1 registered item(s) differ" in r.err, r.err
+
+
+def test_one_unreadable_receipt_does_not_cost_the_other_items_verdicts(env, api):
+    """The reason the loop marks rather than raises: a0's missing receipt must not take a1's
+    verdict with it."""
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    published = [_item_with_receipt("a0", digest, rid, data_checksum=CK_A),
+                 _item_with_receipt("a1", digest, rid, data_checksum=CK_A)]
+    served = [_item_with_receipt("a0", digest, rid, data_checksum=CK_B),
+              _item_with_receipt("a1", digest, rid, data_checksum=CK_B)]
+
+    def only_a1s_receipt(bucket):
+        (bucket / "a1_receipt.json").write_bytes(data)
+
+    _in_sync(api, served)
+    r = _run(env, "verify", api.url, items=published, transport=None,
+             before=only_a1s_receipt, require_receipt=True)
+    assert "1 rebuilt" in r.out and "1 inconsistent" in r.out, r.out
+    assert r.rc == 1
 
 
 def test_an_item_that_links_no_receipt_is_refused_when_the_catalogue_declares_them(env, api):

@@ -810,59 +810,85 @@ def _receipt_verdicts(target, ids, by_id, fetch_dir, work, log) -> dict:
     collection serves nothing at all, so the caller skips those rather than reporting a
     verdict about one side.
 
-    Receipts fetch into their OWN directory: `fetch_bodies` refuses a non-empty one, and the
-    item fetch has already filled its own. An unread receipt is raised here rather than
-    reported, because a receipt that could not be read must never read as agreement -- and
-    `fetch_bodies` prints its failures straight to stderr, bypassing the caller's `warn`.
+    **In batches**, because `changed` is not bounded -- a publisher-wide rebuild makes it the
+    whole catalogue. One batch's receipts are fetched, compared and released before the next,
+    so neither the fetched bodies nor the served ones are all in memory at once; that is what
+    `items_serving`'s own docstring tells its callers.
+
+    **A receipt that cannot be read marks its own item, and does not end the run.** It is
+    still never agreement -- the item reads `inconsistent`, which sets a non-zero status --
+    but over 10^5 fetches a partial failure is close to certain, and aborting here would throw
+    away a drift answer that was already computed. Raising on the first one also discarded the
+    stderr summary the operator ran `verify` for (round 1).
     """
-    published, urls = {}, {}
-    for item_id in ids:
-        path = fetch_dir / f"{fetch_key(by_id[item_id])}.json"
-        try:
-            with open(path, encoding="utf-8") as fh:
-                doc = json.load(fh)
-        except (OSError, ValueError) as e:
-            raise RegisterError(f"could not read the published body of {item_id!r}: {e}") from e
-        href = receipt.receipt_href(doc)
-        if href is None:
-            raise RegisterError(
-                f"{item_id!r} links no receipt (an asset with role "
-                f"{receipt.RECEIPT_ROLE!r} and type application/json), and this catalogue "
-                f"declares that it carries receipts")
-        published[item_id] = doc
-        # Against the item's own URL: a receipt href is relative to the item, and resolving it
-        # against the collection would read another directory's receipt.
-        urls[item_id] = urllib.parse.urljoin(by_id[item_id], href)
+    out, batch_n = {}, max(1, int(target.chunk))
+    ids = list(ids)
+    for start in range(0, len(ids), batch_n):
+        batch = ids[start:start + batch_n]
+        published, urls, unlinked = {}, {}, {}
+        for item_id in batch:
+            path = fetch_dir / f"{fetch_key(by_id[item_id])}.json"
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    doc = json.load(fh)
+            except (OSError, ValueError) as e:
+                # This body is one this run fetched and already digested, so failing to read
+                # it now is the run's problem rather than the item's.
+                raise RegisterError(f"could not read the published body of {item_id!r}: "
+                                    f"{e}") from e
+            href = receipt.receipt_href(doc)
+            if href is None:
+                unlinked[item_id] = (
+                    f"links no receipt (an asset with role {receipt.RECEIPT_ROLE!r} and type "
+                    f"application/json), and this catalogue declares that it carries receipts")
+                continue
+            published[item_id] = doc
+            # Against the item's own URL: a receipt href is relative to the item, and
+            # resolving it against the collection would read another directory's receipt.
+            urls[item_id] = urllib.parse.urljoin(by_id[item_id], href)
 
-    receipt_dir = work / "receipts"
-    receipt_dir.mkdir()
-    log(f"fetching {len(urls)} receipt(s) ...")
-    failed = fetch_bodies(list(urls.values()), receipt_dir, workers=target.fetch_workers)
-    if failed:
-        raise RegisterError(f"{len(failed)} receipt(s) could not be read, e.g. {failed[:3]}: "
-                            f"an unread receipt is an error, never agreement")
+        for item_id, why in unlinked.items():
+            out[item_id] = receipt.ItemVerdict("inconsistent", (), (why,))
 
-    try:
-        served = items_serving(list(ids), target.collection_id, target.api,
-                               chunk=target.chunk)
-    except (RuntimeError, ValueError) as e:
-        raise RegisterError(f"could not read the served bodies: {e}") from e
+        if urls:
+            # Its OWN directory, per batch: `fetch_bodies` refuses a non-empty one, and the
+            # item fetch has already filled its own.
+            receipt_dir = work / f"receipts_{start}"
+            receipt_dir.mkdir()
+            log(f"fetching {len(urls)} receipt(s) ...")
+            failed = set(fetch_bodies(list(urls.values()), receipt_dir,
+                                      workers=target.fetch_workers))
+            try:
+                served = items_serving(list(published), target.collection_id, target.api,
+                                       chunk=target.chunk)
+            except (RuntimeError, ValueError) as e:
+                raise RegisterError(f"could not read the served bodies: {e}") from e
 
-    out = {}
-    for item_id in ids:
-        path = receipt_dir / f"{fetch_key(urls[item_id])}.json"
-        data = path.read_bytes()
-        try:
-            doc = receipt.read(path)
-        except receipt.ReceiptError as e:
-            raise RegisterError(f"the receipt of {item_id!r} ({urls[item_id]}): {e}") from e
-        if item_id not in served:
-            # It was in `changed`, so the API served it moments ago.
-            raise RegisterError(f"{item_id!r} differs from the API but the API no longer "
-                                f"serves it; re-run")
-        out[item_id] = receipt.item_verdict(
-            published[item_id], served[item_id], doc,
-            receipt_sha256=hashlib.sha256(data).hexdigest())
+            for item_id in published:
+                if urls[item_id] in failed:
+                    out[item_id] = receipt.ItemVerdict(
+                        "inconsistent", (),
+                        (f"its receipt could not be read ({urls[item_id]}), so its provenance "
+                         f"cannot be established",))
+                    continue
+                path = receipt_dir / f"{fetch_key(urls[item_id])}.json"
+                try:
+                    data = path.read_bytes()
+                    doc = receipt.read(path)
+                except (OSError, receipt.ReceiptError) as e:
+                    out[item_id] = receipt.ItemVerdict(
+                        "inconsistent", (),
+                        (f"its receipt ({urls[item_id]}) could not be read as a receipt: "
+                         f"{e}",))
+                    continue
+                if item_id not in served:
+                    # It was in `changed`, so the API served it moments ago. That is the run's
+                    # answer going stale, not this item's provenance.
+                    raise RegisterError(f"{item_id!r} differs from the API but the API no "
+                                        f"longer serves it; re-run")
+                out[item_id] = receipt.item_verdict(
+                    published[item_id], served[item_id], doc,
+                    receipt_sha256=hashlib.sha256(data).hexdigest())
     return out
 
 
