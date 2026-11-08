@@ -133,3 +133,11 @@
     `grep -c MUTANT` confirming the mutant and the whole file selected: three tests red.
     Two lessons, both already in the conventions and both worth the scar — confirm the mutant
     is in the file, and confirm the selection contains the tests it should break.
+- **Phase 7.** `docs/receipts.md` and `docs/reference/receipt.md` with both nav entries,
+  a `[start:receipts]` README section the page includes, the `## Unreleased` NEWS entry, and
+  `research/receipt_parity.md` indexed in `research/README.md`.
+  - `mkdocs build --strict` clean, no warnings, both pages rendered.
+  - The research file is the durable verdict: what holds the two implementations together,
+    what is **not** covered (`compare`'s bytes mode, migration, the non-STAC mapping rows),
+    where they genuinely differ (crate#50's R-only 2^31-1 limit; the scalar-vs-array
+    `config.settings` hazard that gives one intent two `recipe_id`s), and every measured trap.

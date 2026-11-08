@@ -1,0 +1,3 @@
+# stacs.receipt
+
+::: stacs.receipt

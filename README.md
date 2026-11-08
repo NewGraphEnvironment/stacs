@@ -28,6 +28,11 @@ that is done to a published catalogue belongs here.
   and carries the asset keys the catalogue declares (`require`) and none it has retired
   (`forbid`).
 - **Validate** items with [`pystac`](https://github.com/stac-utils/pystac).
+- **Receipts**: read, write and compare a provenance receipt, and mirror its identity onto
+  an item. Two items with the same `receipt:recipe_id` were made the same way, so `verify`
+  can tell an item that was **rebuilt** from one that **changed**. The contract is
+  [crate](https://github.com/NewGraphEnvironment/crate)'s, and crate's test vectors run in
+  CI, which is what keeps the R and Python implementations byte for byte alike.
 
 Body digests are SHA-256 over [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785) (JCS)
 canonical JSON, with `links` removed (the API rewrites them) and null members dropped
@@ -169,6 +174,50 @@ re-compare the whole catalogue after writing for that reason.
   served".
 
 <!-- --8<-- [end:use] -->
+
+## Receipts
+
+<!-- --8<-- [start:receipts] -->
+A **receipt** is one record per published output — `output` (what it is), `recipe` (how it
+was made), `result` (what came out) and `context` (where and when) — with a `recipe_id` that
+identifies the recipe alone. Each item's receipt is published beside it and linked as an
+asset with role `metadata`; the identity fields are mirrored onto the item so a STAC client
+or a pgstac queryable needs no second fetch.
+
+The contract, its JSON Schema and its test vectors are
+[crate](https://github.com/NewGraphEnvironment/crate)'s. They are vendored here at a pinned
+tag and re-checked against it in CI, because the test suite runs offline.
+
+```python
+from stacs import receipt
+
+digest = receipt.write(doc, "build/items/a0_receipt.json")   # computes recipe_id
+fields = receipt.stac_fields(receipt.read("build/items/a0_receipt.json"),
+                             assets={"data": "a0.tif"},
+                             receipt_asset="receipt", receipt_sha256=digest)
+# -> {"stac_extensions": [...], "properties": {"receipt:recipe_id": ...}, "assets": {...}}
+
+receipt.compare(before, after).verdict      # 'identical' | 'equivalent' | 'different'
+```
+
+`compare` is crate's comparison of **two receipts**, and its three verdicts are crate's,
+decided by crate's register of which fields may differ and what a difference means.
+
+`verify` answers a different question and uses its own four words for it, because there it
+has one receipt and the identity fields an item mirrors on each side:
+
+| verdict | what it means |
+|---|---|
+| `same` | the body differs in something the receipt does not describe |
+| `rebuilt` | one recipe, different output: built again from the same inputs |
+| `changed` | the published and served items name different recipes |
+| `inconsistent` | an item disagrees with the receipt it links; neither side can be trusted |
+
+A catalogue declares that it carries receipts with `require_receipt = true` under
+`[catalogue]`, or `--require-receipt`. `audit` then refuses an item whose receipt fields are
+missing or do not hold up, and `verify` reports a verdict for each item whose published and
+served bodies differ, writing the lists to `--out-dir`.
+<!-- --8<-- [end:receipts] -->
 
 ## Development
 

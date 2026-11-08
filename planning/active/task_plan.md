@@ -265,12 +265,12 @@ require; **`verify` reports its own ladder and says so in its output.**
 
 ## Phase 7: docs, NEWS, research
 
-- [ ] `docs/reference/receipt.md` **and** the `mkdocs.yml` nav entry — under `strict: true`
+- [x] `docs/reference/receipt.md` **and** the `mkdocs.yml` nav entry — under `strict: true`
       with nav validation at `warn`, either one alone fails the build.
-- [ ] README: a `What it does` bullet and a matched `[start:receipt]` / `[end:receipt]` marker
+- [x] README: a `What it does` bullet and a matched `[start:receipt]` / `[end:receipt]` marker
       pair, included from a page, with links absolute (a relative one resolves against `docs/`).
-- [ ] `NEWS.md`: a new `## Unreleased` section (there is none now).
-- [ ] `research/receipt_parity.md` with the provenance header, and in `research/README.md`'s
+- [x] `NEWS.md`: a new `## Unreleased` section (there is none now).
+- [x] `research/receipt_parity.md` with the provenance header, and in `research/README.md`'s
       table: what the vectors cover and the one thing they do not, the two traps, the probed
       schema facts, the measured 2,667/2,667 pass, crate#50's R-only 2^31-1 fingerprint limit
       that Python does not share, and the cross-language scalar-vs-array hazard in
