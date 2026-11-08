@@ -82,7 +82,7 @@ def test_docstring_examples_are_collected():
         [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider"],
         cwd=REPO, capture_output=True, text=True, timeout=120)
     assert out.returncode == 0, out.stdout + out.stderr
-    for module in ("verify", "catalogue", "validate", "register"):
+    for module in ("verify", "catalogue", "validate", "register", "receipt"):
         assert f"src/stacs/{module}.py::stacs.{module}." in out.stdout, module
 
 

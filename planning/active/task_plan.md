@@ -56,32 +56,32 @@ Decided without asking (mechanism, with the reason):
 
 ## Phase 1: `stacs.receipt` — plain JCS, `recipe_id`, table fingerprint
 
-- [ ] `src/stacs/receipt.py`. Module docstring states the boundary, and that this canonical
+- [x] `src/stacs/receipt.py`. Module docstring states the boundary, and that this canonical
       form is **frozen** by `output.receipt_version` — the opposite of `verify.canonical_json`,
       whose docstring says the form may change because nothing stores a digest. Add a sentence
       to each naming the other.
-- [ ] `load_json(text)` — the one reader, `json.loads(..., parse_int=float)`. Every receipt and
+- [x] `load_json(text)` — the one reader, `json.loads(..., parse_int=float)`. Every receipt and
       vector entry point goes through it, so the 2^53 trap cannot be reintroduced per call site.
-- [ ] `canonical(value) -> bytes` — plain `rfc8785.dumps`, **no** STAC rules (no `links`
+- [x] `canonical(value) -> bytes` — plain `rfc8785.dumps`, **no** STAC rules (no `links`
       removal, no null-member stripping); `float(x)` for an int beyond ±(2^53−1); NaN, Inf and
       a lone surrogate raise a named error, as `verify.DigestError` does.
-- [ ] `recipe_id(recipe) -> str` — drop `recipe_id`, canonicalize, SHA-256 lowercase hex.
+- [x] `recipe_id(recipe) -> str` — drop `recipe_id`, canonicalize, SHA-256 lowercase hex.
       Refuse a list where the contract says an object keyed by name (`code`, `inputs`,
       `config.files`): a list canonicalizes happily and yields a plausible wrong id.
-- [ ] `table_canonical(table, tolerance) -> bytes` / `table_fingerprint(...) -> str` — columns
+- [x] `table_canonical(table, tolerance) -> bytes` / `table_fingerprint(...) -> str` — columns
       and rows sorted by UTF-8 bytes, every cell a JSON string or null, types `character`,
       `integer`, `double`, `logical`, `date`, `datetime`; a declared tolerance `10^-k` written
       `format(x, ".kf")` with the `-0.00` strip; NaN/Inf, fractional seconds and years outside
       1–9999 refuse. Built by the specified concatenation, not by serialising a dict.
-- [ ] `tolerance_decimals(tol)` — power of ten from 1 to 1e-15, `abs(tol / 10.0**-k - 1) < 1e-9`.
-- [ ] Python's own type refusals (crate's R whitelist has no Python equivalent): `bool` tested
+- [x] `tolerance_decimals(tol)` — power of ten from 1 to 1e-15, `abs(tol / 10.0**-k - 1) < 1e-9`.
+- [x] Python's own type refusals (crate's R whitelist has no Python equivalent): `bool` tested
       **before** `int`, so `True` is `"true"` and never `"1"`; `Decimal`; a `datetime` with
       non-UTC `tzinfo`; `bytes` and surrogate-escaped `str`.
-- [ ] Tests: the two documented traps as named cases (`1152921504606846976` →
+- [x] Tests: the two documented traps as named cases (`1152921504606846976` →
       `1152921504606847000`; bits `3e70000000000000` → `5.960464477539063e-8`), and **a test
       that `receipt.canonical` and `verify.canonical_json` disagree** on a body with `links` and
       a null member, so neither is later "simplified" into the other.
-- [ ] `"receipt"` added to `tests/test_harness.py`'s module tuple, with a doctest to pin.
+- [x] `"receipt"` added to `tests/test_harness.py`'s module tuple, with a doctest to pin.
 
 ## Phase 2: crate's vectors and contract data, vendored at `v0.12.0` and diffed in CI
 
@@ -90,9 +90,8 @@ Decided without asking (mechanism, with the reason):
       `SOURCE` file naming the repo, tag and each file's blob sha.
 - [x] `src/stacs/data/` — the frozen receipt schema, the STAC `receipt:` field schema,
       `register.csv` (43 rows) and `mapping.csv`, each at its versioned path.
-- [ ] Runner tests read from disk and **fail on an absent or empty vector file** (the
+- [x] Runner tests read from disk and **fail on an absent or empty vector file** (the
       `assert files, "…this check would pass on anything"` shape the repo already uses).
-      *(the absent/empty guard landed with the vendoring; the runners land with Phase 1)*
 - [x] A step in `test.yml` **before** pytest (network allowed there, not inside it) that
       re-downloads the vectors and both published schemas at the pinned tag and diffs them
       against the vendored copies; any mismatch fails the build.

@@ -15,6 +15,8 @@ import pkgutil
 import re
 from pathlib import Path
 
+import pytest
+
 import stacs
 
 # Substrings, not exact names: `bucket=`, `pghost=` and `dsn=` are as much a deployment
@@ -28,6 +30,21 @@ KNOWN_DEPLOYMENT_STRINGS = ("a11s.one", "geopro", "/opt/geoserv", "146.190.",
                             "stac-dem-bc", "stac-elevation-bc", "stac-airphoto-bc",
                             "dev-imagery-uav-bc", "objectstore.gov.bc.ca",
                             "amazonaws.com", "newgraphenvironment")
+
+# The one exception, and it is a SCHEMA IDENTITY rather than a deployment: a versioned crate
+# receipt schema URL. `stacs.receipt` writes these into stored records -- the receipt names its
+# schema, and an item lists the extension in `stac_extensions` -- so the URL is part of the
+# contract, not a default a caller should have supplied. It cannot be hidden in a data file
+# instead: this check reads only `*.py`, so moving the string there would be an escape hatch
+# rather than an exception.
+#
+# Deliberately narrow: the version is a version, the host and path are fixed, and the only
+# optional segment is crate's `stac/`. Anything else under the same host -- a bucket, a
+# published catalogue, a page -- still fails, which
+# `test_the_schema_carve_out_admits_nothing_else` shows.
+CRATE_SCHEMA_URL = re.compile(
+    r"https://newgraphenvironment\.github\.io/crate/(?:stac/)?receipt/"
+    r"v\d+\.\d+\.\d+/schema\.json")
 
 
 def _modules():
@@ -149,10 +166,49 @@ def test_the_structural_check_sees_modules():
     assert {m.__name__ for m in _modules()} >= {"stacs.verify", "stacs.catalogue"}
 
 
+def _deployment_hits(name: str, text: str) -> list[str]:
+    """Deployment names in one source file, with crate's versioned schema URLs removed first.
+
+    Returned rather than asserted so the carve-out can be shown admitting nothing else.
+    """
+    stripped = CRATE_SCHEMA_URL.sub("", text.lower())
+    return [f"{name}: {s}" for s in KNOWN_DEPLOYMENT_STRINGS if s in stripped]
+
+
 def test_no_source_file_names_a_deployment():
     src = Path(stacs.__file__).parent
     files = sorted(src.rglob("*.py"))
     assert files, "no source files found: this check would pass on anything"
-    hits = [f"{f.name}: {s}" for f in files for s in KNOWN_DEPLOYMENT_STRINGS
-            if s in f.read_text().lower()]
+    hits = [h for f in files for h in _deployment_hits(f.name, f.read_text())]
     assert hits == []
+
+
+@pytest.mark.parametrize("text", [
+    # The two the carve-out exists for.
+    "SCHEMA_URL = 'https://newgraphenvironment.github.io/crate/receipt/v1.0.0/schema.json'",
+    "URL = 'https://newgraphenvironment.github.io/crate/stac/receipt/v1.0.0/schema.json'",
+])
+def test_the_schema_carve_out_admits_a_versioned_crate_schema(text):
+    assert _deployment_hits("probe.py", text) == []
+
+
+@pytest.mark.parametrize("text", [
+    "u = 'https://newgraphenvironment.github.io/crate/'",
+    "u = 'https://newgraphenvironment.github.io/stac_dem_bc/collection.json'",
+    "u = 'https://newgraphenvironment.github.io/crate/receipt/latest/schema.json'",
+    "u = 'https://newgraphenvironment.github.io/crate/receipt/v1.0.0/other.json'",
+    "bucket = 'newgraphenvironment-public'",
+    "api = 'https://stacs.newgraphenvironment.com'",
+], ids=["host only", "another path", "unversioned", "another file", "a bucket", "a host"])
+def test_the_schema_carve_out_admits_nothing_else(text):
+    """The carve-out is a regex substitution over source text, which is exactly the shape that
+    quietly widens. Shown refusing every near miss."""
+    assert _deployment_hits("probe.py", text) != [], text
+
+
+def test_the_carve_out_still_sees_the_other_deployment_names():
+    """Stripping one URL must not stop the scan: a file carrying both the schema URL and a
+    real bucket is still a failure."""
+    text = ("S = 'https://newgraphenvironment.github.io/crate/receipt/v1.0.0/schema.json'\n"
+            "B = 'https://s3.amazonaws.com/some-bucket'\n")
+    assert _deployment_hits("probe.py", text) == ["probe.py: amazonaws.com"]

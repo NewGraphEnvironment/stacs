@@ -27,4 +27,16 @@
     is also the job's name, so it compared the step against the job header.
   - Mutation-checked in all three arms: an edited vendored file, a missing one, and the CI step
     removed, replaced or moved after pytest.
-- Next: Phase 1, the module itself.
+- **Phase 1.** `src/stacs/receipt.py`: `load_json`, `canonical`, `recipe_id`,
+  `table_canonical` / `table_fingerprint`, `tolerance_decimals`, `double_from_bits`. All 2,667
+  hashing vectors pass **through the module's own public API** (the only adapter is doubles,
+  which the vectors give as bits). Suite: 584 passed.
+  - The two canonical forms are pinned apart by a test, and each docstring now names the other.
+  - The frozen URLs are written out in full rather than built from `RECEIPT_VERSION`: a
+    recomposed URL reads as though a new version could be reached by changing a variable. A
+    test pins each against the version and against the vendored schema's `$id`.
+  - `test_no_deployment_defaults.py` gained the narrow carve-out for a versioned crate schema
+    URL, with six near-miss cases (host only, another path, unversioned, another file, a
+    bucket, a host) shown still failing, and a case where the schema URL and a real bucket are
+    in one file and the bucket is still reported.
+- Next: Phase 3, write / read / validate.

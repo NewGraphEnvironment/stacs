@@ -297,6 +297,12 @@ def canonical_json(doc) -> bytes:
     the published bodies and the API on every run -- so the form can change with no
     migration.
 
+    That last sentence is what separates this from `stacs.receipt.canonical`, which is plain
+    JCS with none of the rules below: a `recipe_id` IS stored, inside items and beside them,
+    so its form is frozen by the receipt schema version. The two are not interchangeable in
+    either direction -- this one would make two recipes that differ only in a null member
+    hash alike, and that one would report every item changed forever.
+
     Examples:
         Keys sorted, `links` gone, a null member dropped, `1.0` written as `1`:
 
