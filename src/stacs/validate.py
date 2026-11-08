@@ -19,6 +19,8 @@ import json
 import os
 from dataclasses import dataclass, field
 
+from stacs import receipt
+
 
 @dataclass
 class Audit:
@@ -27,23 +29,32 @@ class Audit:
     collection_id: str
     require_asset: str | None
     forbid_assets: list[str]
+    require_receipt: bool = False
     checked: int = 0
     ids: list[str] = field(default_factory=list)
     wrong_collection: list[str] = field(default_factory=list)
     missing_asset: list[str] = field(default_factory=list)
     forbidden_asset: list[str] = field(default_factory=list)
+    missing_receipt: list[str] = field(default_factory=list)
+    bad_receipt: list[str] = field(default_factory=list)
     unreadable: list[str] = field(default_factory=list)
     failures: list[str] = field(default_factory=list)
 
     @property
     def rules(self) -> str:
-        """The asset rules as APPLIED, not as passed: a forbid argument of "," is
+        """The rules as APPLIED, not as passed: a forbid argument of "," is
         non-empty and parses to no keys, and a caller printing its own flags would
-        report a check that never ran."""
+        report a check that never ran.
+
+        The no-asset-rules wording is unchanged when no receipt is required, because four
+        tests and two CLI banners match it as a string.
+        """
         if self.require_asset or self.forbid_assets:
-            return (f"require={self.require_asset or '-'} "
+            text = (f"require={self.require_asset or '-'} "
                     f"forbid={','.join(self.forbid_assets) or '-'}")
-        return "no asset checks"
+        else:
+            text = "no asset checks"
+        return f"{text}, receipts required" if self.require_receipt else text
 
     @property
     def ok(self) -> bool:
@@ -118,7 +129,7 @@ def _is_asset(value) -> bool:
 
 def audit_items(paths, collection_id: str, require_asset: str | None = None,
                 forbid_assets=None, expect: int | None = None,
-                expect_ids=None) -> Audit:
+                expect_ids=None, require_receipt: bool = False) -> Audit:
     """Which items disagree with the collection they are to be registered into.
 
     `expect` is a count and `expect_ids` a set; pass the set wherever the ids are known,
@@ -161,7 +172,11 @@ def audit_items(paths, collection_id: str, require_asset: str | None = None,
         raise ValueError(f"require_asset must be an asset key or None, got "
                          f"{require_asset!r}")
     forbid = parse_asset_keys(forbid_assets)
-    r = Audit(collection_id, require_asset, forbid)
+    if not isinstance(require_receipt, bool):
+        # A string, which is what a config value or a flag arrives as, would be truthy for
+        # "false" and turn the check on while reading as off.
+        raise ValueError(f"require_receipt must be True or False, got {require_receipt!r}")
+    r = Audit(collection_id, require_asset, forbid, require_receipt)
     for path in paths:
         path = path.rstrip("\n")
         if not path:
@@ -193,12 +208,25 @@ def audit_items(paths, collection_id: str, require_asset: str | None = None,
             r.missing_asset.append(path)
         if any(key in assets for key in forbid):
             r.forbidden_asset.append(path)
+        if r.require_receipt:
+            # Two lists, because they are two different situations: a catalogue part way
+            # through adopting receipts has items that carry none yet, and an item whose
+            # fields are present but wrong is a build that went wrong.
+            properties = doc.get("properties")
+            properties = properties if isinstance(properties, dict) else {}
+            problems = receipt.item_problems(doc)
+            if "receipt:recipe_id" not in properties:
+                r.missing_receipt.append(path)
+            elif problems:
+                r.bad_receipt.append(f"{path}: {problems[0]}")
 
     if r.checked == 0 and not r.unreadable:
         r.failures.append("no item JSONs to check")
     for kind, label in (("wrong_collection", "name another collection"),
                         ("missing_asset", f"lack asset {r.require_asset!r}"),
                         ("forbidden_asset", f"still carry a retired asset key {forbid!r}"),
+                        ("missing_receipt", "carry no receipt:recipe_id"),
+                        ("bad_receipt", "carry receipt fields that do not hold up"),
                         ("unreadable", "could not be read")):
         hits = getattr(r, kind)
         if hits:

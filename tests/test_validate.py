@@ -9,6 +9,7 @@ ids, KEEP and RETIRED any two asset keys.
 
 import json
 import os
+from pathlib import Path
 
 import pytest
 
@@ -297,3 +298,79 @@ def test_validate_reports_json_that_is_not_an_object(tmp_path, payload):
     p.write_text(payload)
     bad = val.validate_items([str(p)])
     assert len(bad) == 1 and "not a JSON object" in bad[0][1]
+
+
+# =============================================================================
+# Receipt fields -- the rule a catalogue declares for itself
+# =============================================================================
+
+EXAMPLE_ITEM = (Path(__file__).resolve().parent / "vectors" / "receipt" / "examples"
+                / "item.json")
+
+
+def _receipt_item(collection=NEW, **changes):
+    """crate's example item, re-collectioned, so the fixture is the other implementation's."""
+    item = json.loads(EXAMPLE_ITEM.read_text(encoding="utf-8"))
+    item["collection"] = collection
+    item["id"] = "has-a-receipt"
+    item.setdefault("assets", {})["data"] = {"href": "https://example.invalid/x.tif"}
+    for key, value in changes.items():
+        if value is None:
+            item["properties"].pop(key, None)
+        else:
+            item["properties"][key] = value
+    return item
+
+
+def test_an_item_with_receipt_fields_passes_when_receipts_are_required(tmp_path):
+    path = _write(tmp_path, _receipt_item())
+    audit = val.audit_items([path], NEW, require_asset=KEEP, require_receipt=True)
+    assert audit.ok, audit.failures
+
+
+def test_an_item_with_no_receipt_fields_is_refused_when_receipts_are_required(tmp_path):
+    """The case a migration is for: an item published before the catalogue carried receipts."""
+    path = _write(tmp_path, _receipt_item(**{"receipt:recipe_id": None}))
+    audit = val.audit_items([path], NEW, require_receipt=True)
+    assert not audit.ok
+    assert audit.missing_receipt == [path]
+    assert any("carry no receipt:recipe_id" in f for f in audit.failures), audit.failures
+
+
+def test_an_item_whose_receipt_fields_are_wrong_is_refused_separately(tmp_path):
+    """Kept apart from "no receipt at all": one is a catalogue part way through adopting them,
+    the other is a build that went wrong, and they need different answers."""
+    path = _write(tmp_path, _receipt_item(**{"receipt:recipe_id": "nothex"}))
+    audit = val.audit_items([path], NEW, require_receipt=True)
+    assert not audit.ok
+    assert audit.missing_receipt == []
+    assert len(audit.bad_receipt) == 1 and path in audit.bad_receipt[0]
+    assert any("do not hold up" in f for f in audit.failures), audit.failures
+
+
+def test_the_same_item_passes_when_receipts_are_not_required(tmp_path):
+    """The rule is the catalogue's, declared; an item with no receipt is not wrong in a
+    catalogue that does not carry them."""
+    path = _write(tmp_path, _receipt_item(**{"receipt:recipe_id": None}))
+    assert val.audit_items([path], NEW).ok
+
+
+def test_the_rules_line_says_when_receipts_are_required(tmp_path):
+    """Reported as APPLIED, like the asset rules -- and the no-rules wording is unchanged when
+    they are not required, because four tests and two banners match it as a string."""
+    path = _write(tmp_path, _receipt_item())
+    assert val.audit_items([path], NEW).rules == "no asset checks"
+    assert val.audit_items([path], NEW, require_receipt=True).rules == \
+        "no asset checks, receipts required"
+    assert val.audit_items([path], NEW, require_asset=KEEP, forbid_assets=[RETIRED],
+                           require_receipt=True).rules == \
+        "require=data forbid=legacy, receipts required"
+
+
+def test_a_non_boolean_require_receipt_is_refused(tmp_path):
+    """A string is truthy, so "false" from a config or an env var would turn the check on
+    while reading as off."""
+    path = _write(tmp_path, _receipt_item())
+    for bad in ("false", "true", 1, 0):
+        with pytest.raises(ValueError, match="require_receipt must be True or False"):
+            val.audit_items([path], NEW, require_receipt=bad)

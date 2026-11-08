@@ -964,3 +964,225 @@ def compare(a, b, overrides=None) -> Comparison:
         for row in sorted(rows, key=lambda row: (row["field"].encode("utf-8"),
                                                  row["action"])))
     return Comparison(verdict=verdict, mode=MODE, differences=differences)
+
+
+# =============================================================================
+# The STAC side -- the identity fields an item mirrors
+# =============================================================================
+
+# The two standard extensions whose fields the mapping table uses. An item that emits
+# `file:*` or `processing:*` without listing these is non-conformant, and the receipt field
+# schema cannot notice: it constrains only `receipt:`-prefixed keys.
+FILE_EXTENSION_URL = "https://stac-extensions.github.io/file/v2.1.0/schema.json"
+PROCESSING_EXTENSION_URL = "https://stac-extensions.github.io/processing/v1.2.0/schema.json"
+
+# `file:checksum` is a multihash, not a bare digest: 0x12 names sha2-256 and 0x20 its 32-byte
+# length, so a sha256 is published as `1220` followed by the 64 hex digits.
+MULTIHASH_SHA256 = "1220"
+
+_SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+_MULTIHASH_SHA256 = re.compile(r"^1220[0-9a-f]{64}$")
+_UTC_TIME = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$")
+
+# The asset that links the receipt: role `metadata`, as for every other output.
+RECEIPT_ROLE = "metadata"
+
+
+def multihash(sha256_hex: str) -> str:
+    """A sha256 hex digest as the multihash `file:checksum` publishes.
+
+    Examples:
+        >>> multihash("0" * 64)[:8]
+        '12200000'
+        >>> len(multihash("0" * 64))
+        68
+    """
+    if not isinstance(sha256_hex, str) or not _SHA256_HEX.match(sha256_hex):
+        raise ReceiptError(f"a sha256 is 64 lowercase hex digits, got {sha256_hex!r}")
+    return MULTIHASH_SHA256 + sha256_hex
+
+
+def _whole(value, where: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ReceiptError(f"{where} is not a number: {value!r}")
+    if isinstance(value, float) and not value.is_integer():
+        raise ReceiptError(f"{where} is not whole: {value!r}")
+    return int(value)
+
+
+def stac_fields(receipt, assets=None, receipt_asset=None, receipt_sha256=None) -> dict:
+    """The receipt's identity fields, as an item mirrors them.
+
+    `{"stac_extensions": [...], "properties": {...}, "assets": {...}}`, for a builder to merge
+    into the item it is writing. The receipt itself stays the full record; these exist so a
+    STAC client or a pgstac queryable needs no second fetch.
+
+    `assets` maps an asset key to its href **relative to the item**, which is what a part is
+    keyed by. `receipt_asset` names the asset that links the receipt, and `receipt_sha256` is
+    the digest `write` returned for it -- nothing else can compute that one, because a
+    receipt's own bytes are not inside it.
+
+    A migrated receipt has no recipe identity (`recipe_id` null), so the field is **left out**
+    rather than published as a null, which the field schema would refuse anyway.
+
+    Examples:
+        >>> r = {"output": {}, "recipe": {"recipe_id": "a" * 64,
+        ...                               "code": {"stacs": {"version": "0.2.0"}}},
+        ...      "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 12}}},
+        ...      "context": {"time": "2026-11-08T00:00:00Z"}}
+        >>> fields = stac_fields(r, assets={"data": "x.tif"})
+        >>> sorted(fields["properties"])
+        ['processing:datetime', 'processing:software', 'receipt:recipe_id']
+        >>> fields["assets"]["data"]["file:size"]
+        12
+        >>> fields["assets"]["data"]["file:checksum"][:4]
+        '1220'
+    """
+    if not isinstance(receipt, dict):
+        raise ReceiptError(f"a receipt is a JSON object, got {type(receipt).__name__}")
+    recipe = receipt.get("recipe") or {}
+    result = receipt.get("result") or {}
+    context = receipt.get("context") or {}
+
+    properties, extensions = {}, []
+    recipe_identity = recipe.get("recipe_id")
+    if recipe_identity is not None:
+        if not isinstance(recipe_identity, str) or not _SHA256_HEX.match(recipe_identity):
+            raise ReceiptError(f"recipe.recipe_id is not 64 lowercase hex: "
+                               f"{recipe_identity!r}")
+        properties["receipt:recipe_id"] = recipe_identity
+
+    time = context.get("time")
+    if time is not None:
+        if not isinstance(time, str) or not _UTC_TIME.match(time):
+            raise ReceiptError(f"context.time is not an ISO 8601 UTC instant: {time!r}")
+        properties["processing:datetime"] = time
+    software = {repo: entry.get("version")
+                for repo, entry in (recipe.get("code") or {}).items()
+                if isinstance(entry, dict) and entry.get("version") is not None}
+    if software:
+        properties["processing:software"] = software
+
+    out_assets = {}
+    parts = result.get("parts") or {}
+    for key, href in (assets or {}).items():
+        part = parts.get(href)
+        if not isinstance(part, dict):
+            # Guessing would publish another file's digest under this asset.
+            raise ReceiptError(f"asset {key!r} has href {href!r}, which is not a part of this "
+                               f"receipt; parts are keyed by the href relative to the item")
+        out_assets[key] = {"file:checksum": multihash(part.get("sha256")),
+                           "file:size": _whole(part.get("bytes"),
+                                               f"result.parts[{href}].bytes")}
+    if receipt_asset is not None:
+        if receipt_sha256 is None:
+            raise ReceiptError(f"receipt_asset {receipt_asset!r} needs receipt_sha256, the "
+                               f"digest `write` returned for the bytes it wrote")
+        out_assets[receipt_asset] = {"file:checksum": multihash(receipt_sha256)}
+
+    # In the order crate's example item lists them, and only the ones whose fields are here.
+    if out_assets:
+        extensions.append(FILE_EXTENSION_URL)
+    if "processing:datetime" in properties or "processing:software" in properties:
+        extensions.append(PROCESSING_EXTENSION_URL)
+    if "receipt:recipe_id" in properties:
+        extensions.append(EXTENSION_URL)
+    return {"stac_extensions": extensions, "properties": properties, "assets": out_assets}
+
+
+def receipt_href(item):
+    """The href of the asset that links an item's receipt, or None.
+
+    The contract is the asset link, not a filename: the receipt is published beside the item
+    "as an asset with role `metadata`". A catalogue that publishes under a `receipts/` prefix
+    would break a `receipt.json`-beside-the-item assumption silently.
+    """
+    for asset in (item.get("assets") or {}).values() if isinstance(item, dict) else []:
+        if not isinstance(asset, dict):
+            continue
+        roles = asset.get("roles") or []
+        href = asset.get("href")
+        if RECEIPT_ROLE in roles and asset.get("type") == "application/json" \
+                and isinstance(href, str) and href:
+            return href
+    return None
+
+
+def item_problems(item) -> list:
+    """Everything wrong with an item's receipt fields, as a list of sentences.
+
+    Collected rather than raised one at a time: an item is usually wrong in one way that shows
+    up in three fields, and the set is the diagnosis. An empty list is the pass.
+
+    Three layers, because no single one covers it:
+
+    - the vendored field schema, which constrains `stac_extensions`, `type` and
+      `receipt:recipe_id` and refuses any other `receipt:`-prefixed key;
+    - the formats it cannot reach -- a `file:checksum` multihash and a `processing:datetime` --
+      because the `file` and `processing` schemas are fetched by URL and the suite is offline;
+    - the links the contract requires: each extension whose fields are present, and the asset
+      that carries the receipt.
+    """
+    import jsonschema
+
+    if not isinstance(item, dict):
+        return [f"not a JSON object: {type(item).__name__}"]
+    problems = []
+    properties = item.get("properties") if isinstance(item.get("properties"), dict) else {}
+    extensions = item.get("stac_extensions") or []
+    assets = item.get("assets") if isinstance(item.get("assets"), dict) else {}
+
+    identity = properties.get("receipt:recipe_id")
+    if identity is None:
+        problems.append("properties has no receipt:recipe_id")
+    elif not isinstance(identity, str) or not _SHA256_HEX.match(identity):
+        problems.append(f"receipt:recipe_id is not 64 lowercase hex: {identity!r}")
+
+    for error in sorted(jsonschema.Draft7Validator(stac_schema()).iter_errors(item),
+                        key=lambda e: list(e.absolute_path)):
+        # The field schema's `oneOf` (an Item or a Collection) makes jsonschema report the
+        # whole document as "not valid under any of the given schemas" and put the useful
+        # message in `context`. An operator acts on the message, so descend to the best one --
+        # after dropping each branch's own `type` selector, which is how the branch that does
+        # not apply says so ("'Collection' was expected" about an Item). `best_match` prefers
+        # it otherwise, being the shallower error.
+        if error.context:
+            branch = [e for e in error.context if list(e.absolute_path) != ["type"]]
+            error = jsonschema.exceptions.best_match(branch or error.context) or error
+        where = ".".join(str(p) for p in error.absolute_path) or "<item>"
+        problems.append(f"{where}: {error.message}")
+
+    time = properties.get("processing:datetime")
+    if time is not None and (not isinstance(time, str) or not _UTC_TIME.match(time)):
+        problems.append(f"processing:datetime is not an ISO 8601 UTC instant: {time!r}")
+    if ("processing:datetime" in properties or "processing:software" in properties) \
+            and PROCESSING_EXTENSION_URL not in extensions:
+        problems.append(f"stac_extensions does not list {PROCESSING_EXTENSION_URL}, and the "
+                        f"item carries processing: fields")
+
+    file_fields = False
+    for key, asset in assets.items():
+        if not isinstance(asset, dict):
+            problems.append(f"asset {key!r} is not an object")
+            continue
+        if "file:checksum" in asset or "file:size" in asset:
+            file_fields = True
+        checksum = asset.get("file:checksum")
+        if checksum is not None and (not isinstance(checksum, str)
+                                     or not _MULTIHASH_SHA256.match(checksum)):
+            problems.append(f"asset {key!r} file:checksum is not a sha2-256 multihash "
+                            f"(1220 + 64 hex): {checksum!r}")
+        size = asset.get("file:size")
+        if size is not None:
+            try:
+                _whole(size, f"asset {key!r} file:size")
+            except ReceiptError as e:
+                problems.append(str(e))
+    if file_fields and FILE_EXTENSION_URL not in extensions:
+        problems.append(f"stac_extensions does not list {FILE_EXTENSION_URL}, and the item "
+                        f"carries file: fields")
+
+    if receipt_href(item) is None:
+        problems.append(f"no asset links the receipt (role {RECEIPT_ROLE!r}, type "
+                        f"application/json)")
+    return problems

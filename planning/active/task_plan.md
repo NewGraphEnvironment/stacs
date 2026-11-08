@@ -175,40 +175,40 @@ Decided without asking (mechanism, with the reason):
 
 ## Phase 5: STAC identity fields and `audit`
 
-- [ ] `stac_fields(receipt, assets)` → item `properties` (`receipt:recipe_id`,
+- [x] `stac_fields(receipt, assets)` → item `properties` (`receipt:recipe_id`,
       `processing:datetime` from `context.time`, `processing:software.<repo>` from
       `recipe.code[<repo>].version`) and per-asset `file:checksum` (multihash `1220` + the 64
       hex) and `file:size`, the part keyed by the asset's href relative to the item. A migrated
       receipt (null `recipe_id`) **omits** the field rather than publishing a null.
-- [ ] `EXTENSION_URL`, listed verbatim in `stac_extensions` — the field schema asserts
+- [x] `EXTENSION_URL`, listed verbatim in `stac_extensions` — the field schema asserts
       `contains: {const: <that exact URL>}`, and any other `receipt:`-prefixed key fails it.
-- [ ] *(review)* **Three** extension URLs, not one: crate's example item lists
+- [x] *(review)* **Three** extension URLs, not one: crate's example item lists
       `file/v2.1.0` and `processing/v1.2.0` beside the receipt one, because `stac_fields` emits
       `file:*` and `processing:*`. Each is a constant, and `audit` requires the ones whose
       fields are present. An item emitting them without their URLs is non-conformant and the
       vendored field schema cannot notice: it constrains only `receipt:`-prefixed keys.
-- [ ] *(review)* The receipt asset's own `file:checksum`. `mapping.csv` has no row for it and
+- [x] *(review)* The receipt asset's own `file:checksum`. `mapping.csv` has no row for it and
       `stac_fields` cannot compute it -- it never sees the receipt's bytes -- so it takes the
       digest `write` returned. This is also what lets `verify` prove it fetched *the* receipt
       the item claims, which is a stronger check than the mirrored compare.
-- [ ] *(review)* `audit` owns the formats the field schema does not reach: `^1220[0-9a-f]{64}$`
+- [x] *(review)* `audit` owns the formats the field schema does not reach: `^1220[0-9a-f]{64}$`
       for a multihash, and the receipt schema's own `context.time` pattern for
       `processing:datetime`. The `file`/`processing` extension schemas are unfetchable offline.
-- [ ] *(review)* `Target` gains the flag, `Target.check()` a type check, and `build_target`
+- [x] *(review)* `Target` gains the flag, `Target.check()` a type check, and `build_target`
       plus the `[catalogue]` config key the wiring: `verify` reaches the catalogue only through
       `Target`, so Phase 6 cannot see the declaration without this. A bool default is safe
       under the deployment guard, which exempts bools.
-- [ ] *(review)* `_run`'s pre-write audit passes the rule too, or `stacs audit` would refuse an
+- [x] *(review)* `_run`'s pre-write audit passes the rule too, or `stacs audit` would refuse an
       item that `stacs register` loads.
-- [ ] *(review, out of scope, said rather than left silent)* `mapping.csv`'s sixth `STAC item`
+- [x] *(review, out of scope, said rather than left silent)* `mapping.csv`'s sixth `STAC item`
       row, `properties.version` from `context.legacy`, is a release label and not provenance.
-- [ ] `audit_items(..., require_receipt=False)`: for a collection that declares it carries
+- [x] `audit_items(..., require_receipt=False)`: for a collection that declares it carries
       receipts, an item fails when `receipt:recipe_id` is absent or ill-formed, the extension
       URL is not listed, or the receipt fields fail the **vendored** field schema. Offline, by
       `jsonschema` — not via pystac, which fetches the extension URL and would die on the test
       guard. `Audit` gains `missing_receipt` / `bad_receipt` **path** lists, and `rules` reports
       the check as applied.
-- [ ] CLI `--require-receipt` + `[catalogue] require_receipt`, wired into `cmd_audit` and
+- [x] CLI `--require-receipt` + `[catalogue] require_receipt`, wired into `cmd_audit` and
       `load items`, under the existing precedent: declared rules are the caller's, never keyed
       by collection id, and a flag may add a rule but never remove a configured one.
 

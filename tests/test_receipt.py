@@ -470,3 +470,146 @@ def test_reindent_is_the_same_document():
 def test_reindent_round_trips_a_nested_document():
     doc = {"a": {"b": [1, [2, {"c": None}], {}], "d": "x"}, "e": []}
     assert r.load_json(r.reindent(r.canonical(doc))) == doc
+
+
+# =============================================================================
+# The STAC side, against crate's own example item
+# =============================================================================
+
+EXAMPLE = Path(__file__).resolve().parent / "vectors" / "receipt" / "examples" / "item.json"
+
+
+def test_crates_example_item_has_nothing_wrong_with_it():
+    """The oracle for `item_problems`. A checker that refused everything would pass every
+    negative test below, and this is the only item in existence written by the other
+    implementation of this contract."""
+    assert r.item_problems(r.load_json(EXAMPLE.read_text(encoding="utf-8"))) == []
+
+
+def test_the_example_items_receipt_asset_is_the_one_found():
+    item = r.load_json(EXAMPLE.read_text(encoding="utf-8"))
+    assert r.receipt_href(item) == "receipt.json"
+
+
+def test_stac_fields_produces_the_property_names_and_extensions_the_example_carries():
+    """Shapes, not values: the example illustrates a floodplains build whose receipt crate does
+    not ship, so it pins the field names, the extension list and the multihash form."""
+    item = r.load_json(EXAMPLE.read_text(encoding="utf-8"))
+    receipt = {
+        "output": {}, "context": {"time": item["properties"]["processing:datetime"]},
+        "recipe": {"recipe_id": item["properties"]["receipt:recipe_id"],
+                   "code": {"flooded": {"version": "0.7.0"}}},
+        "result": {"parts": {"floodplain_all_ff02.tif": {
+            "sha256": item["assets"]["floodplain"]["file:checksum"][4:],
+            "bytes": item["assets"]["floodplain"]["file:size"]}}},
+    }
+    fields = r.stac_fields(receipt, assets={"floodplain": "floodplain_all_ff02.tif"},
+                           receipt_asset="receipt",
+                           receipt_sha256=item["assets"]["receipt"]["file:checksum"][4:])
+    # Minus `datetime`, which is core STAC and the item's own: a receipt says when the build
+    # ran (`processing:datetime`), never what the item is about.
+    assert fields["properties"] == {k: v for k, v in item["properties"].items()
+                                    if k != "datetime"}
+    assert fields["stac_extensions"] == item["stac_extensions"]
+    assert fields["assets"]["floodplain"] == {
+        "file:checksum": item["assets"]["floodplain"]["file:checksum"],
+        "file:size": item["assets"]["floodplain"]["file:size"]}
+    assert fields["assets"]["receipt"]["file:checksum"] == \
+        item["assets"]["receipt"]["file:checksum"]
+
+
+def test_stac_fields_lists_all_three_extensions_not_just_the_receipt_one():
+    """An item emitting `file:*` or `processing:*` without their URLs is non-conformant, and
+    the receipt field schema cannot notice: it constrains only `receipt:`-prefixed keys."""
+    receipt = {"output": {}, "context": {"time": "2026-11-08T00:00:00Z"},
+               "recipe": {"recipe_id": "a" * 64, "code": {"stacs": {"version": "0.2.0"}}},
+               "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 1}}}}
+    assert r.stac_fields(receipt, assets={"data": "x.tif"})["stac_extensions"] == [
+        r.FILE_EXTENSION_URL, r.PROCESSING_EXTENSION_URL, r.EXTENSION_URL]
+
+
+def test_a_migrated_receipt_leaves_the_field_out_rather_than_publishing_a_null():
+    """The schema types it `string`, so a null would be refused -- and a null recipe_id in a
+    queryable reads as "made this way" for every migrated item at once."""
+    receipt = {"output": {"migrated_from": "manifest.json"},
+               "recipe": {"recipe_id": None}, "result": {}, "context": {}}
+    fields = r.stac_fields(receipt)
+    assert "receipt:recipe_id" not in fields["properties"]
+    assert r.EXTENSION_URL not in fields["stac_extensions"]
+
+
+def test_stac_fields_refuses_an_asset_href_that_is_not_a_part():
+    """Guessing would publish another file's digest under this asset."""
+    receipt = {"output": {}, "recipe": {}, "context": {},
+               "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 1}}}}
+    with pytest.raises(r.ReceiptError, match="not a part of this receipt"):
+        r.stac_fields(receipt, assets={"data": "y.tif"})
+
+
+def test_stac_fields_needs_the_digest_for_the_receipt_asset():
+    receipt = {"output": {}, "recipe": {}, "result": {}, "context": {}}
+    with pytest.raises(r.ReceiptError, match="needs receipt_sha256"):
+        r.stac_fields(receipt, receipt_asset="receipt")
+
+
+def test_the_receipt_asset_checksum_is_the_digest_write_returned(tmp_path):
+    """The round trip that makes an item self-verifying: the digest `write` returns becomes the
+    asset's `file:checksum`, and a reader can hash the receipt it fetched and compare."""
+    out = tmp_path / "receipt.json"
+    digest = r.write(r.read(WORKED / "build_1" / "receipt.json"), out)
+    fields = r.stac_fields(r.read(out), receipt_asset="receipt", receipt_sha256=digest)
+    assert fields["assets"]["receipt"]["file:checksum"] == r.multihash(
+        hashlib.sha256(out.read_bytes()).hexdigest())
+
+
+def test_multihash_refuses_anything_but_a_sha256():
+    for bad in ("1220" + "a" * 64, "A" * 64, "abc", None, 1):
+        with pytest.raises(r.ReceiptError, match="64 lowercase hex"):
+            r.multihash(bad)
+
+
+def _example_item(**changes):
+    item = r.load_json(EXAMPLE.read_text(encoding="utf-8"))
+    for path, value in changes.items():
+        where, _, key = path.rpartition(".")
+        node = item
+        for part in where.split(".") if where else []:
+            node = node[part]
+        if value is None:
+            node.pop(key, None)
+        else:
+            node[key] = value
+    return item
+
+
+@pytest.mark.parametrize("changes,match", [
+    ({"properties.receipt:recipe_id": None}, "no receipt:recipe_id"),
+    ({"properties.receipt:recipe_id": "A" * 64}, "not 64 lowercase hex"),
+    ({"properties.receipt:recipe_id": "abc"}, "not 64 lowercase hex"),
+    ({"stac_extensions": ["https://stac-extensions.github.io/file/v2.1.0/schema.json"]},
+     "processing"),
+    # The field schema allows exactly one `receipt:` key, via
+    # `patternProperties: {"^(?!receipt:)": {}}` plus `additionalProperties: false`.
+    ({"properties.receipt:other": "x"}, "'receipt:other' does not match"),
+    ({"properties.processing:datetime": "2026-10-14 12:42:04"}, "ISO 8601"),
+    ({"assets.floodplain.file:checksum": "deadbeef"}, "multihash"),
+    ({"assets.receipt.roles": ["data"]}, "no asset links the receipt"),
+    ({"assets.receipt.type": "text/plain"}, "no asset links the receipt"),
+    ({"assets.floodplain.file:size": 1.5}, "not whole"),
+], ids=["no id", "uppercase id", "short id", "extension missing", "rogue receipt key",
+        "bad datetime", "bad multihash", "wrong role", "wrong type", "fractional size"])
+def test_item_problems_catches_each_way_an_item_can_be_wrong(changes, match):
+    problems = r.item_problems(_example_item(**changes))
+    assert problems, changes
+    assert any(match in p for p in problems), problems
+
+
+def test_item_problems_refuses_something_that_is_not_an_item():
+    assert r.item_problems("not an item")
+    assert r.item_problems(None)
+
+
+def test_receipt_href_is_none_when_nothing_links_a_receipt():
+    assert r.receipt_href({"assets": {}}) is None
+    assert r.receipt_href({}) is None
+    assert r.receipt_href({"assets": {"x": {"roles": ["metadata"]}}}) is None

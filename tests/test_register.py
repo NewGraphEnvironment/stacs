@@ -1768,3 +1768,36 @@ def test_a_definition_another_collection_still_serves_but_changed_is_reported(
     msg = reg._others_damage(t, {"stac-other-a": {"lidarbc:delivery": "d1"}})
     assert "stac-other-a (lidarbc:delivery changed)" in msg
     assert reg._others_damage(t, {"stac-other-a": {"lidarbc:delivery": "d2"}}) is None
+
+
+# =============================================================================
+# The receipt rule on a Target -- how `verify` and the pre-write audit see it
+# =============================================================================
+
+def _target(**changes):
+    base = dict(api="http://api.example.invalid", collection_id="any-collection",
+                bucket_url="file:///bucket.example.invalid")
+    return reg.Target(**{**base, **changes})
+
+
+def test_describe_rules_says_when_receipts_are_required():
+    """The banner is read by an operator deciding whether a run checked what they expected,
+    and the no-rules wording is unchanged when they are not required."""
+    assert reg.describe_rules(_target()) == \
+        "none (no require_asset / forbid_assets declared)"
+    assert reg.describe_rules(_target(require_receipt=True)) == \
+        "none (no require_asset / forbid_assets declared), receipts required"
+    assert reg.describe_rules(_target(require_asset="data", require_receipt=True)) == \
+        "require=data forbid=-, receipts required"
+
+
+@pytest.mark.parametrize("bad", ["false", "true", 1, 0, None])
+def test_a_target_refuses_a_non_boolean_require_receipt(bad):
+    """A string is truthy, so "false" would turn the check on while reading as off."""
+    with pytest.raises(reg.RegisterError, match="require_receipt must be True or False"):
+        _target(require_receipt=bad).check()
+
+
+def test_a_target_accepts_the_two_real_booleans():
+    for value in (True, False):
+        _target(require_receipt=value).check()

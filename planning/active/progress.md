@@ -87,3 +87,21 @@
     difference says so in its detail instead of looking like a plain refusal.
   - One defect, in my own test rather than the code: it asserted the migrated receipt was side
     `a` of that vector when it is side `b`. Both directions are now asserted.
+- **Phase 5.** `stac_fields`, `multihash`, `receipt_href`, `item_problems`; `require_receipt`
+  through `Audit`, `audit_items`, `Target`, `describe_rules`, `build_target`, the `[catalogue]`
+  config key, `cmd_audit`, `load items` and the pre-write audit in `_run`.
+  - **crate's own example item passes `item_problems` with zero problems**, and `stac_fields`
+    reproduces its property names, extension list and multihash forms — an oracle written by
+    the other implementation, so the checks are not self-referential.
+  - All three extension URLs, per the review: an item emitting `file:*` or `processing:*`
+    without them is non-conformant and the field schema cannot notice.
+  - Two defects found by running the tests. My `stac_fields` assertion expected the core
+    `datetime` property, which a receipt must never produce. And the field schema's `oneOf`
+    made jsonschema report "not valid under any of the given schemas" — useless to an
+    operator — so `item_problems` now descends into the branch context, dropping each branch's
+    own `type` selector first, because `best_match` prefers that shallower error. The message
+    is now `properties: 'receipt:other' does not match any of the regexes: '^(?!receipt:)'`.
+  - `--require-receipt` is add-only, with no `--no-require-receipt`, and a non-boolean config
+    value is refused: a string is truthy, so `require_receipt = "false"` would turn the check
+    on while reading as off. `load collection` does not take the flag — a collection body
+    carries no receipt fields, and a flag accepted there would read as a check that passed.

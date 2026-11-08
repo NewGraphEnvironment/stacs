@@ -123,6 +123,10 @@ class Target:
     transport: Transport | None = None
     require_asset: str | None = None
     forbid_assets: list[str] = field(default_factory=list)
+    # Declared here rather than only on the audit call, because `verify` reaches the catalogue
+    # through this object alone: without the field it could not tell a catalogue that carries
+    # receipts from one that does not, and would have to guess from the items.
+    require_receipt: bool = False
     queryables: dict[str, dict] = field(default_factory=dict)
     page_size: int = PAGE_SIZE
     chunk: int = 500
@@ -145,6 +149,10 @@ class Target:
             # An empty key would otherwise disable the requirement while reading as set.
             raise RegisterError(f"require_asset must be an asset key or None, got "
                                 f"{self.require_asset!r}")
+        if not isinstance(self.require_receipt, bool):
+            # A string is truthy, so "false" would turn the check on while reading as off.
+            raise RegisterError(f"require_receipt must be True or False, got "
+                                f"{self.require_receipt!r}")
         try:
             parse_asset_keys(self.forbid_assets)
         except ValueError as e:
@@ -474,8 +482,10 @@ def describe_rules(target: Target) -> str:
     """
     forbid = parse_asset_keys(target.forbid_assets)
     if target.require_asset or forbid:
-        return f"require={target.require_asset or '-'} forbid={','.join(forbid) or '-'}"
-    return "none (no require_asset / forbid_assets declared)"
+        text = f"require={target.require_asset or '-'} forbid={','.join(forbid) or '-'}"
+    else:
+        text = "none (no require_asset / forbid_assets declared)"
+    return f"{text}, receipts required" if target.require_receipt else text
 
 
 def run(target: Target, mode: str, ids_file=None, dryrun: bool = False,
@@ -688,7 +698,8 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
         todo_paths = [str(fetch_dir / f"{fetch_key(h)}.json") for _, h in todo_links]
         if todo_paths:
             audit = audit_items(todo_paths, target.collection_id, target.require_asset,
-                                target.forbid_assets, expect_ids=todo)
+                                target.forbid_assets, expect_ids=todo,
+                                require_receipt=target.require_receipt)
             log(f"audit      : {audit.checked} item(s) against {target.collection_id} "
                 f"({audit.rules})")
             if not audit.ok:
