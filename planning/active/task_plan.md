@@ -149,28 +149,28 @@ Decided without asking (mechanism, with the reason):
 
 ## Phase 4: compare — identical / equivalent / different
 
-- [ ] `compare(a, b)` → verdict (any `refuse` → `different`; else any `within` → `equivalent`;
+- [x] `compare(a, b)` → verdict (any `refuse` → `different`; else any `within` → `equivalent`;
       else `identical`) and `differences` as an **ordered list** of `(side, field, action,
       detail)` sorted by field as bytes, duplicates allowed — `a migrated receipt` lists
       `recipe.inputs` and `recipe.config.settings` twice, so a set would be wrong.
-- [ ] The register walk: collection prefixes derived from the `*` patterns; the collection check
+- [x] The register walk: collection prefixes derived from the `*` patterns; the collection check
       wins over the leaf check (`recipe.code`, `context.toolchain` are both); leaf equality is
       same-canonical-JSON, so absent and null compare equal; an unrecognised field defaults to
       `refuse`. Field paths are `block.member` with a key in brackets
       (`result.parts[access_check.csv].sha256`), the register's own patterns use `*`.
-- [ ] `within` from its three sources: `result.summary.*` inside a tolerance **both** receipts
+- [x] `within` from its three sources: `result.summary.*` inside a tolerance **both** receipts
       declare identically (`|a−b| <= tol`); `result.parts.*.{bytes,sha256}` only when both name
       the **same** table, it is in both `result.fingerprint` maps, and every fingerprint
       difference for it resolved to `within`; `result.fingerprint.*.sha256` left `refuse` with
       the `fingerprints differ (receipts only): ` prefix when no tables are supplied.
-- [ ] A null `recipe_id` on either side always yields one `refuse` at `recipe.recipe_id`, so a
+- [x] A null `recipe_id` on either side always yields one `refuse` at `recipe.recipe_id`, so a
       migrated receipt is never `identical` or `equivalent`.
-- [ ] Passes all nine `compare.json` pairs on the verdict **and** the exact ordered
+- [x] Passes all nine `compare.json` pairs on the verdict **and** the exact ordered
       `(field, action)` sequence. This is the half crate's crosscheck script does not cover.
-- [ ] A mutation test that `register.csv` is load-bearing: flip one row's action, watch a
+- [x] A mutation test that `register.csv` is load-bearing: flip one row's action, watch a
       verdict change. Honour a caller's register override under crate's rule — known fields
       only, and no `recipe.*` field may be overridden.
-- [ ] Out of scope and said so: `mode="bytes"` (re-reading supplied tables). The vectors do not
+- [x] Out of scope and said so: `mode="bytes"` (re-reading supplied tables). The vectors do not
       exercise it; recorded in `research/`.
 
 ## Phase 5: STAC identity fields and `audit`

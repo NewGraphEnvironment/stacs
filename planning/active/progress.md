@@ -75,3 +75,15 @@
   - Verified rather than assumed: a built wheel ships all five contract files under
     `stacs/data/receipt/`.
 - Next: Phase 4, compare.
+- **Phase 4.** `compare`, `register`, `Comparison` / `Difference`. **All nine of crate's
+  receipt pairs pass on the verdict and the exact ordered `(field, action)` sequence**,
+  including the 16-difference migrated case with its duplicated collection paths — the half
+  crate's own crosscheck script does not implement.
+  - The register is shown deciding: flipping one row's action turns `identical` into
+    `different`, so the vendored CSV cannot be decoration while hard-coded actions pass the
+    vectors.
+  - `mode="bytes"` (re-reading supplied tables to settle a fingerprint difference) is **not
+    implemented**: `compare.json` carries no tables, so it would be untested. A fingerprint
+    difference says so in its detail instead of looking like a plain refusal.
+  - One defect, in my own test rather than the code: it asserted the migrated receipt was side
+    `a` of that vector when it is side `b`. Both directions are now asserted.

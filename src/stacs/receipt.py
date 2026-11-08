@@ -21,14 +21,17 @@ in CI; crate's test vectors are the only thing keeping the two implementations i
 """
 
 import copy
+import csv
 import datetime
 import hashlib
+import io
 import json
 import os
 import re
 import stat
 import struct
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 import rfc8785
@@ -704,3 +707,260 @@ def write(receipt, path, publish: bool = True) -> str:
     data = (reindent(canonical(doc)) + "\n").encode("utf-8")
     _atomic_write(path, data)
     return hashlib.sha256(data).hexdigest()
+
+
+# =============================================================================
+# compare -- identical, equivalent, different
+# =============================================================================
+
+# The verdicts, and what produces each. `within` is NOT a register action: the register says
+# `refuse`, `warn` or `record`, and the comparison promotes a result value that differs inside
+# its declared tolerance to `within`.
+ACTIONS = ("refuse", "warn", "record", "within")
+
+# Tables are not supplied to `compare`, so a fingerprint that differs stays a refusal. crate
+# calls the other mode "bytes": it re-reads each supplied table, certifies it against its own
+# receipt, and can then settle a fingerprint difference as `within`. The vectors do not
+# exercise it (`compare.json` carries no tables), so it is not implemented rather than
+# implemented untested.
+MODE = "receipts"
+
+
+@dataclass(frozen=True)
+class Difference:
+    """One field that differs, with the action the register gives it.
+
+    `side` is the block the register pattern starts in, not a judgement about which receipt is
+    wrong.
+    """
+    side: str
+    field: str
+    action: str
+    detail: str
+
+
+@dataclass(frozen=True)
+class Comparison:
+    """The outcome of comparing two receipts.
+
+    `differences` is an ORDERED LIST and may repeat a field: a collection with two keys
+    missing reports its own path twice, which crate's `a migrated receipt` vector shows for
+    both `recipe.inputs` and `recipe.config.settings`. A set would lose one of each.
+    """
+    verdict: str
+    mode: str
+    differences: tuple
+
+    @property
+    def fields(self) -> list:
+        """[(field, action)] -- what crate's vectors pin, without the prose detail."""
+        return [(d.field, d.action) for d in self.differences]
+
+
+def register() -> dict:
+    """crate's register: every receipt field that can differ, and what a difference means.
+
+    `refuse` makes the verdict `different`, `warn` and `record` never change it. Returned in
+    file order, as a plain dict of field pattern to action.
+
+    Examples:
+        >>> register()["recipe.seed"]
+        'refuse'
+        >>> register()["context.time"]
+        'record'
+        >>> sorted(set(register().values()))
+        ['record', 'refuse', 'warn']
+    """
+    if "register" not in _DATA:
+        rows = csv.DictReader(io.StringIO(_data_text("register.csv")))
+        table = {}
+        for row in rows:
+            field, action = (row.get("field") or "").strip(), (row.get("action") or "").strip()
+            if not field or action not in ("refuse", "warn", "record"):
+                raise ReceiptError(f"register.csv row {row!r} has no field, or an action that "
+                                   f"is not refuse, warn or record")
+            table[field] = action
+        if not table:
+            raise ReceiptError("register.csv is empty, so every field would default to refuse")
+        _DATA["register"] = table
+    return dict(_DATA["register"])
+
+
+def _patterns(table):
+    """(collections, prefixes) derived from the register's patterns.
+
+    A `*` in a pattern marks a keyed collection, so the path before it is walked key by key;
+    every proper prefix of every pattern is a branch rather than a leaf. Derived from the
+    register rather than listed, so a row added upstream is honoured without an edit here.
+    """
+    collections, prefixes = set(), set()
+    for field in table:
+        parts = field.split(".")
+        for i, part in enumerate(parts):
+            prefixes.add(".".join(parts[:i + 1]))
+            if part == "*":
+                collections.add(".".join(parts[:i]))
+    return collections, prefixes
+
+
+def _show(value) -> str:
+    text = canonical(value).decode("utf-8")
+    return text if len(text) <= 80 else text[:77] + "..."
+
+
+def _diff(a, b, table) -> list:
+    """Every field that differs between two receipts, before the actions are applied."""
+    collections, prefixes = _patterns(table)
+    found = []
+
+    def keys(x):
+        return list(x) if isinstance(x, dict) else []
+
+    def walk(x, y, field, pattern, key):
+        if pattern in collections:
+            kx, ky = keys(x), keys(y)
+            for k in sorted(set(kx) - set(ky)):
+                found.append((field, pattern, f"{k} only in a", k))
+            for k in sorted(set(ky) - set(kx)):
+                found.append((field, pattern, f"{k} only in b", k))
+            for k in [k for k in kx if k in set(ky)]:
+                walk(x[k], y[k], f"{field}[{k}]", f"{pattern}.*", k)
+        elif pattern in table or pattern not in prefixes:
+            # A leaf. Equality is "the same canonical JSON", so an absent member and a null
+            # compare equal -- which is how JSON reads them, and how a receipt written with a
+            # null reads back.
+            if canonical(x) != canonical(y):
+                found.append((field, pattern, f"{_show(x)} vs {_show(y)}", key))
+        else:
+            for name in list(dict.fromkeys(keys(x) + keys(y))):
+                walk(x.get(name) if isinstance(x, dict) else None,
+                     y.get(name) if isinstance(y, dict) else None,
+                     f"{field}.{name}", f"{pattern}.{name}", key)
+
+    for block in ("output", "recipe", "result", "context"):
+        walk(a.get(block), b.get(block), block, block, None)
+    return found
+
+
+def _summary_tolerance(a, b, name):
+    """The tolerance both receipts declare for a summary value, or None.
+
+    Only when they agree: a tolerance that differs is its own refusal, and accepting one side's
+    would let a build widen what counts as unchanged.
+    """
+    def declared(doc):
+        tol = ((doc.get("result") or {}).get("tolerance") or {}).get("summary") or {}
+        return tol.get(name) if isinstance(tol, dict) else None
+
+    ta, tb = declared(a), declared(b)
+    if ta is None or canonical(ta) != canonical(tb):
+        return None
+    return ta
+
+
+def compare(a, b, overrides=None) -> Comparison:
+    """Compare two receipts: `identical`, `equivalent` or `different`, and what differed.
+
+    Any `refuse` makes it `different`; failing that, any `within` makes it `equivalent`; a
+    `warn` or a `record` never changes the verdict, so two receipts that differ only in when
+    and where they were built are `identical` with the difference still listed.
+
+    `overrides` may change a field's action, under crate's rule: known fields only, an action
+    of refuse, warn or record, and **no `recipe.*` field** -- every recipe field refuses
+    because `recipe_id` covers it, and relaxing one would publish two different recipes as one.
+
+    A null `recipe_id` on either side always refuses: a migrated receipt holds no recipe
+    identity, so neither side can vouch for a recipe it does not have.
+
+    Examples:
+        >>> one = {"output": {}, "recipe": {}, "result": {}, "context": {"time": "t"}}
+        >>> compare(one, one).verdict
+        'identical'
+        >>> other = {**one, "context": {"time": "later"}}
+        >>> c = compare(one, other)
+        >>> c.verdict, c.fields
+        ('identical', [('context.time', 'record')])
+        >>> compare(one, {**one, "recipe": {"seed": 1}}).verdict
+        'different'
+    """
+    for name, doc in (("a", a), ("b", b)):
+        if not isinstance(doc, dict):
+            raise ReceiptError(f"receipt {name} is not a JSON object, got "
+                               f"{type(doc).__name__}")
+    table = register()
+    if overrides:
+        for field, action in overrides.items():
+            if field not in table:
+                raise ReceiptError(f"override names {field!r}, which the register does not "
+                                   f"have")
+            if action not in ("refuse", "warn", "record"):
+                raise ReceiptError(f"override for {field!r} is {action!r}; one of refuse, "
+                                   f"warn, record")
+            if field.startswith("recipe."):
+                raise ReceiptError(f"{field!r} cannot be overridden: every recipe field "
+                                   f"refuses, because recipe_id covers it")
+            table[field] = action
+
+    rows = [{"field": f, "pattern": p, "detail": d, "key": k,
+             "action": table.get(p, "refuse")} for f, p, d, k in _diff(a, b, table)]
+
+    # A migrated receipt: one refusal at recipe.recipe_id whatever the walk said, because a
+    # null id is not a value that can agree with anything.
+    missing_id = [s for s, doc in (("a", a), ("b", b))
+                  if (doc.get("recipe") or {}).get("recipe_id", "absent") is None]
+    if missing_id:
+        rows = [r_ for r_ in rows if r_["pattern"] != "recipe.recipe_id"]
+        rows.append({"field": "recipe.recipe_id", "pattern": "recipe.recipe_id",
+                     "action": "refuse", "key": None,
+                     "detail": f"recipe unknown: {' and '.join(missing_id)} holds no recipe "
+                               f"identity (a migrated receipt)"})
+
+    for row in rows:
+        if row["pattern"] == "result.summary.*":
+            tol = _summary_tolerance(a, b, row["key"])
+            va = ((a.get("result") or {}).get("summary") or {}).get(row["key"])
+            vb = ((b.get("result") or {}).get("summary") or {}).get(row["key"])
+            numbers = all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                          for v in (va, vb))
+            if tol is not None and numbers and abs(va - vb) <= tol:
+                row["action"] = "within"
+                row["detail"] += f"; within {_show(tol)}"
+        elif row["pattern"] == "result.fingerprint.*.sha256":
+            # Settling this as `within` needs both builds' tables re-read, which this mode does
+            # not take. Said in the detail rather than left looking like a plain refusal.
+            row["detail"] = "fingerprints differ (receipts only): " + row["detail"]
+
+    # After the fingerprint rows are settled, because a part is vouched for by its table.
+    def table_agrees(name):
+        if name is None:
+            return False
+        for doc in (a, b):
+            if name not in ((doc.get("result") or {}).get("fingerprint") or {}):
+                return False
+        return all(row["action"] == "within" for row in rows
+                   if row["key"] == name
+                   and row["pattern"].startswith("result.fingerprint.*."))
+
+    for row in rows:
+        if row["pattern"] not in ("result.parts.*.bytes", "result.parts.*.sha256"):
+            continue
+        part = row["key"]
+        names = [((doc.get("result") or {}).get("parts") or {}).get(part, {}).get("table")
+                 for doc in (a, b)]
+        if names[0] is not None and names[0] == names[1] and table_agrees(names[0]):
+            row["action"] = "within"
+            row["detail"] += f"; table {names[0]} agrees"
+        elif names[0] is None or names[0] != names[1]:
+            row["detail"] += "; the file names no table that could vouch for it"
+        else:
+            row["detail"] += f"; table {names[0]} does not agree"
+
+    actions = {row["action"] for row in rows}
+    verdict = "different" if "refuse" in actions else \
+        "equivalent" if "within" in actions else "identical"
+    differences = tuple(
+        Difference(side=row["pattern"].split(".")[0], field=row["field"],
+                   action=row["action"], detail=row["detail"])
+        for row in sorted(rows, key=lambda row: (row["field"].encode("utf-8"),
+                                                 row["action"])))
+    return Comparison(verdict=verdict, mode=MODE, differences=differences)

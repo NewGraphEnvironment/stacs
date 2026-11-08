@@ -204,3 +204,145 @@ def test_the_fingerprint_is_the_hash_of_the_bytes_it_publishes():
     table = _table_from_vector(c["table"])
     assert r.table_fingerprint(table, c["tolerance"]) == hashlib.sha256(
         r.table_canonical(table, c["tolerance"])).hexdigest()
+
+
+# =============================================================================
+# compare.json -- the nine receipt pairs
+# =============================================================================
+
+def _pairs():
+    return {c["name"]: c for c in _cases("compare")}
+
+
+def test_every_compare_case_matches_the_verdict_and_the_exact_field_list():
+    """The half crate's own Python crosscheck does not implement, so these nine pairs are the
+    only check that two implementations of the comparison agree.
+
+    The field list is compared as an ORDERED SEQUENCE, not a set: `a migrated receipt` carries
+    `recipe.inputs` and `recipe.config.settings` twice each, because a collection with two
+    keys missing reports its own path once per key.
+    """
+    bad = []
+    for c in _cases("compare"):
+        got = r.compare(c["a"], c["b"])
+        want = [(d["field"], d["action"]) for d in c["differences"]]
+        if got.verdict != c["verdict"]:
+            bad.append(f"{c['name']}: verdict {got.verdict} != {c['verdict']}")
+        if got.fields != want:
+            bad.append(f"{c['name']} fields:\n  got      {got.fields}\n  expected {want}")
+    assert bad == []
+
+
+def test_a_receipt_compared_with_itself_has_no_differences():
+    c = _pairs()["a receipt and itself"]
+    got = r.compare(c["a"], c["b"])
+    assert (got.verdict, got.differences) == ("identical", ())
+
+
+def test_a_record_difference_does_not_change_the_verdict():
+    """`toolchain only` is `identical` WITH a difference listed. A verdict derived from "are
+    there any differences" would call it different, and every rebuild would read as a change."""
+    c = _pairs()["toolchain only"]
+    got = r.compare(c["a"], c["b"])
+    assert got.verdict == "identical"
+    assert [d.action for d in got.differences] == ["record"]
+
+
+def test_a_part_is_equivalent_only_when_a_table_vouches_for_it():
+    """The two sides of crate's rule, from two vectors that differ in nothing else: the worked
+    case names a table whose fingerprint agrees, so changed bytes are `within`; strip the
+    table and the same changed bytes are `refuse`."""
+    vouched = r.compare(*[_pairs()["worked case: one recipe, km within tolerance"][k]
+                          for k in ("a", "b")])
+    unvouched = r.compare(*[_pairs()["bytes moved in a file that names no table"][k]
+                            for k in ("a", "b")])
+    by_field = {d.field: d for d in vouched.differences}
+    assert by_field["result.parts[access_check.csv].sha256"].action == "within"
+    assert "agrees" in by_field["result.parts[access_check.csv].sha256"].detail
+    by_field = {d.field: d for d in unvouched.differences}
+    assert by_field["result.parts[access_check.csv].sha256"].action == "refuse"
+    assert "names no table" in by_field["result.parts[access_check.csv].sha256"].detail
+    assert (vouched.verdict, unvouched.verdict) == ("equivalent", "different")
+
+
+def test_a_summary_value_is_within_its_tolerance_or_refused():
+    inside = r.compare(*[_pairs()["worked case: one recipe, km within tolerance"][k]
+                         for k in ("a", "b")])
+    outside = r.compare(*[_pairs()["summary value past its tolerance"][k]
+                          for k in ("a", "b")])
+    assert {d.field: d.action for d in inside.differences}["result.summary[km_total]"] == "within"
+    assert {d.field: d.action
+            for d in outside.differences}["result.summary[km_total]"] == "refuse"
+
+
+def test_a_migrated_receipt_can_never_be_identical_or_equivalent():
+    """A null `recipe_id` always refuses: neither side can vouch for a recipe it does not
+    have. Without that rule a migrated receipt whose result happens to match would read as
+    `identical`, which would publish provenance nobody recorded."""
+    c = _pairs()["a migrated receipt"]
+    got = r.compare(c["a"], c["b"])
+    assert got.verdict == "different"
+    recipe_id = [d for d in got.differences if d.field == "recipe.recipe_id"]
+    assert len(recipe_id) == 1 and recipe_id[0].action == "refuse"
+    assert "holds no recipe identity" in recipe_id[0].detail
+    # The MIGRATED side (b: `migrated_from` set, `recipe_id` null) against itself is still
+    # different, because a null id is not a value that can agree with anything. Side a is the
+    # ordinary receipt, and comparing that with itself is `identical` -- which is what makes
+    # this worth asserting on the right side.
+    assert r.compare(c["b"], c["b"]).verdict == "different"
+    assert r.compare(c["a"], c["a"]).verdict == "identical"
+
+
+def test_a_collection_with_two_missing_keys_reports_its_path_twice():
+    """`differences` is a list, not a set."""
+    c = _pairs()["a migrated receipt"]
+    fields = [d.field for d in r.compare(c["a"], c["b"]).differences]
+    assert fields.count("recipe.inputs") == 2
+    assert fields.count("recipe.config.settings") == 2
+
+
+# =============================================================================
+# The register is what decides, and it can be shown deciding
+# =============================================================================
+
+def test_the_register_is_load_bearing_and_not_decoration():
+    """Flip one row's action and the verdict changes. Without this, a comparison with the
+    actions hard-coded in Python would pass every vector above while the vendored register did
+    nothing -- and the next crate release would change the file and not the behaviour."""
+    c = _pairs()["toolchain only"]
+    assert r.compare(c["a"], c["b"]).verdict == "identical"
+    assert r.compare(c["a"], c["b"], {"context.toolchain": "refuse"}).verdict == "different"
+
+
+def test_an_override_must_name_a_known_field_with_a_known_action():
+    c = _pairs()["toolchain only"]
+    with pytest.raises(r.ReceiptError, match="the register does not have"):
+        r.compare(c["a"], c["b"], {"context.nonesuch": "record"})
+    with pytest.raises(r.ReceiptError, match="one of refuse, warn, record"):
+        r.compare(c["a"], c["b"], {"context.time": "within"})
+
+
+def test_no_recipe_field_can_be_overridden():
+    """Every recipe field refuses because `recipe_id` covers it; relaxing one would publish
+    two different recipes as one."""
+    c = _pairs()["another seed"]
+    with pytest.raises(r.ReceiptError, match="cannot be overridden"):
+        r.compare(c["a"], c["b"], {"recipe.seed": "record"})
+
+
+def test_an_unregistered_field_defaults_to_refuse():
+    """A member crate adds in a later version must not be waved through by an older reader."""
+    one = {"output": {}, "recipe": {}, "result": {}, "context": {"time": "t"}}
+    other = {**one, "output": {"something_new": 1}}
+    got = r.compare(one, other)
+    assert got.verdict == "different"
+    assert [(d.field, d.action) for d in got.differences] == \
+        [("output.something_new", "refuse")]
+
+
+def test_the_register_carries_every_action_the_contract_names():
+    table = r.register()
+    assert len(table) >= 40, len(table)
+    assert set(table.values()) == {"refuse", "warn", "record"}
+    # `within` is produced by the comparison, never read from the register.
+    assert "within" not in table.values()
