@@ -224,40 +224,40 @@ item does not have (`result.summary` with its tolerance, `parts.*.table` with bo
 pass. `receipt.compare()` keeps crate's three words for two receipts, which the vectors
 require; **`verify` reports its own ladder and says so in its output.**
 
-- [ ] `same`, `rebuilt`, `changed`, `inconsistent` — `rebuilt` is the case the issue is for
+- [x] `same`, `rebuilt`, `changed`, `inconsistent` — `rebuilt` is the case the issue is for
       (`receipt:recipe_id` agrees on both sides, a mirrored result field differs), and
       `inconsistent` is an item whose own mirrored fields disagree with the receipt it links.
       The output names these as stacs' verdicts, not crate's.
-- [ ] *(review)* A served-side reader: both existing API readers reduce a feature to
+- [x] *(review)* A served-side reader: both existing API readers reduce a feature to
       `body_digest(f)` and discard it, so `fields_serving` returns the mirrored properties per
       id over the existing paging.
-- [ ] *(review)* Resolve the receipt from the item's **asset with role `metadata`** and against
+- [x] *(review)* Resolve the receipt from the item's **asset with role `metadata`** and against
       the item's own URL, not from "`receipt.json` beside the item" — that is a convention, the
       asset link is the contract, and a catalogue with a `receipts/` prefix would break the
       convention silently. It also makes the fixtures expressible: the existing harness writes
       every item flat, so the convention would be one shared receipt for every item.
-- [ ] *(review)* Receipts fetch into their **own** directory: `fetch_bodies` refuses a
+- [x] *(review)* Receipts fetch into their **own** directory: `fetch_bodies` refuses a
       non-empty one, and `fetch_dir` is full by then. An unread receipt raises from the returned
       failed list rather than relying on `fetch_bodies`' own stderr print, which bypasses the
       injected `warn`.
-- [ ] *(review)* Verify the fetched receipt against the receipt asset's `file:checksum` before
+- [x] *(review)* Verify the fetched receipt against the receipt asset's `file:checksum` before
       comparing anything — otherwise there is no way to tell it fetched the receipt the item
       claims.
-- [ ] *(review)* Skip the axis when the collection is not registered, and bound it: "only
+- [x] *(review)* Skip the axis when the collection is not registered, and bound it: "only
       `missing`/`changed`" is a filter, not a bound, and on an unregistered collection every id
       is `missing`. A `missing` id has no served side at all, so it is checked for consistency
       with its own receipt only, and the output says which check ran.
-- [ ] *(review)* Report a summary plus the first five through `warn`, as the DRIFT block does:
+- [x] *(review)* Report a summary plus the first five through `warn`, as the DRIFT block does:
       `_write_list` is a no-op when `out_dir is None`, which is `cmd_verify`'s default, so
       per-item verdicts would otherwise go nowhere in the default invocation. Full lists still
       go to `out_dir` when there is one.
-- [ ] *(review)* `same` on an id that reads `changed` is the common case — a bbox fix changes
+- [x] *(review)* `same` on an id that reads `changed` is the common case — a bbox fix changes
       the body and not the recipe — so it is reported as "the body differs and the recipe does
       not", never as a bare verdict beside a DRIFT line.
-- [ ] Placement: inside `if mode == "verify":`, after the `_write_list` calls and before `rc` is
+- [x] Placement: inside `if mode == "verify":`, after the `_write_list` calls and before `rc` is
       computed. In the shared `drift`/`verify` branch, `drift` would pay for the fetch on ids it
       is about to overwrite, and an unreadable receipt would abort a legitimate registration.
-- [ ] Tests on the existing `file://` bucket + stub API harness, with each item linking its own
+- [x] Tests on the existing `file://` bucket + stub API harness, with each item linking its own
       receipt asset: a positive control (edit one receipt → `changed`, naming the field), a
       rebuilt item (same `recipe_id`, different `file:checksum` → `rebuilt`), an item whose
       mirrored fields contradict its receipt (→ `inconsistent`), and an unreadable receipt

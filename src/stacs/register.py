@@ -26,6 +26,7 @@ Modes:
 - `ids`: register exactly the ids in a file.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -37,13 +38,15 @@ import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from stacs import receipt
 from stacs.catalogue import (_read_url, collection_item_links, fetch_bodies, fetch_key,
                              published_digests)
 from stacs.queryables import (QueryablesError, fragment_digest, parse_queryables,
                               queryables_diff, queryables_document)
 from stacs.validate import audit_items, parse_asset_keys
 from stacs.verify import (PAGE_SIZE, bodies_registered, bodies_serving, collection_state,
-                          collections_listed, content_diff, queryables_served)
+                          collections_listed, content_diff, items_serving,
+                          queryables_served)
 
 MODES = ("verify", "drift", "all", "ids")
 
@@ -640,6 +643,24 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
                 _write_list(out_dir, "queryables_changed.txt", q_changed)
             if out_dir is not None:
                 Path(out_dir, "collection_state.txt").write_text(coll_state + "\n")
+
+            # The receipt axis. On `changed` only: that is where "rebuilt or changed?" is the
+            # question, a `missing` id has no served body to compare with, and an unregistered
+            # collection serves nothing -- so there is nothing to be the second side.
+            verdicts = {}
+            if target.require_receipt:
+                if coll_state == "missing":
+                    log("receipts   : skipped, the collection is not registered")
+                elif not changed:
+                    log("receipts   : nothing to compare, no item differs")
+                else:
+                    verdicts = _receipt_verdicts(target, changed, by_id, fetch_dir, work, log)
+                    counted = {v: sum(1 for x in verdicts.values() if x.verdict == v)
+                               for v in receipt.ITEM_VERDICTS}
+                    log("receipts   : " + ", ".join(f"{n} {v}" for v, n in counted.items()))
+            elif mode == "verify":
+                log("receipts   : none declared")
+
             rc = 0
             for ids, what in ((missing, "published item(s) are not registered"),
                               (changed, "registered item(s) differ from the published "
@@ -661,6 +682,26 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
                                             "different definition")):
                 if names:
                     warn(f"DRIFT: {len(names)} {what}: {', '.join(names)}")
+                    rc = 1
+            # Through `warn`, and not only to out_dir: `_write_list` is a no-op when there is
+            # no out_dir, which is the default, so the verdicts would otherwise go nowhere in
+            # the invocation an operator actually types.
+            for verdict, what in (
+                    ("inconsistent", "item(s) disagree with the receipt they link, so "
+                                     "neither side's provenance can be trusted"),
+                    ("changed", "item(s) name a different recipe: the data changed"),
+                    ("rebuilt", "item(s) were built again from the same recipe"),
+                    ("same", "item(s) differ in something the receipt does not describe")):
+                hit = sorted(i for i, v in verdicts.items() if v.verdict == verdict)
+                _write_list(out_dir, f"receipts_{verdict}.txt", hit)
+                if not hit:
+                    continue
+                warn(f"RECEIPTS: {len(hit)} {what}")
+                for item_id in hit[:5]:
+                    v = verdicts[item_id]
+                    warn(f"  {item_id}\t{'; '.join(v.notes)}"
+                         + (f" [{', '.join(v.fields)}]" if v.fields else ""))
+                if verdict != "same":
                     rc = 1
             if rc == 0:
                 # Absence of drift is an affirmative result and is said out loud.
@@ -759,6 +800,70 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
                 "collection.json changed")
         log(f"DONE: {len(todo)} item(s) registered to {target.collection_id}")
         return 0
+
+
+def _receipt_verdicts(target, ids, by_id, fetch_dir, work, log) -> dict:
+    """{id: ItemVerdict} for ids whose published and served bodies differ.
+
+    Run on the `changed` set only, which is where "was it rebuilt or did it change?" is the
+    question. A `missing` id has no served body to compare with, and an unregistered
+    collection serves nothing at all, so the caller skips those rather than reporting a
+    verdict about one side.
+
+    Receipts fetch into their OWN directory: `fetch_bodies` refuses a non-empty one, and the
+    item fetch has already filled its own. An unread receipt is raised here rather than
+    reported, because a receipt that could not be read must never read as agreement -- and
+    `fetch_bodies` prints its failures straight to stderr, bypassing the caller's `warn`.
+    """
+    published, urls = {}, {}
+    for item_id in ids:
+        path = fetch_dir / f"{fetch_key(by_id[item_id])}.json"
+        try:
+            with open(path, encoding="utf-8") as fh:
+                doc = json.load(fh)
+        except (OSError, ValueError) as e:
+            raise RegisterError(f"could not read the published body of {item_id!r}: {e}") from e
+        href = receipt.receipt_href(doc)
+        if href is None:
+            raise RegisterError(
+                f"{item_id!r} links no receipt (an asset with role "
+                f"{receipt.RECEIPT_ROLE!r} and type application/json), and this catalogue "
+                f"declares that it carries receipts")
+        published[item_id] = doc
+        # Against the item's own URL: a receipt href is relative to the item, and resolving it
+        # against the collection would read another directory's receipt.
+        urls[item_id] = urllib.parse.urljoin(by_id[item_id], href)
+
+    receipt_dir = work / "receipts"
+    receipt_dir.mkdir()
+    log(f"fetching {len(urls)} receipt(s) ...")
+    failed = fetch_bodies(list(urls.values()), receipt_dir, workers=target.fetch_workers)
+    if failed:
+        raise RegisterError(f"{len(failed)} receipt(s) could not be read, e.g. {failed[:3]}: "
+                            f"an unread receipt is an error, never agreement")
+
+    try:
+        served = items_serving(list(ids), target.collection_id, target.api,
+                               chunk=target.chunk)
+    except (RuntimeError, ValueError) as e:
+        raise RegisterError(f"could not read the served bodies: {e}") from e
+
+    out = {}
+    for item_id in ids:
+        path = receipt_dir / f"{fetch_key(urls[item_id])}.json"
+        data = path.read_bytes()
+        try:
+            doc = receipt.read(path)
+        except receipt.ReceiptError as e:
+            raise RegisterError(f"the receipt of {item_id!r} ({urls[item_id]}): {e}") from e
+        if item_id not in served:
+            # It was in `changed`, so the API served it moments ago.
+            raise RegisterError(f"{item_id!r} differs from the API but the API no longer "
+                                f"serves it; re-run")
+        out[item_id] = receipt.item_verdict(
+            published[item_id], served[item_id], doc,
+            receipt_sha256=hashlib.sha256(data).hexdigest())
+    return out
 
 
 def _register_queryables(target, log) -> None:

@@ -218,6 +218,42 @@ def bodies_serving(ids, collection_id: str, api: str, chunk: int = 500,
     return got
 
 
+def items_serving(ids, collection_id: str, api: str, chunk: int = 500,
+                  session=None) -> dict[str, dict]:
+    """{id: feature} for those of these ids the API serves IN THIS COLLECTION.
+
+    `bodies_serving` reduces each feature to a digest and discards it, which is right for
+    comparing a whole catalogue: the bodies never all have to be in memory at once. A check
+    on the FIELDS of a served item needs the item, so this keeps it.
+
+    Deliberately not the basis of `bodies_serving`: holding every body of a 100,000-item
+    catalogue to hash them one at a time would trade a bounded memory cost for an unbounded
+    one. Call this on a subset.
+
+    Same guards, for the same reasons: an id the API does not serve is absent rather than an
+    error, so the caller compares key sets; a repeated id is refused; and a server that caps
+    `limit` below the chunk is refused rather than read as "not served".
+    """
+    session = session or requests.Session()
+    url = f"{api.rstrip('/')}/search"
+    ids = list(ids)
+    got: dict[str, dict] = {}
+    for i in range(0, len(ids), chunk):
+        batch = ids[i:i + chunk]
+        page = _post(session, url, search_body(batch, collection_id, ids_only=False))
+        feats = page.get("features") if isinstance(page, dict) else None
+        if not isinstance(feats, list):
+            raise RuntimeError("/search returned no feature list")
+        if any(l.get("rel") == "next" for l in page.get("links", [])):
+            raise RuntimeError(f"/search paged a {len(batch)}-id lookup: the server "
+                               f"caps limit below the chunk size; lower it")
+        for f in feats:
+            if f["id"] in got:
+                raise RuntimeError(f"/search returned {f['id']!r} more than once")
+            got[f["id"]] = f
+    return got
+
+
 def ids_diff(published, registered) -> tuple[list[str], list[str]]:
     """(missing, orphaned) — reported in BOTH directions.
 

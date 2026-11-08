@@ -25,6 +25,7 @@ from pathlib import Path
 
 import pytest
 
+from stacs import receipt
 from stacs import register as reg
 
 COLL = "any-collection"
@@ -1801,3 +1802,189 @@ def test_a_target_refuses_a_non_boolean_require_receipt(bad):
 def test_a_target_accepts_the_two_real_booleans():
     for value in (True, False):
         _target(require_receipt=value).check()
+
+
+# =============================================================================
+# The receipt axis in verify -- stacs' own verdicts, on the `changed` set
+# =============================================================================
+
+TIME = "2026-11-08T00:00:00Z"
+CK_A = receipt.multihash("c" * 64)
+CK_B = receipt.multihash("d" * 64)
+
+
+def _receipt_doc(seed=None, time=TIME):
+    """A receipt this package would publish. `seed` changes the recipe, and therefore the
+    recipe_id, which is how a fixture gets two different recipes."""
+    return {"output": {"name": "an-output", "scope": None, "receipt_version": "1.0.0",
+                       "schema": None},
+            "recipe": {"code": {}, "config": {"files": {}, "settings": {}},
+                       "inputs": {}, "seed": seed, "recipe_id": None},
+            "result": {"fingerprint": {}, "parts": {}, "summary": {},
+                       "tolerance": {"tables": {}, "summary": {}}},
+            "context": {"time": time}}
+
+
+def _receipt_bytes(tmp_path, doc):
+    """(bytes, digest, recipe_id) for a receipt as `write` produces it.
+
+    The recipe_id is read BACK rather than taken from `doc`: `write` recomputes it from the
+    recipe, which is the whole point of it doing so. A fixture that asserted its own id would
+    be testing the constant it wrote, and an item claiming an id the receipt does not have is
+    exactly what `inconsistent` is for -- which is how this fixture was wrong first time, and
+    the code was right.
+    """
+    scratch = tmp_path / "scratch_receipt.json"
+    digest = receipt.write(doc, scratch)
+    data = scratch.read_bytes()
+    recipe_id = receipt.read(scratch)["recipe"]["recipe_id"]
+    scratch.unlink()
+    return data, digest, recipe_id
+
+
+def _item_with_receipt(item_id, digest, recipe_id, data_checksum=CK_A, time=TIME):
+    item = _item(item_id)
+    item["stac_extensions"] = [receipt.FILE_EXTENSION_URL, receipt.PROCESSING_EXTENSION_URL,
+                               receipt.EXTENSION_URL]
+    item["properties"] = {"receipt:recipe_id": recipe_id, "processing:datetime": time}
+    item["assets"]["data"]["file:checksum"] = data_checksum
+    # Its OWN href, not a shared "receipt.json": the harness publishes every item flat, so a
+    # filename convention would give every item one receipt and the fixtures could not tell
+    # the verdicts apart. The contract is the asset link anyway.
+    item["assets"]["receipt"] = {"href": f"{item_id}_receipt.json",
+                                 "type": "application/json", "roles": ["metadata"],
+                                 "file:checksum": receipt.multihash(digest)}
+    return item
+
+
+def _receipt_run(env, api, published, served, data=None, **target):
+    """Publish `published` with `data` as every item's receipt, serve `served`, run verify."""
+    def write_receipts(bucket):
+        for doc in published:
+            (bucket / f"{doc['id']}_receipt.json").write_bytes(data)
+
+    _in_sync(api, served)
+    return _run(env, "verify", api.url, items=published, transport=None,
+                before=write_receipts if data is not None else None,
+                require_receipt=True, **target)
+
+
+def _edited(item):
+    """The same item with a change the receipt says nothing about."""
+    other = json.loads(json.dumps(item))
+    other["properties"]["an_unrelated_edit"] = 1
+    return other
+
+
+def test_an_item_whose_recipe_is_unchanged_is_reported_as_a_body_only_difference(env, api):
+    """The common case the review named: a bbox fix or a link edit changes the body and not
+    the recipe. An operator must not read `same` as "no drift" -- the DRIFT line is still
+    there -- so the wording says which axis agreed."""
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    published = [_item_with_receipt("a0", digest, rid)]
+    r = _receipt_run(env, api, published, [_edited(published[0])], data=data)
+    assert "1 same" in r.out, r.out
+    assert "differ in something the receipt does not describe" in r.err, r.err
+    assert "DRIFT: 1 registered item(s) differ" in r.err, r.err
+
+
+def test_an_item_built_again_from_one_recipe_is_reported_as_rebuilt(env, api):
+    """THE case the issue exists for: told apart from a change, which a body digest cannot
+    do."""
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    published = [_item_with_receipt("a0", digest, rid, data_checksum=CK_A)]
+    served = [_item_with_receipt("a0", digest, rid, data_checksum=CK_B)]
+    r = _receipt_run(env, api, published, served, data=data)
+    assert "1 rebuilt" in r.out, r.out
+    assert "built again" in r.err, r.err
+    assert "assets[data].file:checksum" in r.err, r.err
+    assert r.rc == 1
+
+
+def test_an_item_whose_recipe_moved_is_reported_as_changed(env, api):
+    """The served item names a recipe the published one does not: the data changed."""
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    _, _, other_rid = _receipt_bytes(env, _receipt_doc(seed=7))
+    assert other_rid != rid, "a different recipe must give a different id"
+    published = [_item_with_receipt("a0", digest, rid)]
+    served = [_item_with_receipt("a0", digest, other_rid)]
+    r = _receipt_run(env, api, published, served, data=data)
+    assert "1 changed" in r.out, r.out
+    assert "name a different recipe" in r.err, r.err
+    assert r.rc == 1
+
+
+def test_an_item_that_claims_a_recipe_its_receipt_does_not_have_is_inconsistent(env, api):
+    """Never reported as agreement: if the item and the receipt beside it were written by
+    things that did not read each other, neither side's provenance means anything. This is the
+    shape a hand-written fixture takes by accident, which is how it was found."""
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    _, _, other_rid = _receipt_bytes(env, _receipt_doc(seed=7))
+    published = [_item_with_receipt("a0", digest, other_rid)]
+    r = _receipt_run(env, api, published, [_edited(published[0])], data=data)
+    assert "1 inconsistent" in r.out, r.out
+    assert "disagree with the receipt they link" in r.err, r.err
+    assert r.rc == 1
+
+
+def test_a_receipt_whose_digest_does_not_match_the_item_is_inconsistent(env, api):
+    """The check that the receipt read is the one the item claims. Without it, a receipt
+    fetched by convention could belong to anything."""
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    published = [_item_with_receipt("a0", "e" * 64, rid)]  # a checksum for other bytes
+    r = _receipt_run(env, api, published, [_edited(published[0])], data=data)
+    assert "1 inconsistent" in r.out, r.out
+    assert "hashes to" in r.err, r.err
+    assert r.rc == 1
+
+
+def test_a_receipt_that_cannot_be_read_is_an_error_and_never_agreement(env, api):
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    published = [_item_with_receipt("a0", digest, rid)]
+    r = _receipt_run(env, api, published, [_edited(published[0])])  # no receipts published
+    assert r.rc == 1
+    assert "could not be read" in r.err and "never agreement" in r.err, r.err
+
+
+def test_an_item_that_links_no_receipt_is_refused_when_the_catalogue_declares_them(env, api):
+    published = [_item("a0")]
+    r = _receipt_run(env, api, published, [_edited(published[0])])
+    assert r.rc == 1
+    assert "links no receipt" in r.err, r.err
+
+
+def test_the_axis_is_skipped_when_nothing_differs(env, api):
+    """No `changed` id is no question to ask, and it must not cost a fetch."""
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    published = [_item_with_receipt("a0", digest, rid)]
+    r = _receipt_run(env, api, published, published, data=data)
+    assert "nothing to compare" in r.out, r.out
+    assert r.rc == 0, r.all
+
+
+def test_the_axis_is_skipped_when_the_collection_is_not_registered(env, api):
+    """Every id reads `missing` then, so there is no served side to be the other half -- and
+    on a 102,460-item catalogue the fetch would be the whole catalogue over again."""
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    published = [_item_with_receipt("a0", digest, rid)]
+    api.collection = None
+    api.items = {}
+    r = _run(env, "verify", api.url, items=published, transport=None, require_receipt=True)
+    assert "skipped, the collection is not registered" in r.out, r.out
+
+
+def test_a_catalogue_that_declares_no_receipts_says_so(env, api):
+    """Said out loud, like the asset policy: a run that checked nothing must not read as a
+    checked pass."""
+    r = _run(env, "verify", api.url, items=_items(1), transport=None)
+    assert "receipts   : none declared" in r.out, r.out
+
+
+def test_the_verdict_lists_are_written_to_the_out_dir(env, api):
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    published = [_item_with_receipt("a0", digest, rid, data_checksum=CK_A)]
+    served = [_item_with_receipt("a0", digest, rid, data_checksum=CK_B)]
+    out_dir = env / "out"
+    _receipt_run(env, api, published, served, data=data, out_dir=str(out_dir))
+    assert (out_dir / "receipts_rebuilt.txt").read_text().split() == ["a0"]
+    assert (out_dir / "receipts_changed.txt").read_text() == ""

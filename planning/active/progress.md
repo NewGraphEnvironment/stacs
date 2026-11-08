@@ -105,3 +105,31 @@
     value is refused: a string is truthy, so `require_receipt = "false"` would turn the check
     on while reading as off. `load collection` does not take the flag — a collection body
     carries no receipt fields, and a flag accepted there would read as a check that passed.
+- **Phase 6.** `verify.items_serving` (the reader the review showed was missing — both
+  existing API readers reduce a feature to a digest and discard it), `receipt.item_verdict`
+  with stacs' own four-word ladder, and `register._receipt_verdicts` wired into the verify
+  branch after the id lists are written.
+  - The axis runs on the **`changed`** set only, which is where "rebuilt or changed?" is the
+    question; it is skipped, out loud, when nothing differs and when the collection is not
+    registered (every id would read `missing`, and there is no served side at all).
+  - The receipt is resolved from the item's asset with role `metadata` and against the item's
+    own URL, and the receipt fetched is hashed and checked against that asset's
+    `file:checksum` — otherwise a receipt read by convention could belong to anything.
+  - Verdicts are reported through `warn` as a summary plus the first five, not only to
+    `out_dir`, which is `None` by default. `same` says "the body differs and the recipe does
+    not" rather than reading as no drift beside its own DRIFT line.
+  - 11 end-to-end tests on the existing `file://` bucket and stub API, each item linking its
+    own receipt.
+  - **The fixtures were wrong first time, and the code was right.** They hand-wrote
+    `recipe_id = "a" * 64` into both the receipt and the item, but `write` **recomputes**
+    `recipe_id` from the recipe — so the published receipt carried the real id while the item
+    claimed the constant, and the run correctly reported `inconsistent`. The fixtures now read
+    the id back out of the written receipt, and the accidental shape became a test of its own:
+    an item claiming a recipe its receipt does not have.
+  - **The mutation check took three attempts to run honestly.** First attempt: the heredoc
+    never applied the edit, so a green run meant nothing. Second: the mutant was present but
+    `-k receipt` does not match `..._reported_as_rebuilt` or `..._reported_as_changed`, so the
+    selection skipped exactly the tests the mutation targets — green again. Third, with
+    `grep -c MUTANT` confirming the mutant and the whole file selected: three tests red.
+    Two lessons, both already in the conventions and both worth the scar — confirm the mutant
+    is in the file, and confirm the selection contains the tests it should break.

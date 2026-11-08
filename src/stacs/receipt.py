@@ -1186,3 +1186,130 @@ def item_problems(item) -> list:
         problems.append(f"no asset links the receipt (role {RECEIPT_ROLE!r}, type "
                         f"application/json)")
     return problems
+
+
+# =============================================================================
+# One item's verdict -- stacs' ladder, NOT crate's
+# =============================================================================
+
+# Deliberately not `identical` / `equivalent` / `different`. Those are `compare`'s, for two
+# receipts, and crate's register decides them. Here there is one receipt and a five-field
+# projection of it on each side, where four of those fields `refuse` and the fifth is `record`
+# -- so crate's `equivalent` is unreachable and its `identical` would have to cover a rebuild.
+# Borrowing the words would make a stacs verdict read as a crate verdict and mean something
+# else, which is worse than having four words of our own.
+ITEM_VERDICTS = ("same", "rebuilt", "changed", "inconsistent")
+
+# The mirrored fields, and whether a difference in one means the recipe moved or only the
+# bytes. `receipt:recipe_id` is the recipe; the rest are what the recipe produced.
+_IDENTITY_PROPERTY = "receipt:recipe_id"
+_RESULT_ASSET_FIELDS = ("file:checksum", "file:size")
+
+
+@dataclass(frozen=True)
+class ItemVerdict:
+    """What a receipt says about one item whose published and served bodies differ.
+
+    - `same`: every mirrored field agrees on both sides and with the receipt, so whatever
+      changed in the body is outside what the receipt describes -- a bbox correction, a link.
+    - `rebuilt`: the recipe is the same on both sides and a result field moved, so the item
+      was built again from the same inputs.
+    - `changed`: the recipe itself differs between the two sides.
+    - `inconsistent`: an item disagrees with the receipt it links, so neither side's
+      provenance can be trusted. Never reported as agreement.
+    """
+    verdict: str
+    fields: tuple
+    notes: tuple
+
+    @property
+    def ok(self) -> bool:
+        """`same` is the only verdict that is not drift on this axis."""
+        return self.verdict == "same"
+
+
+def _mirrored(item) -> dict:
+    """The mirrored identity fields of an item, flattened to one comparable mapping."""
+    out = {}
+    properties = item.get("properties") if isinstance(item.get("properties"), dict) else {}
+    for key in (_IDENTITY_PROPERTY, "processing:datetime", "processing:software"):
+        if key in properties:
+            out[f"properties.{key}"] = properties[key]
+    for key, asset in (item.get("assets") or {}).items():
+        if not isinstance(asset, dict):
+            continue
+        for field_name in _RESULT_ASSET_FIELDS:
+            if field_name in asset:
+                out[f"assets[{key}].{field_name}"] = asset[field_name]
+    return out
+
+
+def item_verdict(published, served, receipt, receipt_sha256=None) -> ItemVerdict:
+    """Compare an item's published and served bodies through the receipt it links.
+
+    `receipt_sha256` is the digest of the receipt bytes as fetched. Given, it is checked
+    against the published item's receipt asset, which is the only way to tell that the receipt
+    read is the one the item claims -- a receipt fetched by a filename convention could belong
+    to anything.
+
+    The receipt is what makes this more than a field diff: an item whose mirrored fields do not
+    match the receipt beside it is `inconsistent` whatever the two sides agree on.
+
+    Examples:
+        >>> item = {"properties": {"receipt:recipe_id": "a" * 64}}
+        >>> r = {"recipe": {"recipe_id": "a" * 64}, "result": {}, "context": {}, "output": {}}
+        >>> item_verdict(item, item, r).verdict
+        'same'
+        >>> moved = {"properties": {"receipt:recipe_id": "b" * 64}}
+        >>> item_verdict(item, moved, r).verdict
+        'changed'
+    """
+    for name, doc in (("published", published), ("served", served)):
+        if not isinstance(doc, dict):
+            raise ReceiptError(f"the {name} item is not a JSON object, got "
+                               f"{type(doc).__name__}")
+    notes = []
+
+    if receipt_sha256 is not None:
+        asset_digest = None
+        for asset in (published.get("assets") or {}).values():
+            if isinstance(asset, dict) and RECEIPT_ROLE in (asset.get("roles") or []) \
+                    and asset.get("type") == "application/json":
+                asset_digest = asset.get("file:checksum")
+        want = multihash(receipt_sha256)
+        if asset_digest is not None and asset_digest != want:
+            return ItemVerdict("inconsistent", ("assets[receipt].file:checksum",),
+                               (f"the receipt fetched hashes to {want}, and the item's "
+                                f"receipt asset claims {asset_digest}",))
+        if asset_digest is None:
+            notes.append("the item's receipt asset carries no file:checksum, so the receipt "
+                         "read cannot be tied to it")
+
+    # The published item against the receipt it links. A mirrored field is a copy of the
+    # receipt, so a disagreement means one of the two was written by something that did not
+    # read the other.
+    claimed = stac_fields(receipt)
+    disagree = []
+    properties = published.get("properties") if isinstance(published.get("properties"),
+                                                           dict) else {}
+    for key, value in claimed["properties"].items():
+        if key in properties and canonical(properties[key]) != canonical(value):
+            disagree.append(f"properties.{key}")
+    if disagree:
+        return ItemVerdict("inconsistent", tuple(sorted(disagree)),
+                           ("the published item's fields differ from the receipt it links",))
+
+    a, b = _mirrored(published), _mirrored(served)
+    differing = tuple(sorted(
+        key for key in set(a) | set(b)
+        if key not in a or key not in b or canonical(a[key]) != canonical(b[key])))
+    if not differing:
+        return ItemVerdict("same", (),
+                           tuple(notes) + ("the body differs and the recipe does not: "
+                                           "whatever changed is outside the receipt",))
+    identity = f"properties.{_IDENTITY_PROPERTY}"
+    if identity in differing:
+        return ItemVerdict("changed", differing,
+                           tuple(notes) + ("the two sides name different recipes",))
+    return ItemVerdict("rebuilt", differing,
+                       tuple(notes) + ("one recipe, different output: built again",))
