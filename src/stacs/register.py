@@ -855,14 +855,16 @@ def _receipt_verdicts(target, ids, by_id, fetch_dir, work, log) -> dict:
             # item fetch has already filled its own.
             receipt_dir = work / f"receipts_{start}"
             receipt_dir.mkdir()
-            log(f"fetching {len(urls)} receipt(s) ...")
+            # The DEDUPED count, which is what is actually fetched: logging the item count
+            # here was the very number round 2b's finding was about (round 3).
+            wanted = sorted(set(urls.values()))
+            log(f"fetching {len(wanted)} receipt(s) for {len(urls)} item(s) ...")
             # DEDUPED: two items may legitimately link one receipt, and this is the first
             # call site in the package whose URL list can repeat. Two workers for one URL
             # write the same `.part` path and race the rename, so the loser reports the URL
             # as failed although the body is correctly on disk -- and every item linking it
             # then read `inconsistent`, on good data (round 2b, measured 5/5).
-            failed = set(fetch_bodies(sorted(set(urls.values())), receipt_dir,
-                                      workers=target.fetch_workers))
+            failed = set(fetch_bodies(wanted, receipt_dir, workers=target.fetch_workers))
             try:
                 served = items_serving(list(published), target.collection_id, target.api,
                                        chunk=target.chunk)
@@ -891,9 +893,28 @@ def _receipt_verdicts(target, ids, by_id, fetch_dir, work, log) -> dict:
                     # answer going stale, not this item's provenance.
                     raise RegisterError(f"{item_id!r} differs from the API but the API no "
                                         f"longer serves it; re-run")
-                out[item_id] = receipt.item_verdict(
-                    published[item_id], served[item_id], doc,
-                    receipt_sha256=hashlib.sha256(data).hexdigest())
+                try:
+                    out[item_id] = receipt.item_verdict(
+                        published[item_id], served[item_id], doc,
+                        receipt_sha256=hashlib.sha256(data).hexdigest())
+                except receipt.ReceiptError as e:
+                    # INSIDE the guard. `item_verdict` raises on input `read` accepts -- a
+                    # non-hex recipe_id, a non-ISO context.time, a NaN in a mirrored property
+                    # (json.load takes those). ReceiptError subclasses ValueError, so it
+                    # escaped `run`'s `except RegisterError` to exit 2, naming neither item
+                    # nor URL and discarding the drift lists already computed (round 3).
+                    out[item_id] = receipt.ItemVerdict(
+                        "inconsistent", (),
+                        (f"its receipt or body could not be compared: {e}",))
+    # Every id gets a verdict, or the counts and the lists under-report without saying so --
+    # the same shape as the defects these reviews kept finding, one level up. Worth asserting
+    # rather than reading, because an id dropped between batches would simply be absent from
+    # a summary that still looks complete.
+    missing = sorted(set(ids) - set(out))
+    if missing:
+        raise RegisterError(f"the receipt axis produced no verdict for {len(missing)} id(s), "
+                            f"e.g. {missing[:3]}: a missing verdict would under-report "
+                            f"silently")
     return out
 
 

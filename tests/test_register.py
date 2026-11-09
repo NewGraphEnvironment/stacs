@@ -2060,3 +2060,31 @@ def test_fetch_bodies_refuses_a_repeated_url_rather_than_reporting_a_false_failu
     out.mkdir()
     with pytest.raises(ValueError, match="appear more than once"):
         fetch_bodies([src.as_uri(), src.as_uri()], out)
+
+
+def test_every_changed_id_gets_a_verdict_across_batches(env, api, monkeypatch):
+    """The post-condition on the aggregate, asserted because the batching makes it worth
+    asserting rather than reading: an id dropped between batches would be absent from a
+    summary that still looked complete -- the same shape as the defects the reviews kept
+    finding, one level up.
+
+    `chunk=2` over five changed items exercises three batches; the suite otherwise only ever
+    runs one.
+    """
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    published, served = [], []
+    for i in range(5):
+        published.append(_item_with_receipt(f"a{i}", digest, rid, data_checksum=CK_A))
+        served.append(_item_with_receipt(f"a{i}", digest, rid, data_checksum=CK_B))
+
+    def write_receipts(bucket):
+        for doc in published:
+            (bucket / f"{doc['id']}_receipt.json").write_bytes(data)
+
+    _in_sync(api, served)
+    r = _run(env, "verify", api.url, items=published, transport=None,
+             before=write_receipts, require_receipt=True, chunk=2)
+    assert "5 rebuilt" in r.out, r.out
+    assert "0 inconsistent" in r.out, r.out
+    # Three batches, each fetching its own receipts.
+    assert r.out.count("receipt(s) for") == 3, r.out

@@ -245,3 +245,17 @@
   `receipt.VERDICT_NODES`, and round 3's classification of every `_mapping`/`keys()` site by
   its consumer's default — all 8 agreement-default sites now refuse or are total.
   Suite: 813 passed.
+- **A faithfulness failure of my own, caught by running the code rather than reading my
+  commit.** The commit for round 3 (`df872c4`) claimed three fixes that were **not in the
+  tree**: the deduped fetch log count, the `except receipt.ReceiptError` guard around
+  `item_verdict`, and the O(n) duplicate scan. The script that applied them aborted on a later
+  needle, and because each file is written only after all of its needles match, that file's
+  edits were discarded — silently, while the commit message asserted them. Found when a new
+  test's assertion on the log text failed and the log showed the old wording.
+  - Applied for real, each one verified present by grep **before** committing, and the dedupe
+    measured at 0.005 s for 100,000 URLs against the 67 s round 3 measured.
+  - The lesson is the one this branch keeps relearning in a new costume: **a claim needs its
+    own check.** A commit message is a claim about a tree, and nothing verified it.
+  - Also added: a post-condition that `_receipt_verdicts` returns a verdict for every id it
+    was given, so an id dropped between batches cannot be absent from a summary that still
+    looks complete. Suite: 814 passed.

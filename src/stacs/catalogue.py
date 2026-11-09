@@ -168,7 +168,13 @@ def fetch_bodies(urls, out_dir, workers: int = 32, retries: int = 3,
     # failure for a body that is correctly on disk. Refused rather than deduped here, because
     # a caller that did not mean to repeat a URL has a bug of its own; `_receipt_verdicts`
     # dedupes before calling, where repetition is legitimate (round 2b).
-    repeated = sorted({u for u in urls if urls.count(u) > 1})
+    # Counted once, not `urls.count(u)` per element: that is O(n^2), measured at 2.6 s for
+    # 20,000 URLs and about 67 s of pure CPU before the first fetch on the 102,460-item
+    # catalogue this function is sized for (round 3).
+    seen, dupes = set(), set()
+    for u in urls:
+        (dupes if u in seen else seen).add(u)
+    repeated = sorted(dupes)
     if repeated:
         raise ValueError(f"{len(repeated)} URL(s) appear more than once, e.g. "
                          f"{repeated[:3]}: one worker per URL would race the same file")
