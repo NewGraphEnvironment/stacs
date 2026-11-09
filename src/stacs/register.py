@@ -26,6 +26,7 @@ Modes:
 - `ids`: register exactly the ids in a file.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -37,13 +38,15 @@ import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from stacs import receipt
 from stacs.catalogue import (_read_url, collection_item_links, fetch_bodies, fetch_key,
                              published_digests)
 from stacs.queryables import (QueryablesError, fragment_digest, parse_queryables,
                               queryables_diff, queryables_document)
 from stacs.validate import audit_items, parse_asset_keys
 from stacs.verify import (PAGE_SIZE, bodies_registered, bodies_serving, collection_state,
-                          collections_listed, content_diff, queryables_served)
+                          collections_listed, content_diff, items_serving,
+                          queryables_served)
 
 MODES = ("verify", "drift", "all", "ids")
 
@@ -123,6 +126,10 @@ class Target:
     transport: Transport | None = None
     require_asset: str | None = None
     forbid_assets: list[str] = field(default_factory=list)
+    # Declared here rather than only on the audit call, because `verify` reaches the catalogue
+    # through this object alone: without the field it could not tell a catalogue that carries
+    # receipts from one that does not, and would have to guess from the items.
+    require_receipt: bool = False
     queryables: dict[str, dict] = field(default_factory=dict)
     page_size: int = PAGE_SIZE
     chunk: int = 500
@@ -145,6 +152,10 @@ class Target:
             # An empty key would otherwise disable the requirement while reading as set.
             raise RegisterError(f"require_asset must be an asset key or None, got "
                                 f"{self.require_asset!r}")
+        if not isinstance(self.require_receipt, bool):
+            # A string is truthy, so "false" would turn the check on while reading as off.
+            raise RegisterError(f"require_receipt must be True or False, got "
+                                f"{self.require_receipt!r}")
         try:
             parse_asset_keys(self.forbid_assets)
         except ValueError as e:
@@ -474,8 +485,10 @@ def describe_rules(target: Target) -> str:
     """
     forbid = parse_asset_keys(target.forbid_assets)
     if target.require_asset or forbid:
-        return f"require={target.require_asset or '-'} forbid={','.join(forbid) or '-'}"
-    return "none (no require_asset / forbid_assets declared)"
+        text = f"require={target.require_asset or '-'} forbid={','.join(forbid) or '-'}"
+    else:
+        text = "none (no require_asset / forbid_assets declared)"
+    return f"{text}, receipts required" if target.require_receipt else text
 
 
 def run(target: Target, mode: str, ids_file=None, dryrun: bool = False,
@@ -630,6 +643,24 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
                 _write_list(out_dir, "queryables_changed.txt", q_changed)
             if out_dir is not None:
                 Path(out_dir, "collection_state.txt").write_text(coll_state + "\n")
+
+            # The receipt axis. On `changed` only: that is where "rebuilt or changed?" is the
+            # question, a `missing` id has no served body to compare with, and an unregistered
+            # collection serves nothing -- so there is nothing to be the second side.
+            verdicts = {}
+            if target.require_receipt:
+                if coll_state == "missing":
+                    log("receipts   : skipped, the collection is not registered")
+                elif not changed:
+                    log("receipts   : nothing to compare, no item differs")
+                else:
+                    verdicts = _receipt_verdicts(target, changed, by_id, fetch_dir, work, log)
+                    counted = {v: sum(1 for x in verdicts.values() if x.verdict == v)
+                               for v in receipt.ITEM_VERDICTS}
+                    log("receipts   : " + ", ".join(f"{n} {v}" for v, n in counted.items()))
+            elif mode == "verify":
+                log("receipts   : none declared")
+
             rc = 0
             for ids, what in ((missing, "published item(s) are not registered"),
                               (changed, "registered item(s) differ from the published "
@@ -651,6 +682,26 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
                                             "different definition")):
                 if names:
                     warn(f"DRIFT: {len(names)} {what}: {', '.join(names)}")
+                    rc = 1
+            # Through `warn`, and not only to out_dir: `_write_list` is a no-op when there is
+            # no out_dir, which is the default, so the verdicts would otherwise go nowhere in
+            # the invocation an operator actually types.
+            for verdict, what in (
+                    ("inconsistent", "item(s) disagree with the receipt they link, so "
+                                     "neither side's provenance can be trusted"),
+                    ("changed", "item(s) name a different recipe: the data changed"),
+                    ("rebuilt", "item(s) were built again from the same recipe"),
+                    ("same", "item(s) differ in something the receipt does not describe")):
+                hit = sorted(i for i, v in verdicts.items() if v.verdict == verdict)
+                _write_list(out_dir, f"receipts_{verdict}.txt", hit)
+                if not hit:
+                    continue
+                warn(f"RECEIPTS: {len(hit)} {what}")
+                for item_id in hit[:5]:
+                    v = verdicts[item_id]
+                    warn(f"  {item_id}\t{'; '.join(v.notes)}"
+                         + (f" [{', '.join(v.fields)}]" if v.fields else ""))
+                if verdict != "same":
                     rc = 1
             if rc == 0:
                 # Absence of drift is an affirmative result and is said out loud.
@@ -688,7 +739,8 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
         todo_paths = [str(fetch_dir / f"{fetch_key(h)}.json") for _, h in todo_links]
         if todo_paths:
             audit = audit_items(todo_paths, target.collection_id, target.require_asset,
-                                target.forbid_assets, expect_ids=todo)
+                                target.forbid_assets, expect_ids=todo,
+                                require_receipt=target.require_receipt)
             log(f"audit      : {audit.checked} item(s) against {target.collection_id} "
                 f"({audit.rules})")
             if not audit.ok:
@@ -748,6 +800,122 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
                 "collection.json changed")
         log(f"DONE: {len(todo)} item(s) registered to {target.collection_id}")
         return 0
+
+
+def _receipt_verdicts(target, ids, by_id, fetch_dir, work, log) -> dict:
+    """{id: ItemVerdict} for ids whose published and served bodies differ.
+
+    Run on the `changed` set only, which is where "was it rebuilt or did it change?" is the
+    question. A `missing` id has no served body to compare with, and an unregistered
+    collection serves nothing at all, so the caller skips those rather than reporting a
+    verdict about one side.
+
+    **In batches**, because `changed` is not bounded -- a publisher-wide rebuild makes it the
+    whole catalogue. One batch's receipts are fetched, compared and released before the next,
+    so neither the fetched bodies nor the served ones are all in memory at once; that is what
+    `items_serving`'s own docstring tells its callers.
+
+    **A receipt that cannot be read marks its own item, and does not end the run.** It is
+    still never agreement -- the item reads `inconsistent`, which sets a non-zero status --
+    but over 10^5 fetches a partial failure is close to certain, and aborting here would throw
+    away a drift answer that was already computed. Raising on the first one also discarded the
+    stderr summary the operator ran `verify` for (round 1).
+    """
+    out, batch_n = {}, max(1, int(target.chunk))
+    ids = list(ids)
+    for start in range(0, len(ids), batch_n):
+        batch = ids[start:start + batch_n]
+        published, urls, unlinked = {}, {}, {}
+        for item_id in batch:
+            path = fetch_dir / f"{fetch_key(by_id[item_id])}.json"
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    doc = json.load(fh)
+            except (OSError, ValueError) as e:
+                # This body is one this run fetched and already digested, so failing to read
+                # it now is the run's problem rather than the item's.
+                raise RegisterError(f"could not read the published body of {item_id!r}: "
+                                    f"{e}") from e
+            href = receipt.receipt_href(doc)
+            if href is None:
+                unlinked[item_id] = (
+                    f"links no receipt (an asset with role {receipt.RECEIPT_ROLE!r} and type "
+                    f"application/json), and this catalogue declares that it carries receipts")
+                continue
+            published[item_id] = doc
+            # Against the item's own URL: a receipt href is relative to the item, and
+            # resolving it against the collection would read another directory's receipt.
+            urls[item_id] = urllib.parse.urljoin(by_id[item_id], href)
+
+        for item_id, why in unlinked.items():
+            out[item_id] = receipt.ItemVerdict("inconsistent", (), (why,))
+
+        if urls:
+            # Its OWN directory, per batch: `fetch_bodies` refuses a non-empty one, and the
+            # item fetch has already filled its own.
+            receipt_dir = work / f"receipts_{start}"
+            receipt_dir.mkdir()
+            # The DEDUPED count, which is what is actually fetched: logging the item count
+            # here was the very number round 2b's finding was about (round 3).
+            wanted = sorted(set(urls.values()))
+            log(f"fetching {len(wanted)} receipt(s) for {len(urls)} item(s) ...")
+            # DEDUPED: two items may legitimately link one receipt, and this is the first
+            # call site in the package whose URL list can repeat. Two workers for one URL
+            # write the same `.part` path and race the rename, so the loser reports the URL
+            # as failed although the body is correctly on disk -- and every item linking it
+            # then read `inconsistent`, on good data (round 2b, measured 5/5).
+            failed = set(fetch_bodies(wanted, receipt_dir, workers=target.fetch_workers))
+            try:
+                served = items_serving(list(published), target.collection_id, target.api,
+                                       chunk=target.chunk)
+            except (RuntimeError, ValueError) as e:
+                raise RegisterError(f"could not read the served bodies: {e}") from e
+
+            for item_id in published:
+                if urls[item_id] in failed:
+                    out[item_id] = receipt.ItemVerdict(
+                        "inconsistent", (),
+                        (f"its receipt could not be read ({urls[item_id]}), so its provenance "
+                         f"cannot be established",))
+                    continue
+                path = receipt_dir / f"{fetch_key(urls[item_id])}.json"
+                try:
+                    data = path.read_bytes()
+                    doc = receipt.read(path)
+                except (OSError, receipt.ReceiptError) as e:
+                    out[item_id] = receipt.ItemVerdict(
+                        "inconsistent", (),
+                        (f"its receipt ({urls[item_id]}) could not be read as a receipt: "
+                         f"{e}",))
+                    continue
+                if item_id not in served:
+                    # It was in `changed`, so the API served it moments ago. That is the run's
+                    # answer going stale, not this item's provenance.
+                    raise RegisterError(f"{item_id!r} differs from the API but the API no "
+                                        f"longer serves it; re-run")
+                try:
+                    out[item_id] = receipt.item_verdict(
+                        published[item_id], served[item_id], doc,
+                        receipt_sha256=hashlib.sha256(data).hexdigest())
+                except receipt.ReceiptError as e:
+                    # INSIDE the guard. `item_verdict` raises on input `read` accepts -- a
+                    # non-hex recipe_id, a non-ISO context.time, a NaN in a mirrored property
+                    # (json.load takes those). ReceiptError subclasses ValueError, so it
+                    # escaped `run`'s `except RegisterError` to exit 2, naming neither item
+                    # nor URL and discarding the drift lists already computed (round 3).
+                    out[item_id] = receipt.ItemVerdict(
+                        "inconsistent", (),
+                        (f"its receipt or body could not be compared: {e}",))
+    # Every id gets a verdict, or the counts and the lists under-report without saying so --
+    # the same shape as the defects these reviews kept finding, one level up. Worth asserting
+    # rather than reading, because an id dropped between batches would simply be absent from
+    # a summary that still looks complete.
+    missing = sorted(set(ids) - set(out))
+    if missing:
+        raise RegisterError(f"the receipt axis produced no verdict for {len(missing)} id(s), "
+                            f"e.g. {missing[:3]}: a missing verdict would under-report "
+                            f"silently")
+    return out
 
 
 def _register_queryables(target, log) -> None:

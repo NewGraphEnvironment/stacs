@@ -535,3 +535,63 @@ def test_the_module_runs_as_a_script():
     r = subprocess.run([sys.executable, "-m", "stacs.cli", "--version"],
                        capture_output=True, text=True)
     assert r.returncode == 0 and r.stdout.startswith("stacs ")
+
+
+# =============================================================================
+# The receipt rule: declared by the catalogue, and a flag that can only add
+# =============================================================================
+
+def test_require_receipt_is_off_unless_declared_or_asked_for():
+    assert cli.merge_receipt_rule({}, False) is False
+    assert cli.merge_receipt_rule({"catalogue": {}}, False) is False
+
+
+def test_the_flag_turns_the_receipt_rule_on():
+    assert cli.merge_receipt_rule({}, True) is True
+
+
+def test_the_config_can_declare_the_receipt_rule():
+    assert cli.merge_receipt_rule({"catalogue": {"require_receipt": True}}, False) is True
+
+
+def test_the_flag_cannot_turn_a_declared_receipt_rule_off():
+    """There is no --no-require-receipt, for the same reason --require-asset cannot replace a
+    declared key: a declared rule is what stops a half-done migration from loading, and a flag
+    that could switch it off would make the declaration advisory."""
+    assert cli.merge_receipt_rule({"catalogue": {"require_receipt": True}}, False) is True
+    assert "--no-require-receipt" not in cli.build_parser().format_help()
+
+
+@pytest.mark.parametrize("declared", ["false", "true", 1, 0, "yes"])
+def test_a_non_boolean_require_receipt_in_the_config_is_refused(declared):
+    """TOML has a real boolean, and a string is truthy: `require_receipt = "false"` would turn
+    the check ON while reading as off."""
+    with pytest.raises(cli.ConfigError, match="must be true or false"):
+        cli.merge_receipt_rule({"catalogue": {"require_receipt": declared}}, False)
+
+
+def test_require_receipt_is_a_config_key_the_reader_accepts(tmp_path):
+    """An unknown key is refused by read_config, so the key has to be registered or a catalogue
+    declaring it could not start."""
+    path = tmp_path / "stacs.toml"
+    path.write_text('[catalogue]\napi = "https://api.example.invalid"\n'
+                    'collection_id = "c"\nbucket_url = "https://b.example.invalid"\n'
+                    "require_receipt = true\n")
+    cfg = cli.read_config(path)
+    assert cli.merge_receipt_rule(cfg, False) is True
+
+
+@pytest.mark.parametrize("command", ["verify", "register", "audit"])
+def test_every_command_that_audits_items_takes_the_flag(command):
+    sub = {a.dest for a in cli.build_parser()._subparsers._group_actions[0]
+           .choices[command]._actions}
+    assert "require_receipt" in sub, sorted(sub)
+
+
+def test_load_items_takes_the_flag_and_load_collection_does_not():
+    """A collection body carries no receipt fields, so the flag would be accepted and ignored
+    there -- which is how a check that never runs reads as a check that passed."""
+    load = cli.build_parser()._subparsers._group_actions[0].choices["load"]
+    kinds = load._subparsers._group_actions[0].choices
+    assert "require_receipt" in {a.dest for a in kinds["items"]._actions}
+    assert "require_receipt" not in {a.dest for a in kinds["collection"]._actions}

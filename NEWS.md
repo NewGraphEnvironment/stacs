@@ -3,6 +3,38 @@
 Versions track the package. A tag is a release consumers can pin with
 `tag = "vX.Y.Z"` in `[tool.uv.sources]`; `pyproject.toml` carries the same version.
 
+## Unreleased
+
+- **Provenance receipts** (#12). `stacs.receipt` reads, writes and compares a provenance
+  receipt, computes a `recipe_id`, fingerprints a table, and maps a receipt onto the
+  identity fields an item mirrors. The contract is crate's, settled in its v0.12.0: the
+  receipt canonical form is plain RFC 8785, kept apart from `verify.canonical_json`, which
+  drops `links` and null members for pgstac's round trip. A `recipe_id` is published, so
+  unlike a body digest its bytes are frozen by the receipt schema version.
+- crate's test vectors run in CI, vendored at tag `v0.12.0` and re-checked against it before
+  pytest: 2,637 number spellings, 10 canonical JSON cases, 7 `recipe_id`s, 13 table
+  fingerprints and 9 receipt comparisons. They are what keeps the two implementations byte
+  for byte alike, and the same step proves each frozen schema URL still serves the vendored
+  bytes.
+- A catalogue may declare `require_receipt = true` under `[catalogue]`, or pass
+  `--require-receipt`. `audit` then refuses an item whose receipt fields are missing or do
+  not hold up, and the check runs before a `register` or `load` write as well, so `audit`
+  cannot refuse what `register` loads.
+- `verify` reports a verdict per item whose published and served bodies differ: `same`,
+  `rebuilt`, `changed` or `inconsistent`, written to `--out-dir` and summarised on stderr.
+  These are stacs' words, not crate's three: with one receipt and the identity fields an item
+  mirrors, crate's `equivalent` cannot arise, and `rebuilt` is the distinction the issue
+  asked for. The receipt is resolved from the item's asset with role `metadata` and its bytes
+  are checked against that asset's `file:checksum`.
+- `verify.items_serving` reads served item bodies rather than reducing each to a digest, for
+  checks on an item's fields. `jsonschema` is now a declared dependency.
+- **Behaviour change:** `catalogue.fetch_bodies` refuses a URL list containing a duplicate.
+  It runs one worker per element and names each file after a digest of its URL, so a repeated
+  URL meant two workers writing one temporary path and racing the rename — the loser reported
+  a failure for a body that was correctly on disk. Every existing caller already deduplicates
+  upstream; a caller that passes a duplicate now gets a `ValueError` instead of a wrong
+  answer.
+
 ## 0.2.0
 
 - **Behaviour change:** `--dryrun` now probes the host, and `register --dryrun` the API as

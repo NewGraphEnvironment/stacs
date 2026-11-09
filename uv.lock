@@ -1364,6 +1364,7 @@ name = "stacs"
 version = "0.2.0"
 source = { editable = "." }
 dependencies = [
+    { name = "jsonschema" },
     { name = "pystac", extra = ["validation"] },
     { name = "requests" },
     { name = "rfc8785" },
@@ -1383,6 +1384,7 @@ docs = [
 
 [package.metadata]
 requires-dist = [
+    { name = "jsonschema", specifier = ">=4.18" },
     { name = "pystac", extras = ["validation"], specifier = ">=1.12" },
     { name = "requests", specifier = ">=2.31" },
     { name = "rfc8785", specifier = ">=0.1.4" },

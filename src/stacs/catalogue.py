@@ -163,6 +163,21 @@ def fetch_bodies(urls, out_dir, workers: int = 32, retries: int = 3,
     """
     out_dir = Path(out_dir)
     urls = list(urls)
+    # One worker per element, and the file name is a digest of the URL, so a repeated URL
+    # means two workers writing one `.part` path and racing the rename: the loser reports a
+    # failure for a body that is correctly on disk. Refused rather than deduped here, because
+    # a caller that did not mean to repeat a URL has a bug of its own; `_receipt_verdicts`
+    # dedupes before calling, where repetition is legitimate (round 2b).
+    # Counted once, not `urls.count(u)` per element: that is O(n^2), measured at 2.6 s for
+    # 20,000 URLs and about 67 s of pure CPU before the first fetch on the 102,460-item
+    # catalogue this function is sized for (round 3).
+    seen, dupes = set(), set()
+    for u in urls:
+        (dupes if u in seen else seen).add(u)
+    repeated = sorted(dupes)
+    if repeated:
+        raise ValueError(f"{len(repeated)} URL(s) appear more than once, e.g. "
+                         f"{repeated[:3]}: one worker per URL would race the same file")
     leftovers = sorted(p.name for p in out_dir.iterdir())
     if leftovers:
         raise ValueError(f"fetch directory {out_dir} is not empty ({len(leftovers)} "

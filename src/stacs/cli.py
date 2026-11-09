@@ -29,7 +29,7 @@ from stacs.validate import audit_items, item_paths_in_dir, parse_asset_keys, val
 # keeps a `password = ...` line from being silently accepted. `[queryables]` is keyed by
 # property name, so its keys are free; `parse_queryables` checks every value instead.
 CONFIG_KEYS = {
-    "catalogue": {"api", "collection_id", "bucket_url"},
+    "catalogue": {"api", "collection_id", "bucket_url", "require_receipt"},
     "assets": {"require", "forbid"},
     "transport": {"host", "db", "env_file", "workdir", "path_prepend", "pg_host",
                   "pg_port", "pg_user", "password_env", "pypgstac"},
@@ -109,6 +109,23 @@ def merge_asset_rules(cfg: dict, require_flag, forbid_flag):
     return require, forbid
 
 
+def merge_receipt_rule(cfg: dict, require_flag) -> bool:
+    """Whether items must carry receipt fields, from config and flag. The flag only adds.
+
+    There is no `--no-require-receipt`, for the reason `merge_asset_rules` refuses a flag that
+    would replace a declared `require`: a declared rule is what stops a half-done migration
+    from loading, and a flag that could switch it off would make the declaration advisory.
+
+    The config value must be a real boolean. A string is truthy, so `require_receipt = "false"`
+    would turn the check ON while reading as off.
+    """
+    declared = cfg.get("catalogue", {}).get("require_receipt", False)
+    if not isinstance(declared, bool):
+        raise ConfigError(f"[catalogue] require_receipt must be true or false, got "
+                          f"{declared!r}")
+    return bool(declared) or bool(require_flag)
+
+
 def _pick(flag, cfg: dict, table: str, key: str, name: str, required=True):
     value = flag if flag is not None else cfg.get(table, {}).get(key)
     if required and (value is None or value == ""):
@@ -138,6 +155,7 @@ def build_transport(args, cfg: dict) -> Transport:
 
 def build_target(args, cfg: dict, needs_transport: bool) -> Target:
     require, forbid = merge_asset_rules(cfg, args.require_asset, args.forbid_asset)
+    receipts = merge_receipt_rule(cfg, getattr(args, "require_receipt", False))
     try:
         queryables = parse_queryables(cfg.get("queryables"))
     except QueryablesError as e:
@@ -151,6 +169,7 @@ def build_target(args, cfg: dict, needs_transport: bool) -> Target:
         transport=build_transport(args, cfg) if needs_transport else None,
         require_asset=require,
         forbid_assets=forbid,
+        require_receipt=receipts,
         queryables=queryables,
         **{k: tuning[k] for k in ("page_size", "chunk", "fetch_workers") if k in tuning},
     )
@@ -199,11 +218,12 @@ def cmd_load(args, cfg) -> int:
                           f"--expect-collection, or collection_id in [catalogue]")
     if args.kind == "items":
         require, forbid = merge_asset_rules(cfg, None, None)
+        receipts = merge_receipt_rule(cfg, getattr(args, "require_receipt", False))
         paths = _paths(args)
         if not paths:
             print("FAIL: no item JSONs to load", file=sys.stderr)
             return 1
-        audit = audit_items(paths, collection, require, forbid)
+        audit = audit_items(paths, collection, require, forbid, require_receipt=receipts)
         print(f"audit   : {audit.checked} item(s) against {collection} ({audit.rules})")
         if not audit.ok:
             for f in audit.failures:
@@ -233,9 +253,11 @@ def cmd_load(args, cfg) -> int:
 
 def cmd_audit(args, cfg) -> int:
     require, forbid = merge_asset_rules(cfg, args.require_asset, args.forbid_asset)
+    receipts = merge_receipt_rule(cfg, getattr(args, "require_receipt", False))
     collection_id = _pick(args.collection_id, cfg, "catalogue", "collection_id",
                           "--collection-id")
-    r = audit_items(_paths(args), collection_id, require, forbid, expect=args.expect)
+    r = audit_items(_paths(args), collection_id, require, forbid, expect=args.expect,
+                    require_receipt=receipts)
     # The rules as APPLIED, from the audit itself, not as passed.
     print(f"checked {r.checked} item(s) against {collection_id} ({r.rules})",
           file=sys.stderr)
@@ -274,6 +296,12 @@ def _transport_flags(p):
     p.add_argument("--db", help="pgstac database name")
 
 
+def _receipt_flag(p):
+    # Add-only, so there is no --no-require-receipt: see merge_receipt_rule.
+    p.add_argument("--require-receipt", action="store_true",
+                   help="refuse an item that carries no valid receipt fields")
+
+
 def _asset_flags(p):
     p.add_argument("--require-asset", action="append",
                    help="an asset key every item must carry (adds to the config; "
@@ -297,6 +325,7 @@ def build_parser() -> argparse.ArgumentParser:
                                    "published; write nothing"))
     _catalogue_flags(p)
     _asset_flags(p)
+    _receipt_flag(p)
     p.add_argument("--out-dir", help="write missing / changed / orphaned id lists here")
     p.set_defaults(fn=cmd_verify)
 
@@ -304,6 +333,7 @@ def build_parser() -> argparse.ArgumentParser:
     _catalogue_flags(p)
     _transport_flags(p)
     _asset_flags(p)
+    _receipt_flag(p)
     p.add_argument("--mode", required=True, choices=[m for m in MODES if m != "verify"])
     p.add_argument("--ids-file", help="for --mode ids: one id per line")
     p.add_argument("--dryrun", action="store_true",
@@ -316,6 +346,7 @@ def build_parser() -> argparse.ArgumentParser:
     li = with_config(lsub.add_parser("items", help="item JSON paths on stdin, one "
                                      "per line"))
     li.add_argument("--dir", help="load every item JSON in this directory instead")
+    _receipt_flag(li)
     lc = with_config(lsub.add_parser("collection", help="one collection.json"))
     lc.add_argument("file")
     for q in (li, lc):
@@ -332,6 +363,7 @@ def build_parser() -> argparse.ArgumentParser:
                                    "collection and the declared asset rules"))
     p.add_argument("--collection-id")
     _asset_flags(p)
+    _receipt_flag(p)
     p.add_argument("--dir", help="directory of item JSONs (default: paths on stdin)")
     p.add_argument("--expect", type=int, help="the number of items there should be")
     p.set_defaults(fn=cmd_audit)

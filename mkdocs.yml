@@ -53,12 +53,14 @@ nav:
   - Home: index.md
   - Configuration: configuration.md
   - Command line: cli.md
+  - Receipts: receipts.md
   - API reference:
       - stacs.verify: reference/verify.md
       - stacs.catalogue: reference/catalogue.md
       - stacs.validate: reference/validate.md
       - stacs.queryables: reference/queryables.md
       - stacs.register: reference/register.md
+      - stacs.receipt: reference/receipt.md
   - Changelog: changelog.md
 
 markdown_extensions:

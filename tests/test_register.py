@@ -25,6 +25,7 @@ from pathlib import Path
 
 import pytest
 
+from stacs import receipt
 from stacs import register as reg
 
 COLL = "any-collection"
@@ -1768,3 +1769,322 @@ def test_a_definition_another_collection_still_serves_but_changed_is_reported(
     msg = reg._others_damage(t, {"stac-other-a": {"lidarbc:delivery": "d1"}})
     assert "stac-other-a (lidarbc:delivery changed)" in msg
     assert reg._others_damage(t, {"stac-other-a": {"lidarbc:delivery": "d2"}}) is None
+
+
+# =============================================================================
+# The receipt rule on a Target -- how `verify` and the pre-write audit see it
+# =============================================================================
+
+def _target(**changes):
+    base = dict(api="http://api.example.invalid", collection_id="any-collection",
+                bucket_url="file:///bucket.example.invalid")
+    return reg.Target(**{**base, **changes})
+
+
+def test_describe_rules_says_when_receipts_are_required():
+    """The banner is read by an operator deciding whether a run checked what they expected,
+    and the no-rules wording is unchanged when they are not required."""
+    assert reg.describe_rules(_target()) == \
+        "none (no require_asset / forbid_assets declared)"
+    assert reg.describe_rules(_target(require_receipt=True)) == \
+        "none (no require_asset / forbid_assets declared), receipts required"
+    assert reg.describe_rules(_target(require_asset="data", require_receipt=True)) == \
+        "require=data forbid=-, receipts required"
+
+
+@pytest.mark.parametrize("bad", ["false", "true", 1, 0, None])
+def test_a_target_refuses_a_non_boolean_require_receipt(bad):
+    """A string is truthy, so "false" would turn the check on while reading as off."""
+    with pytest.raises(reg.RegisterError, match="require_receipt must be True or False"):
+        _target(require_receipt=bad).check()
+
+
+def test_a_target_accepts_the_two_real_booleans():
+    for value in (True, False):
+        _target(require_receipt=value).check()
+
+
+# =============================================================================
+# The receipt axis in verify -- stacs' own verdicts, on the `changed` set
+# =============================================================================
+
+TIME = "2026-11-08T00:00:00Z"
+CK_A = receipt.multihash("c" * 64)
+CK_B = receipt.multihash("d" * 64)
+
+
+def _receipt_doc(seed=None, time=TIME):
+    """A receipt this package would publish. `seed` changes the recipe, and therefore the
+    recipe_id, which is how a fixture gets two different recipes."""
+    return {"output": {"name": "an-output", "scope": None, "receipt_version": "1.0.0",
+                       "schema": None},
+            "recipe": {"code": {}, "config": {"files": {}, "settings": {}},
+                       "inputs": {}, "seed": seed, "recipe_id": None},
+            "result": {"fingerprint": {}, "parts": {}, "summary": {},
+                       "tolerance": {"tables": {}, "summary": {}}},
+            "context": {"time": time}}
+
+
+def _receipt_bytes(tmp_path, doc):
+    """(bytes, digest, recipe_id) for a receipt as `write` produces it.
+
+    The recipe_id is read BACK rather than taken from `doc`: `write` recomputes it from the
+    recipe, which is the whole point of it doing so. A fixture that asserted its own id would
+    be testing the constant it wrote, and an item claiming an id the receipt does not have is
+    exactly what `inconsistent` is for -- which is how this fixture was wrong first time, and
+    the code was right.
+    """
+    scratch = tmp_path / "scratch_receipt.json"
+    digest = receipt.write(doc, scratch)
+    data = scratch.read_bytes()
+    recipe_id = receipt.read(scratch)["recipe"]["recipe_id"]
+    scratch.unlink()
+    return data, digest, recipe_id
+
+
+def _item_with_receipt(item_id, digest, recipe_id, data_checksum=CK_A, time=TIME):
+    item = _item(item_id)
+    item["stac_extensions"] = [receipt.FILE_EXTENSION_URL, receipt.PROCESSING_EXTENSION_URL,
+                               receipt.EXTENSION_URL]
+    item["properties"] = {"receipt:recipe_id": recipe_id, "processing:datetime": time}
+    item["assets"]["data"]["file:checksum"] = data_checksum
+    # Its OWN href, not a shared "receipt.json": the harness publishes every item flat, so a
+    # filename convention would give every item one receipt and the fixtures could not tell
+    # the verdicts apart. The contract is the asset link anyway.
+    item["assets"]["receipt"] = {"href": f"{item_id}_receipt.json",
+                                 "type": "application/json", "roles": ["metadata"],
+                                 "file:checksum": receipt.multihash(digest)}
+    return item
+
+
+def _receipt_run(env, api, published, served, data=None, **target):
+    """Publish `published` with `data` as every item's receipt, serve `served`, run verify."""
+    def write_receipts(bucket):
+        for doc in published:
+            (bucket / f"{doc['id']}_receipt.json").write_bytes(data)
+
+    _in_sync(api, served)
+    return _run(env, "verify", api.url, items=published, transport=None,
+                before=write_receipts if data is not None else None,
+                require_receipt=True, **target)
+
+
+def _edited(item):
+    """The same item with a change the receipt says nothing about."""
+    other = json.loads(json.dumps(item))
+    other["properties"]["an_unrelated_edit"] = 1
+    return other
+
+
+def test_an_item_whose_recipe_is_unchanged_is_reported_as_a_body_only_difference(env, api):
+    """The common case the review named: a bbox fix or a link edit changes the body and not
+    the recipe. An operator must not read `same` as "no drift" -- the DRIFT line is still
+    there -- so the wording says which axis agreed."""
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    published = [_item_with_receipt("a0", digest, rid)]
+    r = _receipt_run(env, api, published, [_edited(published[0])], data=data)
+    assert "1 same" in r.out, r.out
+    assert "differ in something the receipt does not describe" in r.err, r.err
+    assert "DRIFT: 1 registered item(s) differ" in r.err, r.err
+
+
+def test_an_item_built_again_from_one_recipe_is_reported_as_rebuilt(env, api):
+    """THE case the issue exists for: told apart from a change, which a body digest cannot
+    do."""
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    published = [_item_with_receipt("a0", digest, rid, data_checksum=CK_A)]
+    served = [_item_with_receipt("a0", digest, rid, data_checksum=CK_B)]
+    r = _receipt_run(env, api, published, served, data=data)
+    assert "1 rebuilt" in r.out, r.out
+    assert "built again" in r.err, r.err
+    assert "assets[data].file:checksum" in r.err, r.err
+    assert r.rc == 1
+
+
+def test_an_item_whose_recipe_moved_is_reported_as_changed(env, api):
+    """The served item names a recipe the published one does not: the data changed."""
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    _, _, other_rid = _receipt_bytes(env, _receipt_doc(seed=7))
+    assert other_rid != rid, "a different recipe must give a different id"
+    published = [_item_with_receipt("a0", digest, rid)]
+    served = [_item_with_receipt("a0", digest, other_rid)]
+    r = _receipt_run(env, api, published, served, data=data)
+    assert "1 changed" in r.out, r.out
+    assert "name a different recipe" in r.err, r.err
+    assert r.rc == 1
+
+
+def test_an_item_that_claims_a_recipe_its_receipt_does_not_have_is_inconsistent(env, api):
+    """Never reported as agreement: if the item and the receipt beside it were written by
+    things that did not read each other, neither side's provenance means anything. This is the
+    shape a hand-written fixture takes by accident, which is how it was found."""
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    _, _, other_rid = _receipt_bytes(env, _receipt_doc(seed=7))
+    published = [_item_with_receipt("a0", digest, other_rid)]
+    r = _receipt_run(env, api, published, [_edited(published[0])], data=data)
+    assert "1 inconsistent" in r.out, r.out
+    assert "disagree with the receipt they link" in r.err, r.err
+    assert r.rc == 1
+
+
+def test_a_receipt_whose_digest_does_not_match_the_item_is_inconsistent(env, api):
+    """The check that the receipt read is the one the item claims. Without it, a receipt
+    fetched by convention could belong to anything."""
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    published = [_item_with_receipt("a0", "e" * 64, rid)]  # a checksum for other bytes
+    r = _receipt_run(env, api, published, [_edited(published[0])], data=data)
+    assert "1 inconsistent" in r.out, r.out
+    assert "hashes to" in r.err, r.err
+    assert r.rc == 1
+
+
+def test_a_receipt_that_cannot_be_read_marks_its_item_and_never_reads_as_agreement(env, api):
+    """An unread receipt is never agreement -- but it marks its own item rather than ending
+    the run. Over a catalogue's worth of fetches a partial failure is close to certain, and
+    aborting here used to throw away the drift answer the operator ran `verify` for, stderr
+    summary included (round 1)."""
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    published = [_item_with_receipt("a0", digest, rid)]
+    r = _receipt_run(env, api, published, [_edited(published[0])])  # no receipts published
+    assert r.rc == 1
+    assert "1 inconsistent" in r.out, r.out
+    assert "its receipt could not be read" in r.err, r.err
+    # The run still answered the question it was asked.
+    assert "DRIFT: 1 registered item(s) differ" in r.err, r.err
+
+
+def test_one_unreadable_receipt_does_not_cost_the_other_items_verdicts(env, api):
+    """The reason the loop marks rather than raises: a0's missing receipt must not take a1's
+    verdict with it."""
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    published = [_item_with_receipt("a0", digest, rid, data_checksum=CK_A),
+                 _item_with_receipt("a1", digest, rid, data_checksum=CK_A)]
+    served = [_item_with_receipt("a0", digest, rid, data_checksum=CK_B),
+              _item_with_receipt("a1", digest, rid, data_checksum=CK_B)]
+
+    def only_a1s_receipt(bucket):
+        (bucket / "a1_receipt.json").write_bytes(data)
+
+    _in_sync(api, served)
+    r = _run(env, "verify", api.url, items=published, transport=None,
+             before=only_a1s_receipt, require_receipt=True)
+    assert "1 rebuilt" in r.out and "1 inconsistent" in r.out, r.out
+    assert r.rc == 1
+
+
+def test_an_item_that_links_no_receipt_is_refused_when_the_catalogue_declares_them(env, api):
+    published = [_item("a0")]
+    r = _receipt_run(env, api, published, [_edited(published[0])])
+    assert r.rc == 1
+    assert "links no receipt" in r.err, r.err
+
+
+def test_the_axis_is_skipped_when_nothing_differs(env, api):
+    """No `changed` id is no question to ask, and it must not cost a fetch."""
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    published = [_item_with_receipt("a0", digest, rid)]
+    r = _receipt_run(env, api, published, published, data=data)
+    assert "nothing to compare" in r.out, r.out
+    assert r.rc == 0, r.all
+
+
+def test_the_axis_is_skipped_when_the_collection_is_not_registered(env, api):
+    """Every id reads `missing` then, so there is no served side to be the other half -- and
+    on a 102,460-item catalogue the fetch would be the whole catalogue over again."""
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    published = [_item_with_receipt("a0", digest, rid)]
+    api.collection = None
+    api.items = {}
+    r = _run(env, "verify", api.url, items=published, transport=None, require_receipt=True)
+    assert "skipped, the collection is not registered" in r.out, r.out
+
+
+def test_a_catalogue_that_declares_no_receipts_says_so(env, api):
+    """Said out loud, like the asset policy: a run that checked nothing must not read as a
+    checked pass."""
+    r = _run(env, "verify", api.url, items=_items(1), transport=None)
+    assert "receipts   : none declared" in r.out, r.out
+
+
+def test_the_verdict_lists_are_written_to_the_out_dir(env, api):
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    published = [_item_with_receipt("a0", digest, rid, data_checksum=CK_A)]
+    served = [_item_with_receipt("a0", digest, rid, data_checksum=CK_B)]
+    out_dir = env / "out"
+    _receipt_run(env, api, published, served, data=data, out_dir=str(out_dir))
+    assert (out_dir / "receipts_rebuilt.txt").read_text().split() == ["a0"]
+    assert (out_dir / "receipts_changed.txt").read_text() == ""
+
+
+def test_two_items_that_link_one_receipt_are_not_all_reported_inconsistent(env, api):
+    """Round 2b, measured 5/5 before the fix. `_receipt_verdicts` is the first call site in
+    the package whose URL list can legitimately repeat: two items may share a receipt. One
+    worker per URL meant two workers writing the same `.part` path and racing the rename, so
+    the loser reported a failure for a body that was correctly on disk -- and every item
+    linking it read `inconsistent` with a non-zero status, on good data.
+
+    The fixtures elsewhere give each item its own receipt href precisely to avoid this, which
+    is what kept three rounds from seeing it: the one shape they steer around is the one that
+    failed.
+    """
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    published, served = [], []
+    for i in range(6):
+        item = _item_with_receipt(f"a{i}", digest, rid, data_checksum=CK_A)
+        # One shared receipt for every item, which the contract allows.
+        item["assets"]["receipt"]["href"] = "receipt.json"
+        published.append(item)
+        other = _item_with_receipt(f"a{i}", digest, rid, data_checksum=CK_B)
+        other["assets"]["receipt"]["href"] = "receipt.json"
+        served.append(other)
+
+    def one_shared_receipt(bucket):
+        (bucket / "receipt.json").write_bytes(data)
+
+    _in_sync(api, served)
+    r = _run(env, "verify", api.url, items=published, transport=None,
+             before=one_shared_receipt, require_receipt=True)
+    assert "6 rebuilt" in r.out, r.out
+    assert "0 inconsistent" in r.out, r.out
+
+
+def test_fetch_bodies_refuses_a_repeated_url_rather_than_reporting_a_false_failure(tmp_path):
+    """The harness half of the fix. A caller that did not mean to repeat a URL has a bug of
+    its own, and the old behaviour was to report one of them failed while writing the body
+    correctly -- a silent wrong answer. `_receipt_verdicts` dedupes before calling, because
+    there the repetition is legitimate."""
+    from stacs.catalogue import fetch_bodies
+    src = tmp_path / "x.json"
+    src.write_text("{}")
+    out = tmp_path / "out"
+    out.mkdir()
+    with pytest.raises(ValueError, match="appear more than once"):
+        fetch_bodies([src.as_uri(), src.as_uri()], out)
+
+
+def test_every_changed_id_gets_a_verdict_across_batches(env, api, monkeypatch):
+    """The post-condition on the aggregate, asserted because the batching makes it worth
+    asserting rather than reading: an id dropped between batches would be absent from a
+    summary that still looked complete -- the same shape as the defects the reviews kept
+    finding, one level up.
+
+    `chunk=2` over five changed items exercises three batches; the suite otherwise only ever
+    runs one.
+    """
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    published, served = [], []
+    for i in range(5):
+        published.append(_item_with_receipt(f"a{i}", digest, rid, data_checksum=CK_A))
+        served.append(_item_with_receipt(f"a{i}", digest, rid, data_checksum=CK_B))
+
+    def write_receipts(bucket):
+        for doc in published:
+            (bucket / f"{doc['id']}_receipt.json").write_bytes(data)
+
+    _in_sync(api, served)
+    r = _run(env, "verify", api.url, items=published, transport=None,
+             before=write_receipts, require_receipt=True, chunk=2)
+    assert "5 rebuilt" in r.out, r.out
+    assert "0 inconsistent" in r.out, r.out
+    # Three batches, each fetching its own receipts.
+    assert r.out.count("receipt(s) for") == 3, r.out

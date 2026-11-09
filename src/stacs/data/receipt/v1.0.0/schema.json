@@ -1,0 +1,238 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://newgraphenvironment.github.io/crate/receipt/v1.0.0/schema.json",
+  "title": "Provenance receipt",
+  "description": "One receipt per output: what it is (output), how it was made (recipe), what came out (result), and where and when (context). See https://github.com/NewGraphEnvironment/crate/issues/43.",
+  "type": "object",
+  "required": ["output", "recipe", "result", "context"],
+  "additionalProperties": false,
+  "properties": {
+    "output": {"$ref": "#/definitions/output"},
+    "recipe": {"type": "object"},
+    "result": {"$ref": "#/definitions/result"},
+    "context": {"$ref": "#/definitions/context"}
+  },
+  "if": {
+    "properties": {"output": {"required": ["migrated_from"]}}
+  },
+  "then": {
+    "properties": {"recipe": {"$ref": "#/definitions/recipe_migrated"}}
+  },
+  "else": {
+    "properties": {"recipe": {"$ref": "#/definitions/recipe"}}
+  },
+  "definitions": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tolerance": {
+      "description": "An absolute tolerance, a power of ten from 1 down to 1e-15. It sets the decimals a fingerprint rounds to and what the comparison accepts.",
+      "enum": [1, 0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001, 0.0000001, 0.00000001, 0.000000001, 0.0000000001, 0.00000000001, 0.000000000001, 0.0000000000001, 0.00000000000001, 0.000000000000001]
+    },
+    "output": {
+      "type": "object",
+      "required": ["name", "scope", "receipt_version", "schema"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"$ref": "#/definitions/name"},
+        "scope": {"type": ["string", "null"], "minLength": 1},
+        "receipt_version": {"const": "1.0.0"},
+        "schema": {"type": ["string", "null"], "minLength": 1},
+        "migrated_from": {"$ref": "#/definitions/name"}
+      }
+    },
+    "input": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "recipe_id": {"$ref": "#/definitions/sha256"},
+        "version_id": {"$ref": "#/definitions/name"},
+        "sha256": {"$ref": "#/definitions/sha256"},
+        "none": {"$ref": "#/definitions/name"}
+      }
+    },
+    "config": {
+      "type": "object",
+      "required": ["files", "settings"],
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "type": "object",
+          "propertyNames": {"minLength": 1},
+          "additionalProperties": {"$ref": "#/definitions/sha256"}
+        },
+        "settings": {
+          "type": "object",
+          "propertyNames": {"minLength": 1}
+        }
+      }
+    },
+    "recipe": {
+      "type": "object",
+      "required": ["code", "config", "inputs", "seed", "recipe_id"],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "object",
+          "propertyNames": {"minLength": 1},
+          "additionalProperties": {
+            "type": "object",
+            "required": ["commit", "version", "dirty"],
+            "additionalProperties": false,
+            "properties": {
+              "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+              "version": {"type": ["string", "null"], "minLength": 1},
+              "dirty": {"type": "boolean"}
+            }
+          }
+        },
+        "config": {"$ref": "#/definitions/config"},
+        "inputs": {
+          "type": "object",
+          "propertyNames": {"minLength": 1},
+          "additionalProperties": {"$ref": "#/definitions/input"}
+        },
+        "seed": {"type": ["integer", "null"]},
+        "recipe_id": {"$ref": "#/definitions/sha256"}
+      }
+    },
+    "recipe_migrated": {
+      "description": "The recipe of a receipt read from an older record by crt_receipt_migrate(). Old records lack fields a recipe needs, so every field is optional and recipe_id is null.",
+      "type": "object",
+      "required": ["recipe_id"],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "object",
+          "propertyNames": {"minLength": 1},
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "commit": {"type": "string", "pattern": "^[0-9a-f]{7,40}$"},
+              "version": {"type": ["string", "null"], "minLength": 1},
+              "dirty": {"type": "boolean"}
+            }
+          }
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "files": {
+              "type": "object",
+              "propertyNames": {"minLength": 1},
+              "additionalProperties": {"type": "string", "minLength": 1}
+            },
+            "settings": {"type": "object"}
+          }
+        },
+        "inputs": {
+          "type": "object",
+          "propertyNames": {"minLength": 1},
+          "additionalProperties": {"type": "object"}
+        },
+        "seed": {"type": ["integer", "null"]},
+        "recipe_id": {"type": "null"}
+      }
+    },
+    "result": {
+      "type": "object",
+      "required": ["fingerprint", "parts", "summary", "tolerance"],
+      "additionalProperties": false,
+      "properties": {
+        "fingerprint": {
+          "type": "object",
+          "propertyNames": {"minLength": 1},
+          "additionalProperties": {
+            "type": "object",
+            "required": ["sha256", "rows"],
+            "additionalProperties": false,
+            "properties": {
+              "sha256": {"$ref": "#/definitions/sha256"},
+              "rows": {"type": "integer", "minimum": 0}
+            }
+          }
+        },
+        "parts": {
+          "type": "object",
+          "propertyNames": {"minLength": 1, "pattern": "^[^/\\\\]"},
+          "additionalProperties": {
+            "type": "object",
+            "required": ["bytes", "sha256"],
+            "additionalProperties": false,
+            "properties": {
+              "bytes": {"type": "integer", "minimum": 0},
+              "sha256": {"$ref": "#/definitions/sha256"},
+              "table": {
+                "description": "The fingerprinted table this file holds, a key of result.fingerprint. When the file's bytes differ between two builds, that table's fingerprint decides whether they agree.",
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "summary": {
+          "type": "object",
+          "propertyNames": {"minLength": 1},
+          "additionalProperties": {"type": ["number", "null"]}
+        },
+        "tolerance": {
+          "type": "object",
+          "required": ["tables", "summary"],
+          "additionalProperties": false,
+          "properties": {
+            "tables": {
+              "type": "object",
+              "propertyNames": {"minLength": 1},
+              "additionalProperties": {
+                "type": "object",
+                "propertyNames": {"minLength": 1},
+                "additionalProperties": {"$ref": "#/definitions/tolerance"}
+              }
+            },
+            "summary": {
+              "type": "object",
+              "propertyNames": {"minLength": 1},
+              "additionalProperties": {"$ref": "#/definitions/tolerance"}
+            }
+          }
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "required": ["time"],
+      "additionalProperties": false,
+      "properties": {
+        "time": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+        },
+        "host": {"$ref": "#/definitions/name"},
+        "run": {"type": "object"},
+        "session": {"type": ["string", "null"]},
+        "toolchain": {
+          "type": "object",
+          "propertyNames": {"minLength": 1},
+          "additionalProperties": {"type": "string", "minLength": 1}
+        },
+        "lockfile_sha256": {
+          "oneOf": [{"$ref": "#/definitions/sha256"}, {"type": "null"}]
+        },
+        "inputs": {"type": "object"},
+        "legacy": {
+          "description": "Fields of an older record that crt_receipt_migrate() could not place in a receipt key, verbatim and keyed by their path in that record. Recorded, never part of an identity.",
+          "type": "object"
+        }
+      }
+    }
+  }
+}

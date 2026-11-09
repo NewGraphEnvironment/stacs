@@ -1,0 +1,44 @@
+field,action,why
+output.name,refuse,two receipts for different outputs do not describe one thing
+output.scope,refuse,another partition is another output
+output.receipt_version,warn,the receipts were written to different schema versions; their fields may not mean the same
+output.schema,warn,the output claims conformance to another crate schema; reported for the reader to judge
+output.migrated_from,warn,one receipt was read from an older record and holds no recipe identity
+recipe.code,refuse,a repository of ours took part in one build and not the other
+recipe.code.*.commit,refuse,other code; recipe_id covers it
+recipe.code.*.version,refuse,recipe_id covers it
+recipe.code.*.dirty,refuse,uncommitted changes make the code something no commit names; recipe_id covers it
+recipe.config.files,refuse,a config file was read in one build and not the other
+recipe.config.files.*,refuse,the config file's bytes differ; recipe_id covers it
+recipe.config.settings,refuse,a run setting was resolved in one build and not the other
+recipe.config.settings.*,refuse,a resolved run setting differs; recipe_id covers it
+recipe.inputs,refuse,an input was used in one build and not the other
+recipe.inputs.*.recipe_id,refuse,the input was made another way; recipe_id covers it
+recipe.inputs.*.version_id,refuse,another version of the input; recipe_id covers it
+recipe.inputs.*.sha256,refuse,other input bytes; recipe_id covers it
+recipe.inputs.*.none,refuse,recipe_id covers it
+recipe.seed,refuse,another seed draws differently
+recipe.recipe_id,refuse,the recipes differ; it names a field above unless a receipt was edited by hand
+result.fingerprint,refuse,a table was fingerprinted in one build and not the other
+result.fingerprint.*.sha256,refuse,"the table's values differ beyond its tolerance; with both tables supplied, cells within tolerance are equivalent"
+result.fingerprint.*.rows,refuse,the table has another number of rows
+result.parts,refuse,a file is in one build and not the other
+result.parts.*.bytes,refuse,"the file differs; equivalent when it names a table whose fingerprint agrees"
+result.parts.*.sha256,refuse,"the file differs; equivalent when it names a table whose fingerprint agrees"
+result.parts.*.table,refuse,the file holds another table
+result.summary,refuse,a summary value is reported in one build and not the other
+result.summary.*,refuse,"the value differs beyond its tolerance; within it, equivalent"
+result.tolerance.tables,refuse,the builds declare tolerances for different tables
+result.tolerance.tables.*,refuse,the builds declare tolerances for different columns
+result.tolerance.tables.*.*,refuse,"the builds round a column differently, so their fingerprints cannot be compared"
+result.tolerance.summary,refuse,the builds declare tolerances for different summary values
+result.tolerance.summary.*,refuse,the builds accept different spreads for a summary value
+context.time,record,when; never identity
+context.host,record,where; never identity
+context.run,record,run identifiers; never identity
+context.session,record,never identity
+context.toolchain,record,a tool used by one build only; never identity
+context.toolchain.*,record,"a third-party version; the result decides whether it mattered"
+context.lockfile_sha256,record,"third-party versions; the result decides whether they mattered"
+context.inputs,record,"inputs' results, for reporting; never identity"
+context.legacy,record,"an older record's fields with no receipt key, kept verbatim; never identity"
