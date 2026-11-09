@@ -1101,8 +1101,12 @@ def stac_fields(receipt, assets=None, receipt_asset=None, receipt_sha256=None) -
         if not isinstance(time, str) or not _UTC_TIME.match(time):
             raise ReceiptError(f"context.time is not an ISO 8601 UTC instant: {time!r}")
         properties["processing:datetime"] = time
+    # `_mapping`, not `or {}`: a truthy non-mapping survives `or {}` and `.items()` then
+    # raises AttributeError. `item_verdict` calls this on a receipt that `read` never
+    # validated, so it has to refuse a malformed `code` rather than crash on it. Found by
+    # enumerating every member read after round 1, not by a reviewer.
     software = {repo: entry.get("version")
-                for repo, entry in (recipe.get("code") or {}).items()
+                for repo, entry in _mapping(recipe, "code").items()
                 if isinstance(entry, dict) and entry.get("version") is not None}
     if software:
         properties["processing:software"] = software

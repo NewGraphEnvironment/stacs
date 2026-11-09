@@ -779,3 +779,15 @@ def test_item_verdict_refuses_a_malformed_receipt_rather_than_crashing(value):
 def test_item_problems_and_stac_fields_survive_a_malformed_member(value):
     assert r.item_problems({"properties": value, "assets": value})
     assert r.stac_fields({"recipe": value, "result": value, "context": value})
+
+
+@pytest.mark.parametrize("code", ["a string", ["repo"], 7])
+def test_stac_fields_refuses_a_malformed_code_block_rather_than_crashing(code):
+    """The last instance of round 1's mechanism, found by enumerating every member read in
+    `src/stacs/*.py` rather than by a reviewer: `(recipe.get("code") or {}).items()` kept a
+    truthy non-mapping and raised AttributeError. `item_verdict` calls `stac_fields` on a
+    receipt nothing validated, so it has to refuse rather than crash."""
+    fields = r.stac_fields({"recipe": {"recipe_id": "a" * 64, "code": code},
+                            "result": {}, "context": {}, "output": {}})
+    assert "processing:software" not in fields["properties"]
+    assert fields["properties"]["receipt:recipe_id"] == "a" * 64

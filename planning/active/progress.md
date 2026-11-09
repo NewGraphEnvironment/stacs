@@ -173,3 +173,16 @@
     `compare`'s post-processing read each block with `doc.get(x) or {}`, which keeps a truthy
     non-mapping, so a scalar `recipe` crashed the one function whose job is to refuse. Every
     member read now goes through one `_mapping` helper. Suite: 743 passed.
+- **Round 2 died on an API error** (ENOTFOUND) one step before writing its findings — its last
+  words were "Now I'll write the findings file". No file, so the round produced nothing and
+  was re-run to its own path (`review-round2b.md`); an idle or failed round is never recorded
+  as Clean.
+- **Enumeration** (`review-enumeration.md`), which is what has to end the loop now that a
+  defect has been found inside a fix. Parsed with `ast` rather than recalled:
+  - "one fact derived twice" is **closed**: the predicate selecting the receipt-linking asset
+    appears exactly once, with four consumers all routed through it and no re-derivation.
+  - "a member read as a mapping without being one": 11 member reads, 10 guarded or provably
+    dict (each with a stated reason — an `isinstance` guard, a constructed return value, or
+    `read_config` refusing any table that is not a table), and **1 real instance left**,
+    `(recipe.get("code") or {}).items()` in `stac_fields`, which `item_verdict` reaches on a
+    receipt nothing validated. Fixed; the enumeration script now exits 0. Suite: 746 passed.
