@@ -81,10 +81,10 @@ strict build: it hides the warnings strict counts, so a dead link passes.
 
 `pyproject.toml` `version` and `NEWS.md` move together, and a git tag `vX.Y.Z` marks each
 release. Consumers pin by tag in `[tool.uv.sources]`. After the bump run `uv lock`: the
-lockfile records this package's version and CI runs `uv sync --locked`. `/gh-pr-merge`'s
-release gate reads a repo with `NEWS.md` and no `DESCRIPTION` as a catalogue whose tag is
-cut elsewhere, so release this one by hand: bump, rename `## Unreleased`, `uv lock`,
-commit, tag.
+lockfile records this package's version and CI runs `uv sync --locked`. `/gh-pr-merge`
+cuts the release itself: its gate reads this repo as a Python package and does the bump,
+the `## Unreleased` rename, the `uv lock`, the release commit, the tag and the GitHub
+release. Don't do it by hand.
 
 <!-- BEGIN SOUL CONVENTIONS — DO NOT EDIT BELOW THIS LINE -->
 
