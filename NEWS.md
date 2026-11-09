@@ -3,7 +3,7 @@
 Versions track the package. A tag is a release consumers can pin with
 `tag = "vX.Y.Z"` in `[tool.uv.sources]`; `pyproject.toml` carries the same version.
 
-## Unreleased
+## 0.3.0
 
 - **Provenance receipts** (#12). `stacs.receipt` reads, writes and compares a provenance
   receipt, computes a `recipe_id`, fingerprints a table, and maps a receipt onto the
