@@ -17,7 +17,8 @@ stdin not argv.
 - **Config: `stacs.toml` + CLI flags.** `--config FILE` (no implicit cwd lookup); any value
   overridable by a flag. Works for conda/.venv repos with no pyproject.
 - **Scope: the PR ends at parity.** Adoption is filed as issues in stac_dem_bc,
-  stac_airphoto_bc, stac_uav_bc, stac_orthophoto_bc, stac_floodplains_bc; #1's body is
+  stac_airphoto_bc, stac_uav_bc, stac_floodplains_bc, plus one further catalogue whose
+  repository is not public; #1's body is
   edited to match; #1 closes on merge.
 
 ## What moves, what stays
@@ -72,7 +73,7 @@ stdin not argv.
 - [x] Record numbers by collection (API as `$API`) in findings and the archive README; any disagreement explained and fixed before proceeding
 
 ## Phase 7: Hand-off
-- [x] File adoption issues (pin `v0.1.0` once tagged): stac_dem_bc (catalogue_register.sh, register scripts, `update.yml` audit calls; which validators stay build-side), stac_airphoto_bc (drop the `cd`; `--all` then `verify`; its "--drift never refreshes" note is stale since stac_dem_bc#45), stac_uav_bc, stac_orthophoto_bc, stac_floodplains_bc (`stacs load`)
+- [x] File adoption issues (pin `v0.1.0` once tagged): stac_dem_bc (catalogue_register.sh, register scripts, `update.yml` audit calls; which validators stay build-side), stac_airphoto_bc (drop the `cd`; `--all` then `verify`; its "--drift never refreshes" note is stale since stac_dem_bc#45), stac_uav_bc, stac_floodplains_bc (`stacs load`), plus one further catalogue whose repository is not public
 - [x] Edit #1's body: work list reflects the split, links the new issues
 
 ## Validation

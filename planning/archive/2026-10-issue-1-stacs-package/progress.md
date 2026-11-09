@@ -17,7 +17,7 @@
 - Phase 4: `stacs.register` (Transport, Target, load, run); harness runs the remote script for real against a fake pypgstac; 2 code-check rounds + 1 self-found defect, ended by enumeration (`review-p4-round{1,2}.md`). 256 tests.
 - Phase 6 reference + equivalence runs complete (findings to be recorded in Phase 6).
 - Phase 5: `stacs` CLI + `stacs.toml`, README, NEWS, research/pgstac_round_trip.md; 2 code-check rounds ended by enumeration (`review-p5-round{1,2}.md`). 319 tests.
-- Phase 6: parity gate passed on both live collections (byte-identical sets, positive control, verdict equivalence 0 disagreements); adoption issues filed: stac_uav_bc#35, stac_orthophoto_bc#47, stac_floodplains_bc#71.
+- Phase 6: parity gate passed on both live collections (byte-identical sets, positive control, verdict equivalence 0 disagreements); adoption issues filed: stac_uav_bc#35, stac_floodplains_bc#71, and one in a catalogue repository that is not public.
 - Phase 7: stac_dem_bc#49, stac_airphoto_bc#42 filed; #1 body edited (work list, plan-gate decisions, adoption links).
 
 ## Session 2026-10-06 (after the PR opened)

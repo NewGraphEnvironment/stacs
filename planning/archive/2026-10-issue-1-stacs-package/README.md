@@ -18,8 +18,8 @@ as proof the work happened** (bash 3.2 exits 0 from an EXIT trap after an expans
 caller rather than in the shared producer**. Phases 1, 3, 4 and 5 ended by enumerating the
 candidate set the mechanism implied (findings.md), not by a reviewer going quiet; Phase 2
 ended on a clean third round with no defect found inside a fix. Adoption is filed per
-repo: stac_dem_bc#49, stac_airphoto_bc#42, stac_uav_bc#35, stac_orthophoto_bc#47,
-stac_floodplains_bc#71.
+repo: stac_dem_bc#49, stac_airphoto_bc#42, stac_uav_bc#35, stac_floodplains_bc#71,
+and one further catalogue whose repository is not public.
 
 ## Measurement
 
