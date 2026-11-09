@@ -134,9 +134,10 @@ convention every repo loads — that is the owner's call:
 
 - [ ] Adoption issues in the catalogue repos, pinning the tag this ships in.
 
-  The repos are stac_dem_bc, stac_airphoto_bc, stac_uav_bc, stac_orthophoto_bc,
-  stac_floodplains_bc and stac_pointcloud_bc. #12 says each catalogue adopts receipts in its
-  own issue, once this ships, so these are filed after the merge and the tag.
+  The repos are stac_dem_bc, stac_airphoto_bc, stac_uav_bc, stac_floodplains_bc and
+  stac_pointcloud_bc, plus one further catalogue whose repository is not public. #12 says each
+  catalogue adopts receipts in its own issue, once this ships, so these are filed after the
+  merge and the tag.
 
 Closed by: PR to be opened on branch `12-read-write-and-compare-provenance-receip`; #12 closes
 on merge.
