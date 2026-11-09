@@ -151,7 +151,10 @@ EOF
     bad=$((bad + 1))
   }
 
-  if [ "$mode" = vendor ]; then
+  # Gated on a clean run: a partially failed vendor used to write a SOURCE claiming the
+  # pinned tag for files that kept their old bytes, so the record on disk read as complete
+  # even though the script exited 1 (round 3).
+  if [ "$mode" = vendor ] && [ "$bad" -eq 0 ]; then
     mkdir -p "$(dirname "$SOURCE_FILE")"
     {
       echo "repo: ${CRATE_REPO}"

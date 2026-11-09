@@ -847,15 +847,26 @@ def _diff(a, b, table) -> list:
         return list(x) if isinstance(x, dict) else []
 
     def walk(x, y, field, pattern, key):
-        # Whether there is anything to walk INTO. Neither arm below may walk a node that is
-        # not a mapping: `keys()` is empty for a string, a list or a number, so a collection
-        # arm reached with two non-mappings compared nothing and returned `identical` --
-        # round 1 closed exactly this in the branch arm and left the collection arm, which is
-        # the sibling two lines up (round 2b). Eleven register patterns are both a collection
-        # and a leaf row, so every one of them was silent; `recipe.inputs` as a list was
+        # A collection may be compared by its KEYS only when both sides are a collection:
+        # a mapping, or absent. Anything else present -- a list, a string, a number -- has no
+        # keys, so comparing key sets compares nothing and the answer comes back `identical`.
+        #
+        # This took three attempts, and the shape of the misses is the lesson. Round 1 closed
+        # it for the branch arm. Round 2b found the collection arm, the sibling two lines up,
+        # and `isinstance(x, dict) or isinstance(y, dict)` closed only the case where BOTH
+        # sides were non-mappings. Round 3 found that one empty mapping is enough: `{}` versus
+        # `["network"]` has three empty key sets, so all eleven patterns that are both a
+        # collection and a leaf row were silent again, and `recipe.inputs` as a list was still
         # called `identical` by the same contract whose `recipe_id` refuses to hash it.
+        #
+        # Absent must stay collection-like, or a migrated receipt's absent `config` would be
+        # reported as one whole-node difference instead of a difference per missing key, which
+        # is what crate's `a migrated receipt` vector pins.
+        def collectionish(v):
+            return v is None or isinstance(v, dict)
+
         walkable = isinstance(x, dict) or isinstance(y, dict)
-        if pattern in collections and walkable:
+        if pattern in collections and collectionish(x) and collectionish(y):
             kx, ky = keys(x), keys(y)
             for k in sorted(set(kx) - set(ky)):
                 found.append((field, pattern, f"{k} only in a", k))
@@ -1095,6 +1106,14 @@ def stac_fields(receipt, assets=None, receipt_asset=None, receipt_sha256=None) -
     """
     if not isinstance(receipt, dict):
         raise ReceiptError(f"a receipt is a JSON object, got {type(receipt).__name__}")
+    for where in ("recipe", "result", "context"):
+        node = receipt.get(where)
+        if node is not None and not isinstance(node, dict):
+            # Symmetric with the `assets=` refusal below, which round 3 noted this disagreed
+            # with: dropping a non-mapping block would publish an item with no provenance
+            # fields and no error, which is the worst of both.
+            raise ReceiptError(f"receipt.{where} is present but not an object, got "
+                               f"{type(node).__name__}")
     if assets is not None and not isinstance(assets, dict):
         # A public parameter, so a caller's mistake reaches here. Everything else malformed in
         # this module is a ReceiptError; `.items()` on a string would be an AttributeError
@@ -1289,6 +1308,13 @@ def item_problems(item) -> list:
 # else, which is worse than having four words of our own.
 ITEM_VERDICTS = ("same", "rebuilt", "changed", "inconsistent")
 
+# Every node `item_verdict` consults. Named here so the post-condition over it can enumerate
+# the code's own list instead of restating it: a second list would be the "two lists that
+# happen to agree" shape, which is how three of this branch's defects reached review.
+VERDICT_NODES = ("receipt.recipe", "receipt.context", "receipt.result",
+                 "receipt.result.parts", "published.assets", "served.assets",
+                 "published.properties", "served.properties")
+
 # The mirrored fields, and whether a difference in one means the recipe moved or only the
 # bytes. `receipt:recipe_id` is the recipe; the rest are what the recipe produced.
 _IDENTITY_PROPERTY = "receipt:recipe_id"
@@ -1360,6 +1386,33 @@ def item_verdict(published, served, receipt, receipt_sha256=None) -> ItemVerdict
             raise ReceiptError(f"the {name} item is not a JSON object, got "
                                f"{type(doc).__name__}")
     notes = []
+
+    # Nodes this verdict depends on. `_mapping` turns a present non-mapping into `{}`, which
+    # stops a crash and makes every check below find nothing to disagree with -- so the answer
+    # was `same`, with `ok` true, for an item that contradicted its receipt (round 3). The
+    # mechanism round 3 named: "not a mapping" and "has no members" are one fact in the code,
+    # and that collapse is only safe where the consumer's default is refusal. Here it is
+    # agreement, so it has to be separated.
+    nodes = (
+        # A garbage `recipe` or `context` means `stac_fields` claims nothing, so nothing can
+        # disagree with it -- round 3's list of agreement-default sites named `stac_fields`
+        # silently dropping them.
+        ("receipt.recipe", receipt.get("recipe")),
+        ("receipt.context", receipt.get("context")),
+        ("receipt.result", receipt.get("result")),
+        ("receipt.result.parts", _mapping(receipt, "result").get("parts")),
+        ("published.assets", published.get("assets")),
+        ("served.assets", served.get("assets")),
+        ("published.properties", published.get("properties")),
+        ("served.properties", served.get("properties")),
+    )
+    malformed = [where for where, node in nodes
+                 if node is not None and not isinstance(node, dict)]
+    if malformed:
+        return ItemVerdict("inconsistent", tuple(malformed),
+                           (f"{len(malformed)} node(s) the comparison needs are present but "
+                            f"not objects, so provenance cannot be established: "
+                            f"{', '.join(malformed)}",))
 
     if receipt_sha256 is not None:
         linked = receipt_asset(published)

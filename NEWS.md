@@ -28,6 +28,12 @@ Versions track the package. A tag is a release consumers can pin with
   are checked against that asset's `file:checksum`.
 - `verify.items_serving` reads served item bodies rather than reducing each to a digest, for
   checks on an item's fields. `jsonschema` is now a declared dependency.
+- **Behaviour change:** `catalogue.fetch_bodies` refuses a URL list containing a duplicate.
+  It runs one worker per element and names each file after a digest of its URL, so a repeated
+  URL meant two workers writing one temporary path and racing the rename — the loser reported
+  a failure for a body that was correctly on disk. Every existing caller already deduplicates
+  upstream; a caller that passes a duplicate now gets a `ValueError` instead of a wrong
+  answer.
 
 ## 0.2.0
 

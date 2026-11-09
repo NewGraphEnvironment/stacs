@@ -774,20 +774,79 @@ def test_compare_reports_a_malformed_block_as_a_difference(block, value):
 
 @pytest.mark.parametrize("value", ["a string", [1, 2], 7])
 @pytest.mark.parametrize("member", ["result", "recipe", "assets"])
-def test_item_verdict_returns_a_verdict_for_a_malformed_receipt(value, member):
-    """Also pinned by its verdict rather than by "did not raise". A receipt whose members are
-    garbage claims nothing, so two identical items agree and the answer is `same`; what must
-    not happen is a traceback, because `_receipt_verdicts` has no audit in front of it on the
-    verify path."""
+def test_item_verdict_never_agrees_over_a_node_it_could_not_read(value, member):
+    """This test used to assert `same`, and that was **pinning a bug** (round 3). `_mapping`
+    turns a present non-mapping into `{}`, which stops a crash and then makes every check
+    below find nothing to disagree with -- so an item contradicting its receipt read `same`
+    with `ok` true, and `verify` left the exit status at 0.
+
+    `ItemVerdict`'s own docstring says `inconsistent` is never reported as agreement. A node
+    that is present but not an object is exactly that case: nobody could read it, so nothing
+    can be established from it.
+    """
     item = {"properties": {"receipt:recipe_id": "a" * 64}}
     got = r.item_verdict(item, item, {member: value})
-    assert got.verdict == "same", (member, value, got)
+    if member == "assets":
+        # A receipt's `assets` is not a member of a receipt at all, so it is not consulted.
+        assert got.verdict == "same", (member, value, got)
+    else:
+        assert got.verdict == "inconsistent", (member, value, got)
+        assert not got.ok
+
+
+@pytest.mark.parametrize("where,doc_key", [
+    ("receipt.result", "result"),
+    ("receipt.result.parts", "parts"),
+])
+@pytest.mark.parametrize("value", ["x", [], ["a"], 7, True])
+def test_a_malformed_receipt_node_is_inconsistent_not_same(where, doc_key, value):
+    """The symptom measured in round 3: 12 of 24 malformed nodes read `same` with `ok` true,
+    for an item whose asset fields contradicted the receipt -- because the asset half of the
+    published-vs-receipt check, which round 1 added for exactly this symptom, was skipped for
+    every asset once `parts` became `{}`."""
+    good = {"output": {}, "recipe": {"recipe_id": "a" * 64}, "context": {},
+            "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 12}}}}
+    item = {"properties": {"receipt:recipe_id": "a" * 64},
+            "assets": {"data": {"href": "x.tif", "file:checksum": r.multihash("f" * 64),
+                                "file:size": 999}}}
+    assert r.item_verdict(item, item, good).verdict == "inconsistent", "control"
+    broken = dict(good)
+    if doc_key == "result":
+        broken["result"] = value
+    else:
+        broken["result"] = {"parts": value}
+    got = r.item_verdict(item, item, broken)
+    assert got.verdict == "inconsistent", (where, value, got)
+    assert where in got.fields, (where, got.fields)
+
+
+@pytest.mark.parametrize("side", ["published", "served"])
+@pytest.mark.parametrize("member", ["assets", "properties"])
+@pytest.mark.parametrize("value", ["x", [], 7])
+def test_a_malformed_item_node_is_inconsistent_not_same(side, member, value):
+    good = {"output": {}, "recipe": {"recipe_id": "a" * 64}, "context": {}, "result": {}}
+    item = {"properties": {"receipt:recipe_id": "a" * 64}, "assets": {}}
+    pair = {"published": dict(item), "served": dict(item)}
+    pair[side][member] = value
+    got = r.item_verdict(pair["published"], pair["served"], good)
+    assert got.verdict == "inconsistent", (side, member, value, got)
+    assert f"{side}.{member}" in got.fields, got.fields
 
 
 @pytest.mark.parametrize("value", ["a string", [1, 2], 7])
-def test_item_problems_and_stac_fields_survive_a_malformed_member(value):
+def test_item_problems_is_total_where_stac_fields_refuses(value):
+    """The two have opposite jobs, so they take opposite answers -- which is the distinction
+    round 3's mechanism turns on. `item_problems` REPORTS, so it must be total: a malformed
+    item has to come back as a list of problems, never an exception. `stac_fields` PRODUCES
+    the fields an item will publish, so it refuses: dropping a non-mapping block would publish
+    an item with no provenance and no error.
+
+    This test previously asserted that `stac_fields` survived, which pinned the weaker of the
+    two behaviours.
+    """
     assert r.item_problems({"properties": value, "assets": value})
-    assert r.stac_fields({"recipe": value, "result": value, "context": value})
+    with pytest.raises(r.ReceiptError, match="present but not an object"):
+        r.stac_fields({"recipe": value, "result": value, "context": value})
 
 
 @pytest.mark.parametrize("code", ["a string", ["repo"], 7])
@@ -910,3 +969,47 @@ def test_compare_refuses_an_overrides_argument_that_is_not_a_mapping(bad):
     base = {"output": {}, "recipe": {}, "result": {}, "context": {}}
     with pytest.raises(r.ReceiptError, match="overrides maps a register field"):
         r.compare(base, base, overrides=bad)
+
+
+def test_item_verdict_never_says_same_over_a_node_it_could_not_read():
+    """Round 3's second post-condition: `same` implies every node the verdict depended on was
+    absent or a mapping. Enumerated from `VERDICT_NODES`, which is the list the code itself
+    consults -- a second list here would be the "two lists that happen to agree" shape that
+    produced three of this branch's defects.
+    """
+    good_receipt = {"output": {}, "recipe": {"recipe_id": "a" * 64}, "context": {},
+                    "result": {"parts": {}}}
+    good_item = {"properties": {"receipt:recipe_id": "a" * 64}, "assets": {}}
+    assert r.item_verdict(good_item, good_item, good_receipt).verdict == "same", "control"
+
+    assert r.VERDICT_NODES, "an empty node list would make this pass on anything"
+    for where in r.VERDICT_NODES:
+        side, _, member = where.partition(".")
+        for value in ("x", [], ["a"], 7, True):
+            receipt_doc = {k: (dict(v) if isinstance(v, dict) else v)
+                           for k, v in good_receipt.items()}
+            published, served = dict(good_item), dict(good_item)
+            if side == "receipt":
+                if member == "result.parts":
+                    receipt_doc["result"] = {"parts": value}
+                else:
+                    receipt_doc[member] = value
+            elif side == "published":
+                published[member] = value
+            else:
+                served[member] = value
+            got = r.item_verdict(published, served, receipt_doc)
+            assert got.verdict == "inconsistent", (where, value, got)
+            assert not got.ok, (where, value)
+
+
+@pytest.mark.parametrize("block", ["recipe", "result", "context"])
+@pytest.mark.parametrize("value", ["x", [], 7])
+def test_stac_fields_refuses_a_block_that_is_present_but_not_an_object(block, value):
+    """Round 3 named the asymmetry: `assets=` raised while a non-mapping `recipe` was silently
+    dropped -- so a builder handed a malformed receipt would publish an item with no
+    provenance fields and no error."""
+    doc = {"output": {}, "recipe": {}, "result": {}, "context": {}}
+    doc[block] = value
+    with pytest.raises(r.ReceiptError, match=f"receipt.{block} is present but not an object"):
+        r.stac_fields(doc)

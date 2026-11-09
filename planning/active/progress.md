@@ -212,3 +212,36 @@
     reads" is what it establishes, not "0 instances of the mechanism". It now walks four
     populations, and the two public keyword arguments that were walked with `.items()` refuse
     a non-mapping. Suite: 779 passed.
+- **`/code-check branch` round 3**, the most valuable round, and largely a critique of my own
+  work (`review-round3.md`). Three bugs, two fragilities, **all reproduced**:
+  - **My round 2b fix was incomplete.** `walkable = isinstance(x, dict) or isinstance(y, dict)`
+    passes when ONE side is a mapping, and the arm then compares key sets only — so an EMPTY
+    mapping against a list left all three key sets empty and `compare` answered `identical`
+    again. Measured mechanically: **154 violations over 3,816 differing pairs, 14 at each of
+    the 11 collection patterns** — the same blast radius, re-opened one axis over. Third
+    attempt: the arm now requires both sides to be a mapping *or absent*, which also preserves
+    the migrated-receipt vector's per-key rows.
+  - **`item_verdict` said `same` with `ok` true for an item contradicting its receipt**
+    whenever `result`, `result.parts` or the item's `assets` was a non-mapping: `_mapping`
+    makes it `{}` and the asset half of the check — the half round 1 added for this exact
+    symptom — was skipped for every asset. 12 of 24 malformed nodes. **And a test of mine
+    pinned the wrong answer**, asserting `same` for a garbage receipt.
+  - `item_verdict` sat outside `_receipt_verdicts`' `except`, and it raises on input `read`
+    accepts (a non-hex recipe_id, a non-ISO time, a NaN in a mirrored property).
+    `ReceiptError` subclasses `ValueError`, so it escaped `run`'s handler to exit 2, naming
+    neither item nor URL and discarding everything already computed.
+  - The duplicate-URL scan I added in round 2b was O(n²): **67 s of CPU before the first fetch**
+    on a 102,460-item catalogue. Now O(n).
+  - `receipts_*.txt` were written even when the axis never ran, making "clean" and "not
+    checked" the same bytes.
+  - It also audited my enumeration and found **five** ways it was too narrow — including that
+    population D could not see `_diff` at all (its `keys` is a local function, not an
+    attribute), so *the site of the two worst defects was outside every population I walked*,
+    and that one dismissal was factually wrong because I took a line number against the wrong
+    commit. Recorded in `review-enumeration.md`.
+- **The loop ends on three mechanical post-conditions**, not on a quiet round: the register-wide
+  difference property (mutation-verified, with a 22-case carve-out that matches crate's own
+  walk, checked at crate's source), the `same ⟹ readable nodes` property enumerated from
+  `receipt.VERDICT_NODES`, and round 3's classification of every `_mapping`/`keys()` site by
+  its consumer's default — all 8 agreement-default sites now refuse or are total.
+  Suite: 813 passed.

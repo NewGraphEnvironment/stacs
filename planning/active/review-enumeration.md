@@ -67,3 +67,62 @@ the script re-runnable rather than a one-off reading:
 **The lesson worth keeping is about the instrument, not the bugs.** An enumeration ends a
 review only over the population it actually walks, and naming that population is the load
 bearing part. Mine was one mechanism wide when the defect family was three.
+
+
+---
+
+## Round 3's audit of this instrument, and what replaced it
+
+Round 3 took the enumeration apart, and was right on every count. Recorded here because the
+lesson is about the instrument, not the bugs:
+
+1. **The safety predicate asked "will this raise?", not "can this answer agreement?"** — and
+   `_mapping` was on its safe list. So three of the eight agreement-default sites printed
+   `ok by construction`, one of them half of a real defect. Across all three rounds exactly
+   one defect was a crash and the rest were wrong verdicts: the instrument measured the
+   minority class.
+2. **Population D could not see `_diff` at all.** It matched `.items()`/`.keys()`/`.values()`
+   as attributes; `_diff`'s helper is a local *function* (`def keys(x)`), an `ast.Name`. The
+   site of the two most serious defects of the whole review was outside every population
+   walked.
+3. **Population A was a hand-written list of 20 member names**, and matched only
+   `X.get("member")` — so it excluded all 28 `_mapping(doc, "key")` calls, the very helper the
+   round 1 fix produced. "11 reads" meant "11 reads of the 20 names I listed, in one of two
+   spellings".
+4. **One dismissal was factually wrong.** The mechanism-C table called `verify.py:251-253`
+   pre-existing. It is not: this branch inserted `items_serving` at `verify.py:221`, so those
+   lines are *this branch's own code*. A line was carved out of review by a line number taken
+   against the wrong commit — the same "one fact derived twice" the enumeration was built to
+   close.
+5. **The script's exit status keyed only on mechanism B.** It printed "24 needing a stated
+   reason" and exited 0; the reasons lived in prose that no run checks.
+
+### The mechanism, as round 3 named it
+
+> "Not a mapping" and "has no members" are treated as the same fact — and whether that
+> collapse is safe depends entirely on what the consumer does with "no members". Every defect
+> in all three rounds sits in a consumer whose default for "no members" is **agreement**;
+> every site the reviews cleared sits in one whose default is **refusal**.
+
+That is why a type-safety sweep could not find them: `_mapping` and `keys()` were introduced
+to stop a *crash*, and they do that everywhere. They do not make a read **total**, and
+totality only matters where the answer is "same".
+
+### What ends the loop instead
+
+Three post-conditions, all mechanical, all in the suite:
+
+| post-condition | where | state |
+|---|---|---|
+| `canonical(a_block) != canonical(b_block) ⟹ ≥1 difference`, over every path `_patterns(register())` names | `test_compare_reports_every_difference_its_own_register_can_reach` | holds over 3,816 differing pairs; mutation-verified against the pre-fix arm |
+| `same ⟹ every node the verdict depended on was absent or a mapping`, enumerated from `receipt.VERDICT_NODES` | `test_item_verdict_never_says_same_over_a_node_it_could_not_read` | holds over 8 nodes × 5 values |
+| each `_mapping`/`keys()` site classified by its **consumer's default**, not by whether it raises | round 3's classification: 13 refusal-default, 8 agreement-default | all 8 agreement-default sites now refuse or are total |
+
+The carve-out in the first is a number, not a wave-through: exactly the empty-vs-absent pair,
+both orders, at each of the eleven collection patterns — 22 — and it matches crate's own walk,
+where `names(NULL)` and `names(list())` are both empty
+(`R/crt_receipt_compare.R:230-231`, read at the tag).
+
+**The instrument was the problem, not the diligence.** A hand-built enumeration is only ever
+as wide as the population its author imagined; a post-condition parametrized over the
+register's own rows widens itself.

@@ -346,3 +346,91 @@ def test_the_register_carries_every_action_the_contract_names():
     assert set(table.values()) == {"refuse", "warn", "record"}
     # `within` is produced by the comparison, never read from the register.
     assert "within" not in table.values()
+
+
+# =============================================================================
+# The post-condition that ends the review loop
+# =============================================================================
+
+# Values chosen to cross every type boundary the walk can meet, including the three that
+# `code-check.md` keeps apart: zero-length, empty, and unset.
+PROBE_VALUES = ({}, {"k": 1}, [], ["x"], "s", 7, 0, None, True)
+
+
+def _at(path, value):
+    """A receipt with `value` at a dotted register path."""
+    doc = {"output": {}, "recipe": {}, "result": {}, "context": {}}
+    parts = path.split(".")
+    node = doc
+    for part in parts[:-1]:
+        node = node.setdefault(part, {})
+    node[parts[-1]] = value
+    return doc
+
+
+def _collection_paths():
+    return r._patterns(r.register())[0]
+
+
+def test_compare_reports_every_difference_its_own_register_can_reach():
+    """**This is what ends the review loop**, and it is a property rather than a reviewer's
+    opinion: a quiet round and an exhausted reviewer look identical, a measured post-condition
+    does not.
+
+    The property: if two receipts' blocks have different canonical bytes, `compare` must report
+    at least one difference. Parametrized over every path the register itself names, so a row
+    added upstream joins the population automatically -- no hand-written list to fall behind.
+
+    It took three rounds to hold. Round 1 fixed `_diff`'s branch arm; round 2b found the
+    collection arm two lines above it; round 3 found that `isinstance(x, dict) or
+    isinstance(y, dict)` still left `{}` against `["network"]` silent, 154 violations over
+    3,816 differing pairs. Each fix was written under the same assumption as the last: that
+    "not a mapping" and "has no members" are one fact.
+
+    The one exemption is enumerated below, not waved through.
+    """
+    table = r.register()
+    collections, prefixes = r._patterns(table)
+    exempt, violations, checked = [], [], 0
+    for pattern in sorted(prefixes):
+        block = pattern.split(".")[0]
+        for one in PROBE_VALUES:
+            for two in PROBE_VALUES:
+                a, b = _at(pattern, one), _at(pattern, two)
+                if r.canonical(a[block]) == r.canonical(b[block]):
+                    continue
+                checked += 1
+                if r.compare(a, b).differences:
+                    continue
+                # The exemption: an EMPTY collection against an ABSENT one. crate walks a
+                # collection by its key sets (`names(NULL)` and `names(list())` are both
+                # empty in R/crt_receipt_compare.R:230-231), so it reports nothing either --
+                # and a receipt that declares no inputs still differs from one that records
+                # none at `recipe.recipe_id`, which is compared and refuses.
+                if pattern in collections and {canon(one), canon(two)} == {"{}", "null"}:
+                    exempt.append((pattern, one, two))
+                else:
+                    violations.append((pattern, one, two))
+    assert checked > 3000, f"only {checked} differing pairs: the probe got narrower"
+    assert violations == [], f"{len(violations)} of {checked} differing pairs reported nothing"
+    # The carve-out is a number too: exactly the empty-vs-absent pair, both orders, at each of
+    # the eleven collection patterns.
+    assert len(exempt) == 2 * len(collections), (len(exempt), len(collections))
+
+
+def canon(value):
+    return r.canonical(value).decode("utf-8")
+
+
+def test_the_post_condition_probe_can_fail():
+    """The property above is only worth having if it would catch the defect it was written
+    for. Restored here against the logic rather than the code: the old collection arm compared
+    key sets only, which is this."""
+    def old_arm(x, y):
+        kx = list(x) if isinstance(x, dict) else []
+        ky = list(y) if isinstance(y, dict) else []
+        return bool(set(kx) ^ set(ky))
+
+    # The exact pair round 3 measured: one empty mapping, one list.
+    assert not old_arm({}, ["network"]), "the old arm did report this; the probe is wrong"
+    assert r.compare(_at("recipe.inputs", {}), _at("recipe.inputs", ["network"])).differences
