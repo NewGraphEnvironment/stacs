@@ -856,7 +856,12 @@ def _receipt_verdicts(target, ids, by_id, fetch_dir, work, log) -> dict:
             receipt_dir = work / f"receipts_{start}"
             receipt_dir.mkdir()
             log(f"fetching {len(urls)} receipt(s) ...")
-            failed = set(fetch_bodies(list(urls.values()), receipt_dir,
+            # DEDUPED: two items may legitimately link one receipt, and this is the first
+            # call site in the package whose URL list can repeat. Two workers for one URL
+            # write the same `.part` path and race the rename, so the loser reports the URL
+            # as failed although the body is correctly on disk -- and every item linking it
+            # then read `inconsistent`, on good data (round 2b, measured 5/5).
+            failed = set(fetch_bodies(sorted(set(urls.values())), receipt_dir,
                                       workers=target.fetch_workers))
             try:
                 served = items_serving(list(published), target.collection_id, target.api,

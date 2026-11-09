@@ -37,6 +37,33 @@ Consumers, all four through the one producer:
 | `verify.py:471` `doc.get("properties", ...)` | pre-existing, inside `isinstance(doc, dict)`, and `props` is type-checked after |
 | `cli.py:83` `cfg.get("assets", {})` (and my `cfg.get("catalogue", {})`) | provably a dict: `read_config` raises `ConfigError` for any table that is not a table (`cli.py:57-58`) |
 
-After the one fix, the enumeration reads 11 member reads, 0 unguarded. The script is
-`scratchpad/enumerate_mechanisms.py` and exits non-zero while any remain, so it is re-runnable
-rather than a one-off reading.
+## What this enumeration does NOT establish — corrected after round 2b
+
+The closing claim above was too wide. The honest statement is **"0 unguarded member reads"**,
+not "0 instances of the mechanism": the population is *a member read then used as a mapping*,
+and round 2b found two instances outside it, one of them the most serious defect of the whole
+review.
+
+- **A value consumed as a dict KEY** (mechanism C). `parts.get(asset.get("href"))` raised
+  `TypeError: unhashable type` for a list href, out of `item_verdict`, which the verify path
+  reaches with no audit in front of it.
+- **A non-mapping walked as if it had no members** (mechanism D). `_diff`'s *collection* arm
+  was tested before the branch arm round 1 fixed, and `keys()` is empty for a non-mapping, so
+  two non-mappings at a collection path compared nothing and `compare` answered `identical`.
+  Eleven register patterns are both a collection and a leaf row, so all eleven were silent —
+  and `recipe.inputs` as a list was called `identical` by the same contract whose `recipe_id`
+  refuses to hash it.
+
+`planning/active/enumerate_mechanisms.py` now walks all four populations. Current state, with
+the script re-runnable rather than a one-off reading:
+
+| mechanism | sites | real | note |
+|---|---|---|---|
+| A — member read as a mapping | 8 flagged of 11 | 0 | each guarded by an `isinstance` that raises, a value this code constructed, or `read_config` refusing a non-table |
+| B — one fact derived twice | 1 producer | 0 | the receipt-asset predicate appears exactly once; the script exits non-zero if that stops being true |
+| C — value used as a dict key | 13 flagged | 0 in this diff | 7 are type annotations (the walk's own false positives); 3 are pre-existing `verify.py` lines keyed on an API's `f["id"]`, outside this branch and noted rather than changed; `row["key"]` is always a JSON object key, so always a string |
+| D — non-mapping walked as empty | 28 sites | 0 | 24 iterate locals this code built or are guarded; the two public keyword arguments (`stac_fields(assets=)`, `compare(overrides=)`) now refuse a non-mapping |
+
+**The lesson worth keeping is about the instrument, not the bugs.** An enumeration ends a
+review only over the population it actually walks, and naming that population is the load
+bearing part. Mine was one mechanism wide when the defect family was three.

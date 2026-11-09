@@ -186,3 +186,29 @@
     `read_config` refusing any table that is not a table), and **1 real instance left**,
     `(recipe.get("code") or {}).items()` in `stac_fields`, which `item_verdict` reaches on a
     receipt nothing validated. Fixed; the enumeration script now exits 0. Suite: 746 passed.
+- **`/code-check branch` round 2b** (`review-round2b.md`; round 2 itself died on an API error):
+  three bugs and one dead assertion, **all four reproduced**.
+  - **`_diff`'s COLLECTION arm had exactly the hole round 1 closed in the BRANCH arm** — the
+    sibling two lines up, tested first, untouched. `keys()` is empty for a non-mapping, so two
+    non-mappings at a collection path compared nothing and `compare` answered `identical`.
+    Enumerated: **11 register patterns are both a collection and a leaf row**, so all eleven
+    were silent, and `recipe.inputs` as a list was called `identical` by the same contract
+    whose `recipe_id` refuses to hash it. This is the round 1 mechanism one axis over, which
+    is the whole reason the loop keeps going.
+  - **Two items linking one receipt made every one of them read `inconsistent`** — measured
+    5/5. `_receipt_verdicts` is the first call site in the package whose URL list can
+    legitimately repeat; one worker per URL meant two writing the same `.part` path and racing
+    the rename, so the loser reported a failure for a body correctly on disk. Deduped at the
+    call site, and `fetch_bodies` now refuses a repeated URL rather than mis-reporting.
+    The fixtures elsewhere give each item its own href precisely to avoid this, which is what
+    hid it: the one shape they steer around is the one that failed.
+  - A non-string asset href was used as a dict key, raising `TypeError: unhashable type` out
+    of `item_verdict` on the verify path, where nothing audits first.
+  - **One of my round 1 regression assertions could not fail**:
+    `assert verdict in ITEM_VERDICTS or verdict in ("identical","equivalent","different")` is
+    true for every value `compare` can return — and it was green against the wrong `identical`
+    verdicts above. Both such assertions now pin the verdict.
+  - The reviewer also corrected my enumeration's closing claim, rightly: "0 unguarded member
+    reads" is what it establishes, not "0 instances of the mechanism". It now walks four
+    populations, and the two public keyword arguments that were walked with `.items()` refuse
+    a non-mapping. Suite: 779 passed.

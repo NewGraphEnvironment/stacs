@@ -847,7 +847,15 @@ def _diff(a, b, table) -> list:
         return list(x) if isinstance(x, dict) else []
 
     def walk(x, y, field, pattern, key):
-        if pattern in collections:
+        # Whether there is anything to walk INTO. Neither arm below may walk a node that is
+        # not a mapping: `keys()` is empty for a string, a list or a number, so a collection
+        # arm reached with two non-mappings compared nothing and returned `identical` --
+        # round 1 closed exactly this in the branch arm and left the collection arm, which is
+        # the sibling two lines up (round 2b). Eleven register patterns are both a collection
+        # and a leaf row, so every one of them was silent; `recipe.inputs` as a list was
+        # called `identical` by the same contract whose `recipe_id` refuses to hash it.
+        walkable = isinstance(x, dict) or isinstance(y, dict)
+        if pattern in collections and walkable:
             kx, ky = keys(x), keys(y)
             for k in sorted(set(kx) - set(ky)):
                 found.append((field, pattern, f"{k} only in a", k))
@@ -855,7 +863,7 @@ def _diff(a, b, table) -> list:
                 found.append((field, pattern, f"{k} only in b", k))
             for k in [k for k in kx if k in set(ky)]:
                 walk(x[k], y[k], f"{field}[{k}]", f"{pattern}.*", k)
-        elif pattern in table or pattern not in prefixes:
+        elif pattern in table or pattern not in prefixes or not walkable:
             # A leaf. Equality is "the same canonical JSON", so an absent member and a null
             # compare equal -- which is how JSON reads them, and how a receipt written with a
             # null reads back.
@@ -932,6 +940,9 @@ def compare(a, b, overrides=None) -> Comparison:
             raise ReceiptError(f"receipt {name} is not a JSON object, got "
                                f"{type(doc).__name__}")
     table = register()
+    if overrides is not None and not isinstance(overrides, dict):
+        raise ReceiptError(f"overrides maps a register field to an action, got "
+                           f"{type(overrides).__name__}")
     if overrides:
         for field, action in overrides.items():
             if field not in table:
@@ -1084,6 +1095,12 @@ def stac_fields(receipt, assets=None, receipt_asset=None, receipt_sha256=None) -
     """
     if not isinstance(receipt, dict):
         raise ReceiptError(f"a receipt is a JSON object, got {type(receipt).__name__}")
+    if assets is not None and not isinstance(assets, dict):
+        # A public parameter, so a caller's mistake reaches here. Everything else malformed in
+        # this module is a ReceiptError; `.items()` on a string would be an AttributeError
+        # naming neither the parameter nor the type (enumeration, mechanism D).
+        raise ReceiptError(f"assets maps an asset key to its href, got "
+                           f"{type(assets).__name__}")
     recipe = _mapping(receipt, "recipe")
     result = _mapping(receipt, "result")
     context = _mapping(receipt, "context")
@@ -1114,6 +1131,13 @@ def stac_fields(receipt, assets=None, receipt_asset=None, receipt_sha256=None) -
     out_assets = {}
     parts = _mapping(result, "parts")
     for key, href in (assets or {}).items():
+        if not isinstance(href, str):
+            # An href is used as a key into `result.parts`, so a list or a dict raises
+            # `TypeError: unhashable type` rather than refusing (round 2b). A value consumed
+            # as a dict KEY is the same family as a member read as a mapping, and the
+            # enumeration's population did not include it.
+            raise ReceiptError(f"asset {key!r} href must be a string, got "
+                               f"{type(href).__name__}")
         part = parts.get(href)
         if not isinstance(part, dict):
             # Guessing would publish another file's digest under this asset.
@@ -1368,7 +1392,15 @@ def item_verdict(published, served, receipt, receipt_sha256=None) -> ItemVerdict
     for key, asset in _mapping(published, "assets").items():
         if not isinstance(asset, dict):
             continue
-        part = parts.get(asset.get("href"))
+        href = asset.get("href")
+        if href is not None and not isinstance(href, str):
+            # Unhashable as a dict key, and the item is malformed either way. Recorded as a
+            # disagreement rather than raised: `_receipt_verdicts` reads the published body
+            # with no audit in front of it on the verify path, and one malformed item must
+            # not end the run with a traceback (round 2b).
+            disagree.append(f"assets[{key}].href")
+            continue
+        part = parts.get(href)
         if not isinstance(part, dict):
             # Not an output this receipt describes: an overview, a thumbnail, or the receipt
             # itself, whose own digest is checked above. Nothing to compare it with.

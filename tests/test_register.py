@@ -2014,3 +2014,49 @@ def test_the_verdict_lists_are_written_to_the_out_dir(env, api):
     _receipt_run(env, api, published, served, data=data, out_dir=str(out_dir))
     assert (out_dir / "receipts_rebuilt.txt").read_text().split() == ["a0"]
     assert (out_dir / "receipts_changed.txt").read_text() == ""
+
+
+def test_two_items_that_link_one_receipt_are_not_all_reported_inconsistent(env, api):
+    """Round 2b, measured 5/5 before the fix. `_receipt_verdicts` is the first call site in
+    the package whose URL list can legitimately repeat: two items may share a receipt. One
+    worker per URL meant two workers writing the same `.part` path and racing the rename, so
+    the loser reported a failure for a body that was correctly on disk -- and every item
+    linking it read `inconsistent` with a non-zero status, on good data.
+
+    The fixtures elsewhere give each item its own receipt href precisely to avoid this, which
+    is what kept three rounds from seeing it: the one shape they steer around is the one that
+    failed.
+    """
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    published, served = [], []
+    for i in range(6):
+        item = _item_with_receipt(f"a{i}", digest, rid, data_checksum=CK_A)
+        # One shared receipt for every item, which the contract allows.
+        item["assets"]["receipt"]["href"] = "receipt.json"
+        published.append(item)
+        other = _item_with_receipt(f"a{i}", digest, rid, data_checksum=CK_B)
+        other["assets"]["receipt"]["href"] = "receipt.json"
+        served.append(other)
+
+    def one_shared_receipt(bucket):
+        (bucket / "receipt.json").write_bytes(data)
+
+    _in_sync(api, served)
+    r = _run(env, "verify", api.url, items=published, transport=None,
+             before=one_shared_receipt, require_receipt=True)
+    assert "6 rebuilt" in r.out, r.out
+    assert "0 inconsistent" in r.out, r.out
+
+
+def test_fetch_bodies_refuses_a_repeated_url_rather_than_reporting_a_false_failure(tmp_path):
+    """The harness half of the fix. A caller that did not mean to repeat a URL has a bug of
+    its own, and the old behaviour was to report one of them failed while writing the body
+    correctly -- a silent wrong answer. `_receipt_verdicts` dedupes before calling, because
+    there the repetition is legitimate."""
+    from stacs.catalogue import fetch_bodies
+    src = tmp_path / "x.json"
+    src.write_text("{}")
+    out = tmp_path / "out"
+    out.mkdir()
+    with pytest.raises(ValueError, match="appear more than once"):
+        fetch_bodies([src.as_uri(), src.as_uri()], out)

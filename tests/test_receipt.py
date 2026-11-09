@@ -755,24 +755,33 @@ def test_a_tolerance_that_is_not_a_number_does_not_leak_a_typeerror():
 
 @pytest.mark.parametrize("block", ["output", "recipe", "result", "context"])
 @pytest.mark.parametrize("value", ["a string", [1, 2], 7, None])
-def test_compare_refuses_a_malformed_block_rather_than_crashing(block, value):
-    """Found by the test above, and it is the same class as the finding that prompted it:
-    `compare`'s post-processing read every block with `doc.get(x) or {}`, which keeps a truthy
-    non-mapping, so a scalar `recipe` raised AttributeError out of the one function whose job
-    is to refuse malformed input. `read` checks only the version, so such a receipt reaches
-    here."""
+def test_compare_reports_a_malformed_block_as_a_difference(block, value):
+    """`compare`'s post-processing read every block with `doc.get(x) or {}`, which keeps a
+    truthy non-mapping, so a scalar `recipe` raised AttributeError out of the one function
+    whose job is to refuse malformed input. `read` checks only the version, so such a receipt
+    reaches here.
+
+    The assertion is the VERDICT, not "did not raise". It was
+    `in ITEM_VERDICTS or in ("identical", "equivalent", "different")`, which is true for
+    every value `compare` can return -- a test that could not fail, and it was green against
+    the wrong `identical` verdicts of the collection-arm defect (round 2b).
+    """
     base = {"output": {}, "recipe": {}, "result": {}, "context": {}}
     got = r.compare({**base, block: value}, base)
-    assert got.verdict in r.ITEM_VERDICTS or got.verdict in \
-        ("identical", "equivalent", "different")
+    assert got.verdict == "different", (block, value, got)
+    assert got.fields, (block, value, got)
 
 
 @pytest.mark.parametrize("value", ["a string", [1, 2], 7])
-def test_item_verdict_refuses_a_malformed_receipt_rather_than_crashing(value):
+@pytest.mark.parametrize("member", ["result", "recipe", "assets"])
+def test_item_verdict_returns_a_verdict_for_a_malformed_receipt(value, member):
+    """Also pinned by its verdict rather than by "did not raise". A receipt whose members are
+    garbage claims nothing, so two identical items agree and the answer is `same`; what must
+    not happen is a traceback, because `_receipt_verdicts` has no audit in front of it on the
+    verify path."""
     item = {"properties": {"receipt:recipe_id": "a" * 64}}
-    for receipt_doc in ({"result": value}, {"recipe": value}, {"assets": value}):
-        got = r.item_verdict(item, item, receipt_doc)
-        assert got.verdict in r.ITEM_VERDICTS
+    got = r.item_verdict(item, item, {member: value})
+    assert got.verdict == "same", (member, value, got)
 
 
 @pytest.mark.parametrize("value", ["a string", [1, 2], 7])
@@ -791,3 +800,113 @@ def test_stac_fields_refuses_a_malformed_code_block_rather_than_crashing(code):
                             "result": {}, "context": {}, "output": {}})
     assert "processing:software" not in fields["properties"]
     assert fields["properties"]["receipt:recipe_id"] == "a" * 64
+
+
+# =============================================================================
+# Regressions from round 2b
+# =============================================================================
+
+def test_every_register_collection_is_also_a_leaf_row():
+    """The measurement behind the finding below: the collection arm and the leaf arm of
+    `_diff` are not alternatives for these patterns, they are the same path reached two ways.
+    Enumerated from the register so a row added upstream joins the set automatically."""
+    table = r.register()
+    collections, _prefixes = r._patterns(table)
+    both = sorted(collections & set(table))
+    assert len(both) == 11, both
+    assert sorted(c for c in collections if c) == both, \
+        "a collection with no leaf row would have no action to fall back on"
+
+
+@pytest.mark.parametrize("path,one,two,action", [
+    ("recipe.code", "garbage-a", "garbage-b", "refuse"),
+    ("recipe.inputs", ["network"], ["roads"], "refuse"),
+    ("recipe.config.files", ["a.csv"], ["b.csv"], "refuse"),
+    ("recipe.config.settings", ["x"], ["y"], "refuse"),
+    ("result.fingerprint", "a", "b", "refuse"),
+    ("result.parts", ["a.csv"], ["b.csv"], "refuse"),
+    ("result.summary", 1.0, 2.0, "refuse"),
+    ("result.tolerance.tables", ["t"], ["u"], "refuse"),
+    ("result.tolerance.summary", ["s"], ["v"], "refuse"),
+    ("context.toolchain", "x", "y", "record"),
+])
+def test_a_collection_that_is_not_an_object_on_either_side_is_still_compared(path, one, two,
+                                                                            action):
+    """Round 2b, and the round 1 mechanism one axis over: `_diff`'s COLLECTIONS arm was tested
+    before the branch arm and `keys()` is empty for anything that is not a dict, so two
+    non-mappings at a collection path compared nothing and `compare` answered `identical`.
+
+    Eleven register patterns are both a collection and a leaf row, so all eleven were silent.
+    The list form is the sharpest case: `recipe_id` REFUSES to hash `{"inputs": ["network"]}`
+    because "a list would hash in the order it was written", while `compare` called
+    `["network"]` and `["roads"]` identical -- one contract, two answers.
+    """
+    def at(value):
+        doc = {"output": {}, "recipe": {}, "result": {}, "context": {}}
+        parts = path.split(".")
+        node = doc
+        for p in parts[:-1]:
+            node = node.setdefault(p, {})
+        node[parts[-1]] = value
+        return doc
+
+    got = r.compare(at(one), at(two))
+    assert (path, action) in got.fields, (path, got.fields)
+    # `record` never changes the verdict, which is crate's rule; `refuse` makes it different.
+    assert got.verdict == ("different" if action == "refuse" else "identical"), got
+
+
+def test_a_collection_that_is_an_object_on_one_side_still_walks_its_keys():
+    """The other direction: the fix must not turn a real collection into a leaf."""
+    base = {"output": {}, "recipe": {}, "result": {}, "context": {}}
+    got = r.compare({**base, "recipe": {"inputs": {"a": {"sha256": "1" * 64}}}},
+                    {**base, "recipe": {"inputs": {"b": {"sha256": "1" * 64}}}})
+    assert ("recipe.inputs", "refuse") in got.fields, got.fields
+    assert any("only in a" in d.detail for d in got.differences), got.differences
+
+
+@pytest.mark.parametrize("href", [["x.tif"], {"a": 1}, 7, None])
+def test_an_asset_href_that_is_not_a_string_is_not_used_as_a_dict_key(href):
+    """Round 2b. An href indexes `result.parts`, so a list or dict raised
+    `TypeError: unhashable type` instead of refusing -- out of `item_verdict`, which
+    `_receipt_verdicts` reaches with no audit in front of it on the verify path, so one
+    malformed published item would have ended the run with a traceback.
+
+    This is a third mechanism: a JSON value consumed as a dict KEY. The enumeration after
+    round 1 could not see it, because its population was member reads.
+    """
+    rec = {"output": {}, "recipe": {"recipe_id": "a" * 64}, "context": {},
+           "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 1}}}}
+    item = {"properties": {"receipt:recipe_id": "a" * 64},
+            "assets": {"data": {"href": href, "file:checksum": r.multihash("b" * 64)}}}
+    got = r.item_verdict(item, item, rec)
+    if href is None:
+        # An asset with no href names no part; nothing to compare it with.
+        assert got.verdict == "same", got
+    else:
+        assert got.verdict == "inconsistent", got
+        assert "assets[data].href" in got.fields, got.fields
+
+
+@pytest.mark.parametrize("href", [["x.tif"], {"a": 1}, 7])
+def test_stac_fields_refuses_a_non_string_href_from_its_caller(href):
+    rec = {"output": {}, "recipe": {}, "context": {},
+           "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 1}}}}
+    with pytest.raises(r.ReceiptError, match="href must be a string"):
+        r.stac_fields(rec, assets={"data": href})
+
+
+@pytest.mark.parametrize("bad", ["x.tif", ["x.tif"], 7])
+def test_stac_fields_refuses_an_assets_argument_that_is_not_a_mapping(bad):
+    """Enumeration, mechanism D: a public parameter walked with `.items()`. Everything else
+    malformed here is a ReceiptError; an AttributeError would name neither the parameter nor
+    the type."""
+    with pytest.raises(r.ReceiptError, match="assets maps an asset key"):
+        r.stac_fields({"output": {}, "recipe": {}, "result": {}, "context": {}}, assets=bad)
+
+
+@pytest.mark.parametrize("bad", ["context.time", ["context.time"], 7])
+def test_compare_refuses_an_overrides_argument_that_is_not_a_mapping(bad):
+    base = {"output": {}, "recipe": {}, "result": {}, "context": {}}
+    with pytest.raises(r.ReceiptError, match="overrides maps a register field"):
+        r.compare(base, base, overrides=bad)
