@@ -130,7 +130,7 @@ scripts. `item_register.sh` / `collection_register.sh` exist in `stac_uav_bc` wi
 defects NewGraphEnvironment/stac_dem_bc#27's versions fixed (argv/ARG_MAX, fixed remote temp path, cleanup skipped on
 failure, items registered before the collection).
 
-Relates to NewGraphEnvironment/stac_dem_bc#27, NewGraphEnvironment/stac_dem_bc#29, NewGraphEnvironment/stac_dem_bc#35, NewGraphEnvironment/stac_dem_bc#42, NewGraphEnvironment/stac_dem_bc#45, NewGraphEnvironment/rtj#229, NewGraphEnvironment/soul#62
+Relates to NewGraphEnvironment/stac_dem_bc#27, NewGraphEnvironment/stac_dem_bc#29, NewGraphEnvironment/stac_dem_bc#35, NewGraphEnvironment/stac_dem_bc#42, NewGraphEnvironment/stac_dem_bc#45, internal issues
 
 
 
