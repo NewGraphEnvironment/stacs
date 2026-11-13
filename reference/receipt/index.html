@@ -1,0 +1,2351 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Register STAC catalogues into pgstac and verify they arrived.">
+      
+      
+      
+        <link rel="canonical" href="https://www.newgraphenvironment.com/stacs/reference/receipt/">
+      
+      
+        <link rel="prev" href="../register/">
+      
+      
+        <link rel="next" href="../../changelog/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/logo_small.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>stacs.receipt - stacs</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="black" data-md-color-accent="black">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#stacsreceipt" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="stacs" class="md-header__button md-logo" aria-label="stacs" data-md-component="logo">
+      
+  <img src="../../assets/logo_small.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            stacs
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              stacs.receipt
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="black" data-md-color-accent="black"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="white"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/NewGraphEnvironment/stacs" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    NewGraphEnvironment/stacs
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="stacs" class="md-nav__button md-logo" aria-label="stacs" data-md-component="logo">
+      
+  <img src="../../assets/logo_small.png" alt="logo">
+
+    </a>
+    stacs
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/NewGraphEnvironment/stacs" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    NewGraphEnvironment/stacs
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Command line
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../receipts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Receipts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../verify/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    stacs.verify
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../catalogue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    stacs.catalogue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../validate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    stacs.validate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../queryables/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    stacs.queryables
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../register/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    stacs.register
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    stacs.receipt
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    stacs.receipt
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        receipt
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.ReceiptError" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ReceiptError
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.Difference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Difference
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.Comparison" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comparison
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Comparison">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#stacs.receipt.Comparison.fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.ItemVerdict" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ItemVerdict
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ItemVerdict">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#stacs.receipt.ItemVerdict.ok" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ok
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.load_json" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        load_json
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.canonical" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        canonical
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.recipe_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        recipe_id
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.tolerance_decimals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tolerance_decimals
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.table_canonical" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        table_canonical
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.table_fingerprint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        table_fingerprint
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.double_from_bits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        double_from_bits
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        schema
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.stac_schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        stac_schema
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.validate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        validate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.read" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        read
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.reindent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        reindent
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.write" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        write
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.register" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        register
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.compare" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        compare
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.multihash" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        multihash
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.stac_fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        stac_fields
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.receipt_asset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        receipt_asset
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.receipt_href" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        receipt_href
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.item_problems" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        item_problems
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.item_verdict" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        item_verdict
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        receipt
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.ReceiptError" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ReceiptError
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.Difference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Difference
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.Comparison" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comparison
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Comparison">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#stacs.receipt.Comparison.fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.ItemVerdict" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ItemVerdict
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ItemVerdict">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#stacs.receipt.ItemVerdict.ok" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ok
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.load_json" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        load_json
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.canonical" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        canonical
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.recipe_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        recipe_id
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.tolerance_decimals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tolerance_decimals
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.table_canonical" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        table_canonical
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.table_fingerprint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        table_fingerprint
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.double_from_bits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        double_from_bits
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        schema
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.stac_schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        stac_schema
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.validate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        validate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.read" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        read
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.reindent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        reindent
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.write" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        write
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.register" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        register
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.compare" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        compare
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.multihash" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        multihash
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.stac_fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        stac_fields
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.receipt_asset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        receipt_asset
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.receipt_href" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        receipt_href
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.item_problems" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        item_problems
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stacs.receipt.item_verdict" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        item_verdict
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="stacsreceipt">stacs.receipt<a class="headerlink" href="#stacsreceipt" title="Permanent link">&para;</a></h1>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+<a id="stacs.receipt"></a>
+    <div class="doc doc-contents first">
+
+        <p>Provenance receipts for catalogue items: crate's receipt contract, in Python.</p>
+<p>A receipt is one record per published output -- <code>output</code> (what it is), <code>recipe</code> (how it was
+made), <code>result</code> (what came out) and <code>context</code> (where and when) -- with a <code>recipe_id</code> that
+identifies the recipe alone. Two items with the same <code>recipe_id</code> were made the same way, so a
+rebuilt item can be told apart from a changed one.</p>
+<p><strong>What this module does and does not do.</strong> The builder hands it values; it computes the ids,
+writes the receipt and compares two of them. It reads no source data and builds no item, which
+is why it belongs in a package that works on a catalogue after its items exist.</p>
+<p><strong>Its canonical form is frozen, which <code>stacs.verify</code>'s is not.</strong> <code>verify.canonical_json</code> may
+change shape with no migration, because nothing stores a body digest -- both sides are
+recomputed every run. A <code>recipe_id</code> is <em>published</em>, inside items and beside them, so the bytes
+it is taken over can move only with a new receipt schema version. The two forms are also
+different on purpose: <code>verify</code>'s drops <code>links</code> and null members to absorb what pgstac's round
+trip changes, and a receipt's applies no STAC rules at all. Neither may be used for the other.</p>
+<p>The contract is crate's, vendored under <code>data/receipt/</code> at a pinned tag and checked against it
+in CI; crate's test vectors are the only thing keeping the two implementations in step.</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="stacs.receipt.ReceiptError" class="doc doc-heading">
+            <code>ReceiptError</code>
+
+
+<a href="#stacs.receipt.ReceiptError" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="ValueError">ValueError</span></code></p>
+
+
+
+        <p>A receipt, recipe or table that has no canonical form, or does not meet the contract.</p>
+<p>Raised with what was wrong and where, never with the value alone: a message naming the
+column or the member is the difference between a two-minute fix and a bisect.</p>
+
+
+
+
+
+
+
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="stacs.receipt.Difference" class="doc doc-heading">
+            <code>Difference</code>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+<a href="#stacs.receipt.Difference" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>One field that differs, with the action the register gives it.</p>
+<p><code>side</code> is the block the register pattern starts in, not a judgement about which receipt is
+wrong.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="stacs.receipt.Comparison" class="doc doc-heading">
+            <code>Comparison</code>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+<a href="#stacs.receipt.Comparison" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>The outcome of comparing two receipts.</p>
+<p><code>differences</code> is an ORDERED LIST and may repeat a field: a collection with two keys
+missing reports its own path twice, which crate's <code>a migrated receipt</code> vector shows for
+both <code>recipe.inputs</code> and <code>recipe.config.settings</code>. A set would lose one of each.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="stacs.receipt.Comparison.fields" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">fields</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#stacs.receipt.Comparison.fields" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>[(field, action)] -- what crate's vectors pin, without the prose detail.</p>
+
+    </div>
+
+</div>
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="stacs.receipt.ItemVerdict" class="doc doc-heading">
+            <code>ItemVerdict</code>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+<a href="#stacs.receipt.ItemVerdict" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>What a receipt says about one item whose published and served bodies differ.</p>
+<ul>
+<li><code>same</code>: every mirrored field agrees on both sides and with the receipt, so whatever
+  changed in the body is outside what the receipt describes -- a bbox correction, a link.</li>
+<li><code>rebuilt</code>: the recipe is the same on both sides and a result field moved, so the item
+  was built again from the same inputs.</li>
+<li><code>changed</code>: the recipe itself differs between the two sides.</li>
+<li><code>inconsistent</code>: the item's provenance could not be established -- it disagrees with
+  the receipt it links, that receipt could not be read, or it links none at all. One
+  category because they have one consequence; the notes say which it was. Never reported
+  as agreement.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="stacs.receipt.ItemVerdict.ok" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">ok</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#stacs.receipt.ItemVerdict.ok" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p><code>same</code> is the only verdict that is not drift on this axis.</p>
+
+    </div>
+
+</div>
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="stacs.receipt.load_json" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">load_json</span><span class="p">(</span><span class="n">text</span><span class="p">)</span></code>
+
+<a href="#stacs.receipt.load_json" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Parse JSON the way the receipt contract requires: every number as a double.</p>
+<p>JSON has one number type and RFC 8785 spells every number as ECMAScript does, but Python's
+<code>json</code> reads an integer literal as <code>int</code> -- and <code>rfc8785</code> refuses an int past 2^53 rather
+than rounding it. So this is the one reader every entry point here uses, rather than a
+<code>parse_int=</code> argument repeated at each call site and forgotten at one of them.</p>
+
+
+<p><span class="doc-section-title">Examples:</span></p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">load_json</span><span class="p">(</span><span class="s1">'{"n": 1152921504606846976}'</span><span class="p">)[</span><span class="s2">"n"</span><span class="p">]</span>
+<span class="go">1.152921504606847e+18</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">load_json</span><span class="p">(</span><span class="s1">'{"n": 3}'</span><span class="p">)[</span><span class="s2">"n"</span><span class="p">]</span>
+<span class="go">3.0</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">canonical</span><span class="p">(</span><span class="n">load_json</span><span class="p">(</span><span class="s1">'{"n": 1152921504606846976}'</span><span class="p">))</span>
+<span class="go">b'{"n":1152921504606847000}'</span>
+</code></pre></div>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="stacs.receipt.canonical" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">canonical</span><span class="p">(</span><span class="n">value</span><span class="p">)</span></code>
+
+<a href="#stacs.receipt.canonical" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>RFC 8785 (JCS) canonical JSON of <code>value</code>, with no STAC rules applied.</p>
+<p>This is the plain canonical form crate's specification names: nothing is removed and
+nothing is absorbed. <code>stacs.verify.canonical_json</code> is a different function for a different
+job -- it drops <code>links</code> and null members because pgstac does -- and the two must not be
+substituted for one another.</p>
+
+
+<p><span class="doc-section-title">Examples:</span></p>
+    <p>Keys sorted, nulls kept, <code>1.0</code> written as <code>1</code>, <code>-0</code> as <code>0</code>:</p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">canonical</span><span class="p">({</span><span class="s2">"b"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">"a"</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span> <span class="s2">"c"</span><span class="p">:</span> <span class="o">-</span><span class="mf">0.0</span><span class="p">})</span>
+<span class="go">b'{"a":1,"b":null,"c":0}'</span>
+</code></pre></div>
+    <p>A top-level scalar is a JSON document too:</p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">canonical</span><span class="p">(</span><span class="s2">"x"</span><span class="p">)</span>
+<span class="go">b'"x"'</span>
+</code></pre></div>
+    <p>No canonical form is an error, naming the member:</p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">canonical</span><span class="p">({</span><span class="s2">"n"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="s2">"nan"</span><span class="p">)})</span>
+<span class="gt">Traceback (most recent call last):</span>
+<span class="c">...</span>
+<span class="gr">stacs.receipt.ReceiptError</span>: <span class="n">no canonical form at n: ...</span>
+</code></pre></div>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="stacs.receipt.recipe_id" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">recipe_id</span><span class="p">(</span><span class="n">recipe</span><span class="p">)</span></code>
+
+<a href="#stacs.receipt.recipe_id" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>SHA-256, lowercase hex, over the canonical JSON of a recipe block without its own
+<code>recipe_id</code>.</p>
+<p>The whole recipe and nothing else: <code>output</code>, <code>result</code> and <code>context</code> are not part of it, and
+neither is any input's result -- an input enters by its own identity (<code>recipe_id</code>,
+<code>version_id</code>, <code>sha256</code>, or a declared <code>none</code>).</p>
+
+
+<p><span class="doc-section-title">Examples:</span></p>
+    <p>The empty recipe, which crate's vectors pin:</p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">empty</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"code"</span><span class="p">:</span> <span class="p">{},</span> <span class="s2">"config"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"files"</span><span class="p">:</span> <span class="p">{},</span> <span class="s2">"settings"</span><span class="p">:</span> <span class="p">{}},</span>
+<span class="gp">... </span>         <span class="s2">"inputs"</span><span class="p">:</span> <span class="p">{},</span> <span class="s2">"seed"</span><span class="p">:</span> <span class="kc">None</span><span class="p">}</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">recipe_id</span><span class="p">(</span><span class="n">empty</span><span class="p">)</span>
+<span class="go">'ecb53cd4e03b09490f6c581b1195aa9635e5fff51790d64e19d2a2a79f8a0493'</span>
+</code></pre></div>
+    <p>A recipe carrying an id hashes as though it did not:</p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">recipe_id</span><span class="p">({</span><span class="o">**</span><span class="n">empty</span><span class="p">,</span> <span class="s2">"recipe_id"</span><span class="p">:</span> <span class="s2">"0"</span> <span class="o">*</span> <span class="mi">64</span><span class="p">})</span> <span class="o">==</span> <span class="n">recipe_id</span><span class="p">(</span><span class="n">empty</span><span class="p">)</span>
+<span class="go">True</span>
+</code></pre></div>
+    <p>A keyed collection written as a list is refused, not hashed:</p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">recipe_id</span><span class="p">({</span><span class="o">**</span><span class="n">empty</span><span class="p">,</span> <span class="s2">"inputs"</span><span class="p">:</span> <span class="p">[</span><span class="s2">"network"</span><span class="p">]})</span>
+<span class="gt">Traceback (most recent call last):</span>
+<span class="c">...</span>
+<span class="gr">stacs.receipt.ReceiptError</span>: <span class="n">recipe.inputs must be an object keyed by name, got list: ...</span>
+</code></pre></div>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="stacs.receipt.tolerance_decimals" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">tolerance_decimals</span><span class="p">(</span><span class="n">tol</span><span class="p">)</span></code>
+
+<a href="#stacs.receipt.tolerance_decimals" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>The decimals a tolerance rounds to.</p>
+<p>A tolerance is an absolute power of ten from 1 to 1e-15, so it names both the rounding of
+a fingerprint and what a comparison accepts. Anything else has no rounding that matches it.</p>
+
+
+<p><span class="doc-section-title">Examples:</span></p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">tolerance_decimals</span><span class="p">(</span><span class="mf">1e-9</span><span class="p">)</span>
+<span class="go">9</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">tolerance_decimals</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="go">0</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">tolerance_decimals</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>
+<span class="gt">Traceback (most recent call last):</span>
+<span class="c">...</span>
+<span class="gr">stacs.receipt.ReceiptError</span>: <span class="n">tolerance 0.5 is not a power of ten from 1 to 1e-15</span>
+</code></pre></div>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="stacs.receipt.table_canonical" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">table_canonical</span><span class="p">(</span><span class="n">table</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+<a href="#stacs.receipt.table_canonical" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>The bytes a table's fingerprint is taken over.</p>
+<p><code>table</code> is column-major, <code>{"columns": {&lt;name&gt;: {"type": &lt;t&gt;, "values": [...]}}}</code>, with <code>t</code>
+one of character, integer, double, logical, date, datetime. <code>tolerance</code> maps a column name
+to a power of ten; a double in such a column is written with that many decimals, and
+without one it gets its shortest round-trip spelling.</p>
+<p>Columns sort by their UTF-8 bytes and so do rows -- by the bytes of each row's own JSON,
+not by their values, so <code>["a b"]</code> sorts before <code>["a"]</code> (a space is below the closing
+quote). The rule is mechanical so that no implementation needs a collation.</p>
+
+
+<p><span class="doc-section-title">Examples:</span></p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">t</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"columns"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"n"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"type"</span><span class="p">:</span> <span class="s2">"integer"</span><span class="p">,</span> <span class="s2">"values"</span><span class="p">:</span> <span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">]},</span>
+<span class="gp">... </span>                 <span class="s2">"km"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"type"</span><span class="p">:</span> <span class="s2">"double"</span><span class="p">,</span> <span class="s2">"values"</span><span class="p">:</span> <span class="p">[</span><span class="mf">7.25</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">]}}}</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">table_canonical</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+<span class="go">b'{"columns":["km","n"],"rows":[["0.5","1"],["7.25","2"]]}'</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">table_canonical</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="p">{</span><span class="s2">"km"</span><span class="p">:</span> <span class="mi">1</span><span class="p">})</span>
+<span class="go">b'{"columns":["km","n"],"rows":[["0","1"],["7","2"]]}'</span>
+</code></pre></div>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="stacs.receipt.table_fingerprint" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">table_fingerprint</span><span class="p">(</span><span class="n">table</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+<a href="#stacs.receipt.table_fingerprint" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>SHA-256, lowercase hex, of <code>table_canonical(table, tolerance)</code>.</p>
+<p>Not to be confused with a schema fingerprint, which hashes a table's column names and
+types and never its values.</p>
+
+
+<p><span class="doc-section-title">Examples:</span></p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">table_fingerprint</span><span class="p">({</span><span class="s2">"columns"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"a"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"type"</span><span class="p">:</span> <span class="s2">"integer"</span><span class="p">,</span> <span class="s2">"values"</span><span class="p">:</span> <span class="p">[]},</span>
+<span class="gp">... </span>                               <span class="s2">"b"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"type"</span><span class="p">:</span> <span class="s2">"integer"</span><span class="p">,</span> <span class="s2">"values"</span><span class="p">:</span> <span class="p">[]}}})</span>
+<span class="go">'4b50177c31441e4ae3e6691a6f82a75a30a21f197dd400e7a9a781c99eff4d36'</span>
+</code></pre></div>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="stacs.receipt.double_from_bits" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">double_from_bits</span><span class="p">(</span><span class="n">bits</span><span class="p">)</span></code>
+
+<a href="#stacs.receipt.double_from_bits" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>The double a 16-hex-digit big-endian bit pattern denotes.</p>
+<p>crate's vectors give every double as its bits, so no decimal parser stands between a
+vector and the value it fixes. A caller with a number does not need this.</p>
+
+
+<p><span class="doc-section-title">Examples:</span></p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">double_from_bits</span><span class="p">(</span><span class="s2">"3e70000000000000"</span><span class="p">)</span>  <span class="c1"># 2 ** -24</span>
+<span class="go">5.960464477539063e-08</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">_shortest</span><span class="p">(</span><span class="n">double_from_bits</span><span class="p">(</span><span class="s2">"3e70000000000000"</span><span class="p">))</span>
+<span class="go">'5.960464477539063e-8'</span>
+</code></pre></div>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="stacs.receipt.schema" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">schema</span><span class="p">()</span></code>
+
+<a href="#stacs.receipt.schema" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>The frozen receipt JSON Schema, as vendored.</p>
+
+
+<p><span class="doc-section-title">Examples:</span></p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">schema</span><span class="p">()[</span><span class="s2">"$id"</span><span class="p">]</span> <span class="o">==</span> <span class="n">SCHEMA_URL</span>
+<span class="go">True</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">sorted</span><span class="p">(</span><span class="n">schema</span><span class="p">()[</span><span class="s2">"required"</span><span class="p">])</span>
+<span class="go">['context', 'output', 'recipe', 'result']</span>
+</code></pre></div>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="stacs.receipt.stac_schema" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">stac_schema</span><span class="p">()</span></code>
+
+<a href="#stacs.receipt.stac_schema" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>The frozen <code>receipt:</code> STAC field schema, as vendored.</p>
+
+
+<p><span class="doc-section-title">Examples:</span></p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">stac_schema</span><span class="p">()[</span><span class="s2">"$id"</span><span class="p">]</span> <span class="o">==</span> <span class="n">EXTENSION_URL</span>
+<span class="go">True</span>
+</code></pre></div>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="stacs.receipt.validate" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">validate</span><span class="p">(</span><span class="n">receipt</span><span class="p">)</span></code>
+
+<a href="#stacs.receipt.validate" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Check a receipt against the frozen schema. Returns None, raises on the first failures.</p>
+<p>Every error is collected and the message names the member paths, because a receipt that
+fails in three places usually fails for one reason and the paths are the diagnosis.</p>
+<p>The schema is the vendored copy, not the URL: the suite is offline, and a validator that
+fetched its schema would be checking whatever is served today against bytes that are
+supposed to be frozen. <code>tools/crate_receipt_vendor.sh check</code> is what compares the two.</p>
+
+
+<p><span class="doc-section-title">Examples:</span></p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">validate</span><span class="p">({</span><span class="s2">"output"</span><span class="p">:</span> <span class="p">{}})</span>
+<span class="gt">Traceback (most recent call last):</span>
+<span class="c">...</span>
+<span class="gr">stacs.receipt.ReceiptError</span>: <span class="n">not a valid receipt: ...</span>
+</code></pre></div>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="stacs.receipt.read" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">read</span><span class="p">(</span><span class="n">path</span><span class="p">)</span></code>
+
+<a href="#stacs.receipt.read" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Read a receipt file, refusing any version but the one this module implements.</p>
+<p>Refused rather than warned about, as crate's reader does: a later version may spell a
+field the same way and mean something else, and a comparison across two versions would
+report fields that agree as differing.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="stacs.receipt.reindent" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">reindent</span><span class="p">(</span><span class="n">data</span><span class="p">)</span></code>
+
+<a href="#stacs.receipt.reindent" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Canonical JSON re-indented at two spaces, with empty containers left collapsed.</p>
+<p>A text transformation, and that is the point: the file must carry the canonical <em>number
+spellings</em>, and re-serialising the parsed object does not. <code>json.dumps</code> writes <code>1e-06</code>
+where JCS writes <code>0.000001</code>, and <code>1e-09</code> where JCS writes <code>1e-9</code> -- and crate's own
+worked-case receipt holds both of those as ordinary tolerance values.</p>
+
+
+<p><span class="doc-section-title">Examples:</span></p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">reindent</span><span class="p">(</span><span class="sa">b</span><span class="s1">'{"a":</span><span class="si">{}</span><span class="s1">,"b":[1,2],"c":{"d":1e-9}}'</span><span class="p">))</span>
+<span class="go">{</span>
+<span class="go">  "a": {},</span>
+<span class="go">  "b": [</span>
+<span class="go">    1,</span>
+<span class="go">    2</span>
+<span class="go">  ],</span>
+<span class="go">  "c": {</span>
+<span class="go">    "d": 1e-9</span>
+<span class="go">  }</span>
+<span class="go">}</span>
+</code></pre></div>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="stacs.receipt.write" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">write</span><span class="p">(</span><span class="n">receipt</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">publish</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></code>
+
+<a href="#stacs.receipt.write" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Write a receipt, computing its <code>recipe_id</code>, and return the SHA-256 of the bytes written.</p>
+<p>The caller supplies the values; the ids are computed here, so a builder cannot publish a
+<code>recipe_id</code> that does not match the recipe beside it. The receipt is validated before
+anything is written.</p>
+<p><code>publish</code> drops <code>context.host</code>, which is the one member a published receipt leaves out
+rather than nulls: where a thing was built is not something an outside reader needs, and it
+is never part of an identity.</p>
+<p>The returned digest is what an item's <code>receipt</code> asset carries as <code>file:checksum</code>. Nothing
+else can compute it -- the receipt's own bytes are not inside it -- and without it a reader
+that fetches a receipt beside an item cannot tell it fetched <em>that</em> item's receipt.</p>
+<p>The caller's dict is not modified.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="stacs.receipt.register" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">register</span><span class="p">()</span></code>
+
+<a href="#stacs.receipt.register" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>crate's register: every receipt field that can differ, and what a difference means.</p>
+<p><code>refuse</code> makes the verdict <code>different</code>, <code>warn</code> and <code>record</code> never change it. Returned in
+file order, as a plain dict of field pattern to action.</p>
+
+
+<p><span class="doc-section-title">Examples:</span></p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">register</span><span class="p">()[</span><span class="s2">"recipe.seed"</span><span class="p">]</span>
+<span class="go">'refuse'</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">register</span><span class="p">()[</span><span class="s2">"context.time"</span><span class="p">]</span>
+<span class="go">'record'</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">register</span><span class="p">()</span><span class="o">.</span><span class="n">values</span><span class="p">()))</span>
+<span class="go">['record', 'refuse', 'warn']</span>
+</code></pre></div>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="stacs.receipt.compare" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">compare</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">overrides</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+<a href="#stacs.receipt.compare" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Compare two receipts: <code>identical</code>, <code>equivalent</code> or <code>different</code>, and what differed.</p>
+<p>Any <code>refuse</code> makes it <code>different</code>; failing that, any <code>within</code> makes it <code>equivalent</code>; a
+<code>warn</code> or a <code>record</code> never changes the verdict, so two receipts that differ only in when
+and where they were built are <code>identical</code> with the difference still listed.</p>
+<p><code>overrides</code> may change a field's action, under crate's rule: known fields only, an action
+of refuse, warn or record, and <strong>no <code>recipe.*</code> field</strong> -- every recipe field refuses
+because <code>recipe_id</code> covers it, and relaxing one would publish two different recipes as one.</p>
+<p>A null <code>recipe_id</code> on either side always refuses: a migrated receipt holds no recipe
+identity, so neither side can vouch for a recipe it does not have.</p>
+
+
+<p><span class="doc-section-title">Examples:</span></p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">one</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"output"</span><span class="p">:</span> <span class="p">{},</span> <span class="s2">"recipe"</span><span class="p">:</span> <span class="p">{},</span> <span class="s2">"result"</span><span class="p">:</span> <span class="p">{},</span> <span class="s2">"context"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"time"</span><span class="p">:</span> <span class="s2">"t"</span><span class="p">}}</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">compare</span><span class="p">(</span><span class="n">one</span><span class="p">,</span> <span class="n">one</span><span class="p">)</span><span class="o">.</span><span class="n">verdict</span>
+<span class="go">'identical'</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">other</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="n">one</span><span class="p">,</span> <span class="s2">"context"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"time"</span><span class="p">:</span> <span class="s2">"later"</span><span class="p">}}</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">c</span> <span class="o">=</span> <span class="n">compare</span><span class="p">(</span><span class="n">one</span><span class="p">,</span> <span class="n">other</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">c</span><span class="o">.</span><span class="n">verdict</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">fields</span>
+<span class="go">('identical', [('context.time', 'record')])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">compare</span><span class="p">(</span><span class="n">one</span><span class="p">,</span> <span class="p">{</span><span class="o">**</span><span class="n">one</span><span class="p">,</span> <span class="s2">"recipe"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"seed"</span><span class="p">:</span> <span class="mi">1</span><span class="p">}})</span><span class="o">.</span><span class="n">verdict</span>
+<span class="go">'different'</span>
+</code></pre></div>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="stacs.receipt.multihash" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">multihash</span><span class="p">(</span><span class="n">sha256_hex</span><span class="p">)</span></code>
+
+<a href="#stacs.receipt.multihash" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>A sha256 hex digest as the multihash <code>file:checksum</code> publishes.</p>
+
+
+<p><span class="doc-section-title">Examples:</span></p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">multihash</span><span class="p">(</span><span class="s2">"0"</span> <span class="o">*</span> <span class="mi">64</span><span class="p">)[:</span><span class="mi">8</span><span class="p">]</span>
+<span class="go">'12200000'</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">len</span><span class="p">(</span><span class="n">multihash</span><span class="p">(</span><span class="s2">"0"</span> <span class="o">*</span> <span class="mi">64</span><span class="p">))</span>
+<span class="go">68</span>
+</code></pre></div>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="stacs.receipt.stac_fields" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">stac_fields</span><span class="p">(</span><span class="n">receipt</span><span class="p">,</span> <span class="n">assets</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">receipt_asset</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">receipt_sha256</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+<a href="#stacs.receipt.stac_fields" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>The receipt's identity fields, as an item mirrors them.</p>
+<p><code>{"stac_extensions": [...], "properties": {...}, "assets": {...}}</code>, for a builder to merge
+into the item it is writing. The receipt itself stays the full record; these exist so a
+STAC client or a pgstac queryable needs no second fetch.</p>
+<p><code>assets</code> maps an asset key to its href <strong>relative to the item</strong>, which is what a part is
+keyed by. <code>receipt_asset</code> names the asset that links the receipt, and <code>receipt_sha256</code> is
+the digest <code>write</code> returned for it -- nothing else can compute that one, because a
+receipt's own bytes are not inside it.</p>
+<p>A migrated receipt has no recipe identity (<code>recipe_id</code> null), so the field is <strong>left out</strong>
+rather than published as a null, which the field schema would refuse anyway.</p>
+
+
+<p><span class="doc-section-title">Examples:</span></p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">r</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"output"</span><span class="p">:</span> <span class="p">{},</span> <span class="s2">"recipe"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"recipe_id"</span><span class="p">:</span> <span class="s2">"a"</span> <span class="o">*</span> <span class="mi">64</span><span class="p">,</span>
+<span class="gp">... </span>                              <span class="s2">"code"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"stacs"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"version"</span><span class="p">:</span> <span class="s2">"0.2.0"</span><span class="p">}}},</span>
+<span class="gp">... </span>     <span class="s2">"result"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"parts"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"x.tif"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"sha256"</span><span class="p">:</span> <span class="s2">"b"</span> <span class="o">*</span> <span class="mi">64</span><span class="p">,</span> <span class="s2">"bytes"</span><span class="p">:</span> <span class="mi">12</span><span class="p">}}},</span>
+<span class="gp">... </span>     <span class="s2">"context"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"time"</span><span class="p">:</span> <span class="s2">"2026-11-08T00:00:00Z"</span><span class="p">}}</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">fields</span> <span class="o">=</span> <span class="n">stac_fields</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="n">assets</span><span class="o">=</span><span class="p">{</span><span class="s2">"data"</span><span class="p">:</span> <span class="s2">"x.tif"</span><span class="p">})</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">sorted</span><span class="p">(</span><span class="n">fields</span><span class="p">[</span><span class="s2">"properties"</span><span class="p">])</span>
+<span class="go">['processing:datetime', 'processing:software', 'receipt:recipe_id']</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">fields</span><span class="p">[</span><span class="s2">"assets"</span><span class="p">][</span><span class="s2">"data"</span><span class="p">][</span><span class="s2">"file:size"</span><span class="p">]</span>
+<span class="go">12</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">fields</span><span class="p">[</span><span class="s2">"assets"</span><span class="p">][</span><span class="s2">"data"</span><span class="p">][</span><span class="s2">"file:checksum"</span><span class="p">][:</span><span class="mi">4</span><span class="p">]</span>
+<span class="go">'1220'</span>
+</code></pre></div>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="stacs.receipt.receipt_asset" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">receipt_asset</span><span class="p">(</span><span class="n">item</span><span class="p">)</span></code>
+
+<a href="#stacs.receipt.receipt_asset" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>The asset that links an item's receipt, or None.</p>
+<p>The contract is the asset link, not a filename: the receipt is published beside the item
+"as an asset with role <code>metadata</code>". A catalogue that publishes under a <code>receipts/</code> prefix
+would break a <code>receipt.json</code>-beside-the-item assumption silently.</p>
+<p>THE ONE PRODUCER of that answer. <code>receipt_href</code>, <code>item_problems</code> and <code>item_verdict</code> all
+come through here, because they have to agree about which asset it is: a second loop that
+kept the LAST match instead of the first reported an item as <code>inconsistent</code> whenever it
+carried another <code>metadata</code> JSON asset -- a QA report, a legacy manifest -- and that is
+good input (round 1).</p>
+<p>The first match wins, and it must satisfy every condition: a non-empty href, role
+<code>metadata</code>, type <code>application/json</code>.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="stacs.receipt.receipt_href" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">receipt_href</span><span class="p">(</span><span class="n">item</span><span class="p">)</span></code>
+
+<a href="#stacs.receipt.receipt_href" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>The href of the asset that links an item's receipt, or None.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="stacs.receipt.item_problems" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">item_problems</span><span class="p">(</span><span class="n">item</span><span class="p">)</span></code>
+
+<a href="#stacs.receipt.item_problems" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Everything wrong with an item's receipt fields, as a list of sentences.</p>
+<p>Collected rather than raised one at a time: an item is usually wrong in one way that shows
+up in three fields, and the set is the diagnosis. An empty list is the pass.</p>
+<p>Three layers, because no single one covers it:</p>
+<ul>
+<li>the vendored field schema, which constrains <code>stac_extensions</code>, <code>type</code> and
+  <code>receipt:recipe_id</code> and refuses any other <code>receipt:</code>-prefixed key;</li>
+<li>the formats it cannot reach -- a <code>file:checksum</code> multihash and a <code>processing:datetime</code> --
+  because the <code>file</code> and <code>processing</code> schemas are fetched by URL and the suite is offline;</li>
+<li>the links the contract requires: each extension whose fields are present, and the asset
+  that carries the receipt.</li>
+</ul>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="stacs.receipt.item_verdict" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">item_verdict</span><span class="p">(</span><span class="n">published</span><span class="p">,</span> <span class="n">served</span><span class="p">,</span> <span class="n">receipt</span><span class="p">,</span> <span class="n">receipt_sha256</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+<a href="#stacs.receipt.item_verdict" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Compare an item's published and served bodies through the receipt it links.</p>
+<p><code>receipt_sha256</code> is the digest of the receipt bytes as fetched. Given, it is checked
+against the published item's receipt asset, which is the only way to tell that the receipt
+read is the one the item claims -- a receipt fetched by a filename convention could belong
+to anything.</p>
+<p>The receipt is what makes this more than a field diff: an item whose mirrored fields do not
+match the receipt beside it is <code>inconsistent</code> whatever the two sides agree on.</p>
+
+
+<p><span class="doc-section-title">Examples:</span></p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">item</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"properties"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"receipt:recipe_id"</span><span class="p">:</span> <span class="s2">"a"</span> <span class="o">*</span> <span class="mi">64</span><span class="p">}}</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">r</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"recipe"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"recipe_id"</span><span class="p">:</span> <span class="s2">"a"</span> <span class="o">*</span> <span class="mi">64</span><span class="p">},</span> <span class="s2">"result"</span><span class="p">:</span> <span class="p">{},</span> <span class="s2">"context"</span><span class="p">:</span> <span class="p">{},</span> <span class="s2">"output"</span><span class="p">:</span> <span class="p">{}}</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">item_verdict</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="n">item</span><span class="p">,</span> <span class="n">r</span><span class="p">)</span><span class="o">.</span><span class="n">verdict</span>
+<span class="go">'same'</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">moved</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"properties"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"receipt:recipe_id"</span><span class="p">:</span> <span class="s2">"b"</span> <span class="o">*</span> <span class="mi">64</span><span class="p">}}</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">item_verdict</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="n">moved</span><span class="p">,</span> <span class="n">r</span><span class="p">)</span><span class="o">.</span><span class="n">verdict</span>
+<span class="go">'changed'</span>
+</code></pre></div>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "navigation.sections"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
