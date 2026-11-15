@@ -15,4 +15,5 @@
 - Plan review landed (`review-plan.md`, 20 findings): F1 already met; F9 and F10 changed
   `item_verdict` (a refused receipt and a non-object part are `inconsistent`, never `same`);
   F5 goes to crate as a gap in its published code table
-- Next: Phase 3
+- Phase 3 done: `Comparison.register` and `Comparison.overrides`, with a mutation table
+- Next: Phase 4

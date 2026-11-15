@@ -807,10 +807,21 @@ class Comparison:
     `differences` is an ORDERED LIST and may repeat a field: a collection with two keys
     missing reports its own path twice, which crate's `a migrated receipt` vector shows for
     both `recipe.inputs` and `recipe.config.settings`. A set would lose one of each.
+
+    `register` is the version of the register the verdict was judged under. A verdict is a
+    function of the register's rows, so one kept without it cannot be re-read once the rows
+    move. It is not the receipts' version: a register change never moves the form's.
+
+    `overrides` is each `(field, action)` the caller's `overrides` CHANGED, sorted by field as
+    bytes, and empty when it changed none. Every such field is listed whether or not it
+    differed in this comparison, because the verdict was reached under those rules either
+    way; restating the register's own action is not an override.
     """
     verdict: str
     mode: str
     differences: tuple
+    register: str
+    overrides: tuple
 
     @property
     def fields(self) -> list:
@@ -963,6 +974,7 @@ def compare(a, b, overrides=None) -> Comparison:
     `overrides` may change a field's action, under crate's rule: known fields only, an action
     of refuse, warn or record, and **no `recipe.*` field** -- every recipe field refuses
     because `recipe_id` covers it, and relaxing one would publish two different recipes as one.
+    The result names the register version it read and each action an override changed.
 
     A null `recipe_id` on either side always refuses: a migrated receipt holds no recipe
     identity, so neither side can vouch for a recipe it does not have.
@@ -977,12 +989,16 @@ def compare(a, b, overrides=None) -> Comparison:
         ('identical', [('context.time', 'record')])
         >>> compare(one, {**one, "recipe": {"seed": 1}}).verdict
         'different'
+        >>> c = compare(one, other, {"context.time": "refuse", "context.host": "record"})
+        >>> c.verdict, c.register, c.overrides
+        ('different', '1.0.0', (('context.time', 'refuse'),))
     """
     for name, doc in (("a", a), ("b", b)):
         if not isinstance(doc, dict):
             raise ReceiptError(f"receipt {name} is not a JSON object, got "
                                f"{type(doc).__name__}")
     table = register()
+    changed = {}
     if overrides is not None and not isinstance(overrides, dict):
         raise ReceiptError(f"overrides maps a register field to an action, got "
                            f"{type(overrides).__name__}")
@@ -997,6 +1013,8 @@ def compare(a, b, overrides=None) -> Comparison:
             if field.startswith("recipe."):
                 raise ReceiptError(f"{field!r} cannot be overridden: every recipe field "
                                    f"refuses, because recipe_id covers it")
+            if table[field] != action:
+                changed[field] = action
             table[field] = action
 
     rows = [{"field": f, "pattern": p, "detail": d, "key": k,
@@ -1061,7 +1079,10 @@ def compare(a, b, overrides=None) -> Comparison:
                    action=row["action"], detail=row["detail"])
         for row in sorted(rows, key=lambda row: (row["field"].encode("utf-8"),
                                                  row["action"])))
-    return Comparison(verdict=verdict, mode=MODE, differences=differences)
+    return Comparison(verdict=verdict, mode=MODE, differences=differences,
+                      register=REGISTER_VERSION,
+                      overrides=tuple(sorted(changed.items(),
+                                             key=lambda pair: pair[0].encode("utf-8"))))
 
 
 # =============================================================================

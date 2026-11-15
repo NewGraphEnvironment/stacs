@@ -131,10 +131,10 @@ Purpose: all 142 `stac.json` cases agree, each refusal by its code.
 
 ## Phase 3: The comparison names its register
 
-- [ ] `Comparison.register` is `REGISTER_VERSION`; `Comparison.overrides` is the
+- [x] `Comparison.register` is `REGISTER_VERSION`; `Comparison.overrides` is the
       `(field, action)` pairs whose declared action differs from the register's, sorted by field
       as bytes (restating the register's own action is not an override, as in crate)
-- [ ] Tests: all nine `compare.json` pairs report `register == "1.0.0"` and no overrides; an
+- [x] Tests: all nine `compare.json` pairs report `register == "1.0.0"` and no overrides; an
       override that changes an action is listed whether or not that field differed; one that
       restates the register is not
 

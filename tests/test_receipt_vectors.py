@@ -358,6 +358,41 @@ def test_the_register_carries_every_action_the_contract_names():
 
 
 # =============================================================================
+# A comparison names the rulebook it was judged under
+# =============================================================================
+
+def test_every_comparison_names_the_register_version_it_read():
+    """The version constant is also the directory `register()` reads and the directory these
+    nine pairs were vendored into, so the name on a comparison is the name of the rows that
+    produced it. Against the constant, not a literal: a literal here would still pass after
+    the register moved."""
+    for c in _cases("compare"):
+        got = r.compare(c["a"], c["b"])
+        assert got.register == r.REGISTER_VERSION, c["name"]
+        assert got.overrides == (), c["name"]
+    assert r.REGISTER_VERSION in DIRS["compare"]
+
+
+def test_an_override_that_changes_an_action_is_named_on_the_comparison():
+    """Listed whether or not that field differed: the verdict was reached under the changed
+    rule either way, and a reader of the comparison has to be able to tell."""
+    c = _pairs()["toolchain only"]
+    table = r.register()
+    assert table["context.toolchain"] == "record" and table["output.schema"] == "warn"
+    got = r.compare(c["a"], c["b"], {"output.schema": "refuse", "context.toolchain": "refuse"})
+    assert got.verdict == "different"
+    # Sorted by field as bytes, and `output.schema` did not differ in this pair.
+    assert got.overrides == (("context.toolchain", "refuse"), ("output.schema", "refuse"))
+    assert "output.schema" not in [d.field for d in got.differences]
+
+
+def test_restating_the_registers_own_action_is_not_an_override():
+    c = _pairs()["toolchain only"]
+    got = r.compare(c["a"], c["b"], {"context.toolchain": "record", "context.time": "record"})
+    assert (got.verdict, got.overrides) == ("identical", ())
+
+
+# =============================================================================
 # stac.json -- the mapping's STAC rows: the item fields a receipt maps to, or a refusal
 # =============================================================================
 

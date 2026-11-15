@@ -164,6 +164,19 @@ pattern admits it), and `stac_fields` refuses the receipt it wrote. crate's R ra
 its published table and vectors do not hold (`assets_not_named`, `href_empty`); stacs publishes
 an asset keyed `""`.
 
+## Phase 3 and the review's two guards: mutation table (2026-11-15)
+
+| mutation | went red |
+|---|---|
+| an override that restates the register is listed | `test_restating_the_registers_own_action_is_not_an_override` |
+| no override is ever listed | `test_an_override_that_changes_an_action_is_named_on_the_comparison` |
+| overrides in another order | same |
+| `register="0.0.0"` in place of the constant | `test_every_comparison_names_the_register_version_it_read` |
+| `item_verdict` compares a refused receipt against nothing | `test_a_receipt_the_mapping_refuses_is_inconsistent_never_same`, 12 cases |
+| a non-object part skipped as not described | `test_a_part_an_asset_names_that_is_not_an_object_is_never_same`, 4 cases |
+
+Full suite: 878 passed.
+
 ## Errors Encountered
 
 | Error | Resolution |
