@@ -19,4 +19,5 @@
 - Phase 4 done: NEWS, the README receipts section, `research/receipt_parity.md` revised in
   place; filed #16 (trailing newline in table cells and `validate`) and crate#65 (two refusal
   codes outside crate's table)
-- Next: `/code-check branch`, then archive and PR
+- Code-check round 1: 4 findings against the diff, all fixed; 2 that predate it filed as #17
+- Next: round 2

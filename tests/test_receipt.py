@@ -689,20 +689,60 @@ def test_a_receipt_the_mapping_refuses_is_inconsistent_never_same(change, code):
     assert any(f"({code})" in note for note in got.notes), got.notes
 
 
-@pytest.mark.parametrize("part", [None, "x", [], 7])
-def test_a_part_an_asset_names_that_is_not_an_object_is_never_same(part):
-    """`item_verdict` walks the published item's assets itself, because the receipt alone does
-    not say which asset names which part. That walk skipped a part that was present but not
-    an object as "not described by this receipt" -- the same words it uses for a thumbnail --
-    so an item whose checksum the receipt could not vouch for read `same`."""
+@pytest.mark.parametrize("part,asset_fields,code", [
+    (None, {"file:checksum": "1220" + "f" * 64}, "block_not_object"),
+    ("x", {"file:checksum": "1220" + "f" * 64}, "block_not_object"),
+    ([], {}, "block_not_object"),
+    (7, {}, "block_not_object"),
+    # A part the mapping refuses, behind an asset that does not carry the field that would
+    # have shown it: the walk that used to live in `item_verdict` consulted a part only
+    # through the fields the item happened to publish.
+    ({"sha256": "b" * 64 + "\n", "bytes": 12}, {"file:size": 12}, "part_sha256_not_sha256"),
+    ({"sha256": "b" * 64, "bytes": -5}, {"file:checksum": "1220" + "b" * 64},
+     "bytes_not_whole"),
+    ({"sha256": "b" * 64, "bytes": 1.5}, {}, "bytes_not_whole"),
+    ({}, {}, "part_sha256_not_sha256"),
+], ids=["null part", "string part", "list part, no file fields", "number part, no file fields",
+        "digest with a newline, size only", "negative bytes, checksum only",
+        "fractional bytes, no file fields", "empty part, no file fields"])
+def test_a_part_the_mapping_refuses_is_never_same(part, asset_fields, code):
+    """An asset of the item names a part of the receipt, so the mapping has to be able to map
+    that part, whichever of `file:checksum` and `file:size` the item carries -- none
+    included. `item_verdict` asks `stac_fields` for exactly the assets that name a part, so
+    there is one reading of the asset rows and not a second copy that agrees with it only
+    where someone remembered to keep it in step."""
     rec = {"output": _form(), "recipe": {"recipe_id": "a" * 64}, "context": _when(),
            "result": {"parts": {"x.tif": part}}}
     item = {"properties": {"receipt:recipe_id": "a" * 64},
-            "assets": {"data": {"href": "x.tif", "file:checksum": r.multihash("f" * 64)},
+            "assets": {"data": {"href": "x.tif", **asset_fields},
                        "thumb": {"href": "t.png", "file:checksum": r.multihash("e" * 64)}}}
     got = r.item_verdict(item, item, rec)
-    assert got.verdict == "inconsistent", got
-    assert got.fields == ("result.parts[x.tif]",), got.fields
+    assert got.verdict == "inconsistent" and not got.ok, got
+    assert any(f"({code})" in note and "x.tif" in note for note in got.notes), got.notes
+
+
+def test_an_asset_that_carries_neither_file_field_still_agrees_with_a_good_part():
+    """The other direction of the test above: asking the mapping about every asset that names
+    a part must not turn an item that publishes no file fields into a disagreement."""
+    rec = {"output": _form(), "recipe": {"recipe_id": "a" * 64}, "context": _when(),
+           "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 12}}}}
+    item = {"properties": {"receipt:recipe_id": "a" * 64},
+            "assets": {"data": {"href": "x.tif"}, "also": {"href": "x.tif", "file:size": 12.0}}}
+    assert r.item_verdict(item, item, rec).verdict == "same"
+
+
+def test_the_register_is_read_and_named_by_its_own_version_not_the_forms(monkeypatch):
+    """`REGISTER_VERSION` and `RECEIPT_VERSION` are both `1.0.0` today, so code that used the
+    wrong one is the same program and no vector can tell. Moved apart here: `register()` must
+    look for the register's directory, and a comparison must name the register's version."""
+    monkeypatch.setattr(r, "_DATA", {})
+    monkeypatch.setattr(r, "REGISTER_VERSION", "9.9.9")
+    with pytest.raises(r.ReceiptError, match=r"register/v9\.9\.9/register\.csv"):
+        r.register()
+    monkeypatch.setattr(r, "_DATA", {"register": {"context.time": "record"}})
+    one = {"output": {}, "recipe": {}, "result": {}, "context": {}}
+    assert r.compare(one, one).register == "9.9.9"
+    assert r.RECEIPT_VERSION == "1.0.0"
 
 
 @pytest.mark.parametrize("time,real", [

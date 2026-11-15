@@ -27,13 +27,14 @@ Versions track the package. A tag is a release consumers can pin with
   one whose `recipe_id`, `context.time` or a part's `sha256` ends in a newline.
 - **Behaviour change:** the item checks behind `audit --require-receipt`, which also run
   before a `register` or `load` write, share those patterns. An item is refused when
-  `receipt:recipe_id`, `processing:datetime` or a `file:checksum` carries a trailing newline or
-  a digit outside ASCII, when `processing:datetime` is not an instant that exists (month 13,
-  29 February in a common year, hour 24), or when a `file:size` is negative.
-- **Behaviour change:** `verify` reports an item `inconsistent` when the receipt it links maps
-  to no item fields, with the refusal's code in the note, and when an asset names a part the
-  receipt holds as something other than an object. `receipt.item_verdict` returns that verdict
-  for every such receipt; it used to return it for some and raise for others.
+  `receipt:recipe_id`, `processing:datetime` or a `file:checksum` ends in a newline, when
+  `processing:datetime` is written in digits outside ASCII or is not an instant that exists
+  (month 13, 29 February in a common year, hour 24), or when a `file:size` is negative.
+- **Behaviour change:** `verify` reports an item `inconsistent` when the mapping refuses the
+  receipt it links, or refuses a part one of the item's assets names, with the refusal's code
+  in the note. `receipt.item_verdict` asks `stac_fields` about those assets, so it returns
+  that verdict wherever `stac_fields` would refuse; it used to return it for some such
+  receipts, raise for others, and read a part held as `null` as not described at all.
 - `receipt.compare` names the rulebook behind its verdict: `Comparison.register` is the
   register version it read, and `Comparison.overrides` each action the caller's `overrides`
   changed. Code that constructs a `Comparison` itself must now pass both.

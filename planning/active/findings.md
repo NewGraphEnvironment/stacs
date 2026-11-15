@@ -191,6 +191,23 @@ Filed as #16 with the table-cell patterns.
 
 `mkdocs build --strict`: exit 0, no `WARNING` line.
 
+## Code-check round 1 (2026-11-15, `review-round1.md`)
+
+Six findings, four against the diff, each reproduced before it was acted on.
+
+| finding | disposition |
+|---|---|
+| `item_verdict` could still read `same` for a part the mapping refuses, when the item carried only one of `file:checksum` and `file:size`, or neither (inside the plan review's F10 fix) | Fixed at the mechanism: `item_verdict` no longer keeps its own copy of the asset rows. It hands `stac_fields` the item's assets that name a part and compares what comes back. 8 cases pinned |
+| `stac_fields`' docstring said every refusal carries a code; two do not | Docstring and comment say which two and why |
+| `assert r.REGISTER_VERSION in DIRS["compare"]` cannot fail, and swapping `REGISTER_VERSION` for `RECEIPT_VERSION` left the suite green, both being `1.0.0` | The assert is gone; `test_the_register_is_read_and_named_by_its_own_version_not_the_forms` moves the two apart with `monkeypatch` |
+| NEWS said three fields newly refuse a digit outside ASCII; that is new for `processing:datetime` only | Reworded |
+| *(predates the branch)* `item_verdict` never checks a mirrored field the item publishes that the receipt does not produce | Filed as #17 |
+| *(predates the branch)* `asset.get("roles") or []` keeps a truthy non-list, so `in` raises `TypeError` out of `audit` and `verify` | Filed as #17 |
+
+Mutation rows for the fixes: no asset handed to the mapping (19 tests red), checksum not
+compared (1), size not compared (1), `compare` naming the form's version (1), `register()`
+reading the form's directory (1). Full suite: 884 passed.
+
 ## Errors Encountered
 
 | Error | Resolution |

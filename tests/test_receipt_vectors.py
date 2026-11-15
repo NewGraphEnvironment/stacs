@@ -365,12 +365,12 @@ def test_every_comparison_names_the_register_version_it_read():
     """The version constant is also the directory `register()` reads and the directory these
     nine pairs were vendored into, so the name on a comparison is the name of the rows that
     produced it. Against the constant, not a literal: a literal here would still pass after
-    the register moved."""
+    the register moved. That it is the REGISTER's constant and not the form's, which is equal
+    today, is `test_the_register_is_read_and_named_by_its_own_version_not_the_forms`."""
     for c in _cases("compare"):
         got = r.compare(c["a"], c["b"])
         assert got.register == r.REGISTER_VERSION, c["name"]
         assert got.overrides == (), c["name"]
-    assert r.REGISTER_VERSION in DIRS["compare"]
 
 
 def test_an_override_that_changes_an_action_is_named_on_the_comparison():

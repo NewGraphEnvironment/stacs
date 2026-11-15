@@ -1221,7 +1221,9 @@ def stac_fields(receipt, assets=None, receipt_asset=None, receipt_sha256=None) -
     vectors for those rows run against it. It checks the values it publishes and what decides
     them -- the form version, whether the receipt was migrated, `recipe_id` and
     `context.time` -- and refuses with a `ReceiptError` whose `code` is one of
-    `STAC_REFUSALS`. It does not validate the rest of the receipt; `validate` does that.
+    `STAC_REFUSALS`. Two refusals carry no code, because the contract names none for them:
+    an `assets` that is not a mapping, and an href that is not a string. It does not validate
+    the rest of the receipt; `validate` does that.
 
     A block or entry that is present but not an object is refused, `null` included: it is
     never read as absent. A migrated receipt (`output.migrated_from`) has no recipe identity,
@@ -1351,7 +1353,8 @@ def stac_fields(receipt, assets=None, receipt_asset=None, receipt_sha256=None) -
             # An href is used as a key into `result.parts`, so a list or a dict raises
             # `TypeError: unhashable type` rather than refusing (round 2b). A value consumed
             # as a dict KEY is the same family as a member read as a mapping, and the
-            # enumeration's population did not include it.
+            # enumeration's population did not include it. No code, as for `assets` above:
+            # the mapping's vectors never pass one.
             raise ReceiptError(f"asset {key!r} href must be a string, got "
                                f"{type(href).__name__}")
         if href not in parts:
@@ -1633,27 +1636,16 @@ def item_verdict(published, served, receipt, receipt_sha256=None) -> ItemVerdict
     # receipt, so a disagreement means one of the two was written by something that did not
     # read the other.
     #
-    # BOTH halves of the mirrored set, not just the properties. `stac_fields(receipt)` with no
-    # `assets=` returns no asset fields at all, so `file:checksum` and `file:size` -- which
-    # `_mirrored` compares between the two sides -- were never checked against `result.parts`,
-    # and an item contradicting its own receipt in those two read `same` (round 1).
-    try:
-        claimed = stac_fields(receipt)
-    except ReceiptError as e:
-        # A receipt the mapping refuses maps to no item fields, so there is nothing for the
-        # item to agree with. Returned, not raised, and by the same word as the node check
-        # above: that check reads an absent node and a null one alike, so without this a
-        # `recipe` that is a string came back `inconsistent` while one that is null raised --
-        # two routes for one fact, in a function whose callers read only the verdict.
-        return ItemVerdict("inconsistent", ("receipt",),
-                           (f"the receipt it links maps to no item fields "
-                            f"({e.code or 'refused'}): {e}",))
+    # BOTH halves of the mirrored set, not just the properties, and both from ONE producer:
+    # `stac_fields`, given the assets of this item that name a part. A second copy of the
+    # asset rows used to live here, and it drifted from the mapping twice. With no `assets=`
+    # the claimed asset fields were always `{}`, so an item contradicting its receipt in
+    # `file:checksum` and `file:size` read `same` (round 1). And a copy that consulted a part
+    # only through whichever of those two fields the item happened to carry never saw a part
+    # the mapping refuses -- a digest ending in a newline behind an asset that carried only a
+    # size -- so that read `same` too.
     disagree = []
-    properties = _mapping(published, "properties")
-    for key, value in claimed["properties"].items():
-        if key in properties and canonical(properties[key]) != canonical(value):
-            disagree.append(f"properties.{key}")
-
+    named = {}
     parts = _mapping(_mapping(receipt, "result"), "parts")
     for key, asset in _mapping(published, "assets").items():
         if not isinstance(asset, dict):
@@ -1665,32 +1657,35 @@ def item_verdict(published, served, receipt, receipt_sha256=None) -> ItemVerdict
             # with no audit in front of it on the verify path, and one malformed item must
             # not end the run with a traceback (round 2b).
             disagree.append(f"assets[{key}].href")
-            continue
-        part = parts.get(href)
-        if not isinstance(part, dict):
-            if href in parts:
-                # Named by the receipt and not an object, `null` included: the mapping
-                # refuses to read that as absent, and so does this. Skipping it would call an
-                # asset the receipt cannot vouch for "not described", and end in `same`.
-                disagree.append(f"result.parts[{href}]")
-            # Otherwise not an output this receipt describes: an overview, a thumbnail, or the
-            # receipt itself, whose own digest is checked above. Nothing to compare it with.
-            continue
-        if "file:checksum" in asset:
-            try:
-                want_checksum = multihash(part.get("sha256"))
-            except ReceiptError:
-                want_checksum = None       # a part with no usable digest cannot vouch
-            if asset["file:checksum"] != want_checksum:
-                disagree.append(f"assets[{key}].file:checksum")
+        elif href in parts:
+            named[key] = href
+        # Otherwise not an output this receipt describes: an overview, a thumbnail, or the
+        # receipt itself, whose own digest is checked above. Nothing to compare it with.
+    try:
+        claimed = stac_fields(receipt, assets=named)
+    except ReceiptError as e:
+        # A receipt the mapping refuses maps to no item fields, so there is nothing for the
+        # item to agree with -- whether it refuses the receipt's own blocks or a part this
+        # item names. Returned, not raised, and by the same word as the node check above:
+        # that check reads an absent node and a null one alike, so without this a `recipe`
+        # that is a string came back `inconsistent` while one that is null raised -- two
+        # routes for one fact, in a function whose callers read only the verdict.
+        return ItemVerdict("inconsistent", ("receipt",),
+                           (f"the receipt it links maps to no item fields "
+                            f"({e.code or 'refused'}): {e}",))
+
+    properties = _mapping(published, "properties")
+    for key, value in claimed["properties"].items():
+        if key in properties and canonical(properties[key]) != canonical(value):
+            disagree.append(f"properties.{key}")
+    for key, want in claimed["assets"].items():
+        asset = published["assets"][key]
+        if "file:checksum" in asset and asset["file:checksum"] != want["file:checksum"]:
+            disagree.append(f"assets[{key}].file:checksum")
         if "file:size" in asset:
-            try:
-                want_size = _whole(part.get("bytes"), f"result.parts[{asset['href']}].bytes")
-            except ReceiptError:
-                want_size = None
             size = asset["file:size"]
-            if want_size is None or isinstance(size, bool) \
-                    or not isinstance(size, (int, float)) or float(size) != want_size:
+            if isinstance(size, bool) or not isinstance(size, (int, float)) \
+                    or float(size) != want["file:size"]:
                 disagree.append(f"assets[{key}].file:size")
 
     if disagree:
