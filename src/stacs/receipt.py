@@ -98,7 +98,24 @@ class ReceiptError(ValueError):
 
     Raised with what was wrong and where, never with the value alone: a message naming the
     column or the member is the difference between a two-minute fix and a bisect.
+
+    `code` is the contract's name for the refusal where it has one, and None otherwise. The
+    mapping's vectors compare two implementations by code, never by message, so a caller that
+    branches on why `stac_fields` refused reads `code` too; `STAC_REFUSALS` lists them.
+
+    Examples:
+        >>> try:
+        ...     stac_fields({"output": None})      # null is not an absent block
+        ... except ReceiptError as e:
+        ...     e.code
+        'block_not_object'
+        >>> ReceiptError("no canonical form").code is None
+        True
     """
+
+    def __init__(self, message, code=None):
+        super().__init__(message)
+        self.code = code
 
 
 def load_json(text):
@@ -1061,9 +1078,61 @@ PROCESSING_EXTENSION_URL = "https://stac-extensions.github.io/processing/v1.2.0/
 # length, so a sha256 is published as `1220` followed by the 64 hex digits.
 MULTIHASH_SHA256 = "1220"
 
-_SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
-_MULTIHASH_SHA256 = re.compile(r"^1220[0-9a-f]{64}$")
-_UTC_TIME = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$")
+# Used with `fullmatch` only, through the three predicates below, and written with `[0-9]`:
+# `$` under `match` also matches before a trailing newline, and `\d` matches every Unicode
+# digit, so `^\d{4}...$` let "2026-11-08T00:00:00Z\n" and Arabic-Indic digits into an item.
+_SHA256_HEX = re.compile(r"[0-9a-f]{64}")
+_MULTIHASH_SHA256 = re.compile(r"1220[0-9a-f]{64}")
+_UTC_TIME = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z")
+_DAYS_IN_MONTH = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+
+# Every code `stac_fields` refuses with: the mapping's own, tabled in the README vendored
+# beside its vectors (`tests/vectors/receipt/mapping/`). A test holds this list, the codes the
+# vectors expect and the codes this file raises to one set.
+STAC_REFUSALS = (
+    "block_not_object", "receipt_version_unknown",
+    "recipe_id_missing", "recipe_id_on_migrated", "recipe_id_not_sha256",
+    "time_not_utc", "version_not_string", "repo_name_empty",
+    "href_not_a_part", "part_sha256_not_sha256", "bytes_not_whole",
+    "receipt_asset_not_string", "receipt_asset_empty", "receipt_asset_in_assets",
+    "receipt_asset_without_digest", "digest_without_receipt_asset", "digest_not_sha256",
+)
+
+
+def _is_sha256(value) -> bool:
+    """Exactly 64 lower-case ASCII hex digits."""
+    return isinstance(value, str) and _SHA256_HEX.fullmatch(value) is not None
+
+
+def _is_multihash_sha256(value) -> bool:
+    return isinstance(value, str) and _MULTIHASH_SHA256.fullmatch(value) is not None
+
+
+def _utc_instant(value) -> bool:
+    """Whether `value` is the form's UTC spelling AND an instant that exists.
+
+    The pattern alone admits month 13, the 31st of November and hour 24, and the processing
+    extension declares `processing:datetime` as a `date-time`, which none of those is. A leap
+    second (`:60`) is refused with them, as the mapping refuses it.
+
+    Examples:
+        >>> _utc_instant("2024-02-29T23:59:59Z"), _utc_instant("2026-02-29T00:00:00Z")
+        (True, False)
+        >>> _utc_instant("2026-11-08T00:00:00.25Z"), _utc_instant("2026-11-08T24:00:00Z")
+        (True, False)
+        >>> _utc_instant("2026-11-08T00:00:00Z" + chr(10))    # a trailing newline
+        False
+    """
+    if not isinstance(value, str) or _UTC_TIME.fullmatch(value) is None:
+        return False
+    year, month, day = int(value[0:4]), int(value[5:7]), int(value[8:10])
+    hour, minute, second = int(value[11:13]), int(value[14:16]), int(value[17:19])
+    if not 1 <= month <= 12:
+        return False
+    leap = (year % 4 == 0 and year % 100 != 0) or year % 400 == 0
+    last = 29 if month == 2 and leap else _DAYS_IN_MONTH[month - 1]
+    return 1 <= day <= last and hour <= 23 and minute <= 59 and second <= 59
 
 # The asset that links the receipt: role `metadata`, as for every other output.
 RECEIPT_ROLE = "metadata"
@@ -1078,17 +1147,39 @@ def multihash(sha256_hex: str) -> str:
         >>> len(multihash("0" * 64))
         68
     """
-    if not isinstance(sha256_hex, str) or not _SHA256_HEX.match(sha256_hex):
+    if not _is_sha256(sha256_hex):
         raise ReceiptError(f"a sha256 is 64 lowercase hex digits, got {sha256_hex!r}")
     return MULTIHASH_SHA256 + sha256_hex
 
 
-def _whole(value, where: str) -> int:
+def _whole(value, where: str, code=None) -> int:
+    """`value` as a whole number of at least 0: a count of bytes. NaN and infinity are not
+    whole, so `is_integer` refuses them with the fractions."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ReceiptError(f"{where} is not a number: {value!r}")
+        raise ReceiptError(f"{where} is not a number: {value!r}", code=code)
     if isinstance(value, float) and not value.is_integer():
-        raise ReceiptError(f"{where} is not whole: {value!r}")
+        raise ReceiptError(f"{where} is not whole: {value!r}", code=code)
+    if value < 0:
+        raise ReceiptError(f"{where} is negative: {value!r}", code=code)
     return int(value)
+
+
+def _block(node: dict, key: str, where: str) -> dict:
+    """`node[key]` for the mapping: `{}` when absent, refused when present but not an object.
+
+    `null` included, which is what separates this from `_mapping`: there, "not an object" and
+    "has no members" are one answer, and that is only safe where the caller's default is
+    refusal. An item is published from what this returns, so a `recipe.code` that is null or a
+    string must not read as "no repositories" and yield an item with no software and no error.
+    """
+    if key not in node:
+        return {}
+    value = node[key]
+    if not isinstance(value, dict):
+        raise ReceiptError(f"{where} is present but not an object, got "
+                           f"{type(value).__name__}: it is never read as absent",
+                           code="block_not_object")
+    return value
 
 
 def stac_fields(receipt, assets=None, receipt_asset=None, receipt_sha256=None) -> dict:
@@ -1099,72 +1190,142 @@ def stac_fields(receipt, assets=None, receipt_asset=None, receipt_sha256=None) -
     STAC client or a pgstac queryable needs no second fetch.
 
     `assets` maps an asset key to its href **relative to the item**, which is what a part is
-    keyed by. `receipt_asset` names the asset that links the receipt, and `receipt_sha256` is
-    the digest `write` returned for it -- nothing else can compute that one, because a
-    receipt's own bytes are not inside it.
+    keyed by. A part no asset names is not mirrored, and two assets may name one part.
+    `receipt_asset` names the asset that links the receipt, and `receipt_sha256` is the digest
+    `write` returned for it -- nothing else can compute that one, because a receipt's own
+    bytes are not inside it. The two come together or not at all, and that asset carries
+    `file:checksum` with no `file:size`.
 
-    A migrated receipt has no recipe identity (`recipe_id` null), so the field is **left out**
-    rather than published as a null, which the field schema would refuse anyway.
+    This executes the `STAC item` rows of crate's mapping at `MAPPING_VERSION`, and crate's
+    vectors for those rows run against it. It checks the values it publishes and what decides
+    them -- the form version, whether the receipt was migrated, `recipe_id` and
+    `context.time` -- and refuses with a `ReceiptError` whose `code` is one of
+    `STAC_REFUSALS`. It does not validate the rest of the receipt; `validate` does that.
+
+    A block or entry that is present but not an object is refused, `null` included: it is
+    never read as absent. A migrated receipt (`output.migrated_from`) has no recipe identity,
+    so `receipt:recipe_id` is **left out** rather than published as a null; a `recipe_id`
+    missing on any other receipt is refused, because its item would read as migrated.
 
     Examples:
-        >>> r = {"output": {}, "recipe": {"recipe_id": "a" * 64,
-        ...                               "code": {"stacs": {"version": "0.2.0"}}},
+        >>> r = {"output": {"receipt_version": "1.0.0"},
+        ...      "recipe": {"recipe_id": "a" * 64,
+        ...                 "code": {"stacs": {"version": "0.2.0"}, "unversioned": {}}},
         ...      "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 12}}},
         ...      "context": {"time": "2026-11-08T00:00:00Z"}}
         >>> fields = stac_fields(r, assets={"data": "x.tif"})
         >>> sorted(fields["properties"])
         ['processing:datetime', 'processing:software', 'receipt:recipe_id']
+        >>> fields["properties"]["processing:software"]
+        {'stacs': '0.2.0'}
         >>> fields["assets"]["data"]["file:size"]
         12
         >>> fields["assets"]["data"]["file:checksum"][:4]
         '1220'
+
+        An instant that does not exist is refused, by code:
+
+        >>> try:
+        ...     stac_fields({**r, "context": {"time": "2026-13-01T00:00:00Z"}})
+        ... except ReceiptError as e:
+        ...     e.code
+        'time_not_utc'
     """
     if not isinstance(receipt, dict):
-        raise ReceiptError(f"a receipt is a JSON object, got {type(receipt).__name__}")
-    for where in ("recipe", "result", "context"):
-        node = receipt.get(where)
-        if node is not None and not isinstance(node, dict):
-            # Symmetric with the `assets=` refusal below, which round 3 noted this disagreed
-            # with: dropping a non-mapping block would publish an item with no provenance
-            # fields and no error, which is the worst of both.
-            raise ReceiptError(f"receipt.{where} is present but not an object, got "
-                               f"{type(node).__name__}")
+        raise ReceiptError(f"a receipt is a JSON object, got {type(receipt).__name__}",
+                           code="block_not_object")
     if assets is not None and not isinstance(assets, dict):
         # A public parameter, so a caller's mistake reaches here. Everything else malformed in
         # this module is a ReceiptError; `.items()` on a string would be an AttributeError
-        # naming neither the parameter nor the type (enumeration, mechanism D).
+        # naming neither the parameter nor the type (enumeration, mechanism D). No code: the
+        # mapping's vectors always pass a mapping, so the contract names no refusal for this.
         raise ReceiptError(f"assets maps an asset key to its href, got "
                            f"{type(assets).__name__}")
-    recipe = _mapping(receipt, "recipe")
-    result = _mapping(receipt, "result")
-    context = _mapping(receipt, "context")
+    assets = {} if assets is None else assets
 
-    properties, extensions = {}, []
+    # The two arguments that describe the receipt's own asset come as a pair or not at all.
+    if receipt_asset is not None:
+        if not isinstance(receipt_asset, str):
+            raise ReceiptError(f"receipt_asset is an asset key, got "
+                               f"{type(receipt_asset).__name__}",
+                               code="receipt_asset_not_string")
+        if receipt_asset == "":
+            raise ReceiptError("receipt_asset is empty, and an asset needs a key",
+                               code="receipt_asset_empty")
+        if receipt_asset in assets:
+            # It would replace that part's checksum and size with the receipt's own digest.
+            raise ReceiptError(f"receipt_asset {receipt_asset!r} is also a key of assets: the "
+                               f"receipt is not one of its own parts",
+                               code="receipt_asset_in_assets")
+        if receipt_sha256 is None:
+            raise ReceiptError(f"receipt_asset {receipt_asset!r} needs receipt_sha256, the "
+                               f"digest `write` returned for the bytes it wrote",
+                               code="receipt_asset_without_digest")
+    elif receipt_sha256 is not None:
+        # Ignoring it would return an item with no link to the receipt it was given.
+        raise ReceiptError("receipt_sha256 was given with no receipt_asset to carry it",
+                           code="digest_without_receipt_asset")
+    if receipt_sha256 is not None and not _is_sha256(receipt_sha256):
+        raise ReceiptError(f"receipt_sha256 is not 64 lowercase hex: {receipt_sha256!r}",
+                           code="digest_not_sha256")
+
+    output = _block(receipt, "output", "receipt.output")
+    recipe = _block(receipt, "recipe", "receipt.recipe")
+    result = _block(receipt, "result", "receipt.result")
+    context = _block(receipt, "context", "receipt.context")
+
+    # The form decides what every other field means, so it is checked first.
+    form = output.get("receipt_version")
+    if not isinstance(form, str) or form != RECEIPT_VERSION:
+        raise ReceiptError(f"output.receipt_version is {form!r}; mapping v{MAPPING_VERSION} "
+                           f"reads receipt form {RECEIPT_VERSION!r}",
+                           code="receipt_version_unknown")
+
+    properties = {}
+    # Only a migrated receipt has no recipe identity, and it never has one. By the PRESENCE of
+    # `migrated_from`, as the form schema's `if` decides it.
+    migrated = "migrated_from" in output
     recipe_identity = recipe.get("recipe_id")
-    if recipe_identity is not None:
-        if not isinstance(recipe_identity, str) or not _SHA256_HEX.match(recipe_identity):
+    if recipe_identity is None:
+        if not migrated:
+            raise ReceiptError("recipe.recipe_id is null or missing on a receipt that was not "
+                               "migrated: its item would read as one that was",
+                               code="recipe_id_missing")
+    else:
+        if migrated:
+            raise ReceiptError("recipe.recipe_id is set on a migrated receipt "
+                               "(output.migrated_from), which holds no recipe identity",
+                               code="recipe_id_on_migrated")
+        if not _is_sha256(recipe_identity):
             raise ReceiptError(f"recipe.recipe_id is not 64 lowercase hex: "
-                               f"{recipe_identity!r}")
+                               f"{recipe_identity!r}", code="recipe_id_not_sha256")
         properties["receipt:recipe_id"] = recipe_identity
 
     time = context.get("time")
-    if time is not None:
-        if not isinstance(time, str) or not _UTC_TIME.match(time):
-            raise ReceiptError(f"context.time is not an ISO 8601 UTC instant: {time!r}")
-        properties["processing:datetime"] = time
-    # `_mapping`, not `or {}`: a truthy non-mapping survives `or {}` and `.items()` then
-    # raises AttributeError. `item_verdict` calls this on a receipt that `read` never
-    # validated, so it has to refuse a malformed `code` rather than crash on it. Found by
-    # enumerating every member read after round 1, not by a reviewer.
-    software = {repo: entry.get("version")
-                for repo, entry in _mapping(recipe, "code").items()
-                if isinstance(entry, dict) and entry.get("version") is not None}
+    if not _utc_instant(time):
+        raise ReceiptError(f"context.time is required and must be a real ISO 8601 UTC "
+                           f"instant: {time!r}", code="time_not_utc")
+    properties["processing:datetime"] = time
+
+    software = {}
+    code_block = _block(recipe, "code", "recipe.code")
+    for repo in code_block:
+        if repo == "":
+            raise ReceiptError("recipe.code has a repository with an empty name, which would "
+                               "key processing:software", code="repo_name_empty")
+        version = _block(code_block, repo, f"recipe.code[{repo}]").get("version")
+        if version is None:
+            continue    # no version to publish: left out, and with none the property is
+        if not isinstance(version, str) or not version:
+            raise ReceiptError(f"recipe.code[{repo}].version is not a non-empty string: "
+                               f"{version!r}", code="version_not_string")
+        software[repo] = version
     if software:
         properties["processing:software"] = software
 
     out_assets = {}
-    parts = _mapping(result, "parts")
-    for key, href in (assets or {}).items():
+    parts = _block(result, "parts", "result.parts")
+    for key, href in assets.items():
         if not isinstance(href, str):
             # An href is used as a key into `result.parts`, so a list or a dict raises
             # `TypeError: unhashable type` rather than refusing (round 2b). A value consumed
@@ -1172,25 +1333,30 @@ def stac_fields(receipt, assets=None, receipt_asset=None, receipt_sha256=None) -
             # enumeration's population did not include it.
             raise ReceiptError(f"asset {key!r} href must be a string, got "
                                f"{type(href).__name__}")
-        part = parts.get(href)
-        if not isinstance(part, dict):
+        if href not in parts:
             # Guessing would publish another file's digest under this asset.
             raise ReceiptError(f"asset {key!r} has href {href!r}, which is not a part of this "
-                               f"receipt; parts are keyed by the href relative to the item")
-        out_assets[key] = {"file:checksum": multihash(part.get("sha256")),
+                               f"receipt; parts are keyed by the href relative to the item",
+                               code="href_not_a_part")
+        part = _block(parts, href, f"result.parts[{href}]")
+        if not _is_sha256(part.get("sha256")):
+            raise ReceiptError(f"result.parts[{href}].sha256 is not 64 lowercase hex: "
+                               f"{part.get('sha256')!r}", code="part_sha256_not_sha256")
+        out_assets[key] = {"file:checksum": multihash(part["sha256"]),
                            "file:size": _whole(part.get("bytes"),
-                                               f"result.parts[{href}].bytes")}
+                                               f"result.parts[{href}].bytes",
+                                               code="bytes_not_whole")}
     if receipt_asset is not None:
-        if receipt_sha256 is None:
-            raise ReceiptError(f"receipt_asset {receipt_asset!r} needs receipt_sha256, the "
-                               f"digest `write` returned for the bytes it wrote")
+        # The digest of the published receipt's bytes, never from a part, and no `file:size`:
+        # the digest identifies the bytes.
         out_assets[receipt_asset] = {"file:checksum": multihash(receipt_sha256)}
 
-    # In the order crate's example item lists them, and only the ones whose fields are here.
+    # In the order crate's example item lists them. `processing` is always here, because
+    # `context.time` is required; the other two only when their fields are.
+    extensions = []
     if out_assets:
         extensions.append(FILE_EXTENSION_URL)
-    if "processing:datetime" in properties or "processing:software" in properties:
-        extensions.append(PROCESSING_EXTENSION_URL)
+    extensions.append(PROCESSING_EXTENSION_URL)
     if "receipt:recipe_id" in properties:
         extensions.append(EXTENSION_URL)
     return {"stac_extensions": extensions, "properties": properties, "assets": out_assets}
@@ -1258,7 +1424,7 @@ def item_problems(item) -> list:
     identity = properties.get("receipt:recipe_id")
     if identity is None:
         problems.append("properties has no receipt:recipe_id")
-    elif not isinstance(identity, str) or not _SHA256_HEX.match(identity):
+    elif not _is_sha256(identity):
         problems.append(f"receipt:recipe_id is not 64 lowercase hex: {identity!r}")
 
     for error in sorted(jsonschema.Draft7Validator(stac_schema()).iter_errors(item),
@@ -1276,8 +1442,8 @@ def item_problems(item) -> list:
         problems.append(f"{where}: {error.message}")
 
     time = properties.get("processing:datetime")
-    if time is not None and (not isinstance(time, str) or not _UTC_TIME.match(time)):
-        problems.append(f"processing:datetime is not an ISO 8601 UTC instant: {time!r}")
+    if time is not None and not _utc_instant(time):
+        problems.append(f"processing:datetime is not a real ISO 8601 UTC instant: {time!r}")
     if ("processing:datetime" in properties or "processing:software" in properties) \
             and PROCESSING_EXTENSION_URL not in extensions:
         problems.append(f"stac_extensions does not list {PROCESSING_EXTENSION_URL}, and the "
@@ -1291,8 +1457,7 @@ def item_problems(item) -> list:
         if "file:checksum" in asset or "file:size" in asset:
             file_fields = True
         checksum = asset.get("file:checksum")
-        if checksum is not None and (not isinstance(checksum, str)
-                                     or not _MULTIHASH_SHA256.match(checksum)):
+        if checksum is not None and not _is_multihash_sha256(checksum):
             problems.append(f"asset {key!r} file:checksum is not a sha2-256 multihash "
                             f"(1220 + 64 hex): {checksum!r}")
         size = asset.get("file:size")
@@ -1346,7 +1511,8 @@ class ItemVerdict:
       was built again from the same inputs.
     - `changed`: the recipe itself differs between the two sides.
     - `inconsistent`: the item's provenance could not be established -- it disagrees with
-      the receipt it links, that receipt could not be read, or it links none at all. One
+      the receipt it links, that receipt could not be read or maps to no item fields
+      (`stac_fields` refuses it), or it links none at all. One
       category because they have one consequence; the notes say which it was. Never reported
       as agreement.
     """
@@ -1389,7 +1555,8 @@ def item_verdict(published, served, receipt, receipt_sha256=None) -> ItemVerdict
 
     Examples:
         >>> item = {"properties": {"receipt:recipe_id": "a" * 64}}
-        >>> r = {"recipe": {"recipe_id": "a" * 64}, "result": {}, "context": {}, "output": {}}
+        >>> r = {"output": {"receipt_version": "1.0.0"}, "recipe": {"recipe_id": "a" * 64},
+        ...      "result": {}, "context": {"time": "2026-11-08T00:00:00Z"}}
         >>> item_verdict(item, item, r).verdict
         'same'
         >>> moved = {"properties": {"receipt:recipe_id": "b" * 64}}
@@ -1449,7 +1616,17 @@ def item_verdict(published, served, receipt, receipt_sha256=None) -> ItemVerdict
     # `assets=` returns no asset fields at all, so `file:checksum` and `file:size` -- which
     # `_mirrored` compares between the two sides -- were never checked against `result.parts`,
     # and an item contradicting its own receipt in those two read `same` (round 1).
-    claimed = stac_fields(receipt)
+    try:
+        claimed = stac_fields(receipt)
+    except ReceiptError as e:
+        # A receipt the mapping refuses maps to no item fields, so there is nothing for the
+        # item to agree with. Returned, not raised, and by the same word as the node check
+        # above: that check reads an absent node and a null one alike, so without this a
+        # `recipe` that is a string came back `inconsistent` while one that is null raised --
+        # two routes for one fact, in a function whose callers read only the verdict.
+        return ItemVerdict("inconsistent", ("receipt",),
+                           (f"the receipt it links maps to no item fields "
+                            f"({e.code or 'refused'}): {e}",))
     disagree = []
     properties = _mapping(published, "properties")
     for key, value in claimed["properties"].items():
@@ -1470,8 +1647,13 @@ def item_verdict(published, served, receipt, receipt_sha256=None) -> ItemVerdict
             continue
         part = parts.get(href)
         if not isinstance(part, dict):
-            # Not an output this receipt describes: an overview, a thumbnail, or the receipt
-            # itself, whose own digest is checked above. Nothing to compare it with.
+            if href in parts:
+                # Named by the receipt and not an object, `null` included: the mapping
+                # refuses to read that as absent, and so does this. Skipping it would call an
+                # asset the receipt cannot vouch for "not described", and end in `same`.
+                disagree.append(f"result.parts[{href}]")
+            # Otherwise not an output this receipt describes: an overview, a thumbnail, or the
+            # receipt itself, whose own digest is checked above. Nothing to compare it with.
             continue
         if "file:checksum" in asset:
             try:

@@ -30,18 +30,20 @@ VECTORS = Path(__file__).resolve().parent / "vectors" / "receipt"
 # without vendoring its vectors fails here as a missing file.
 DIRS = {"numbers": f"v{r.RECEIPT_VERSION}", "jcs": f"v{r.RECEIPT_VERSION}",
         "recipe_id": f"v{r.RECEIPT_VERSION}", "fingerprint": f"v{r.RECEIPT_VERSION}",
-        "compare": f"register/v{r.REGISTER_VERSION}"}
+        "compare": f"register/v{r.REGISTER_VERSION}",
+        "stac": f"mapping/v{r.MAPPING_VERSION}"}
 
 # The case counts. Pinned, so a truncated or replaced file fails here rather than passing over
 # fewer cases: "a released version is never edited", so a count moves only with a version.
-COUNTS = {"numbers": 2637, "jcs": 10, "recipe_id": 7, "fingerprint": 13, "compare": 9}
+COUNTS = {"numbers": 2637, "jcs": 10, "recipe_id": 7, "fingerprint": 13, "compare": 9,
+          "stac": 142}
 
 
-def _cases(name):
+def _cases(name, load=json.loads):
     path = VECTORS / DIRS[name] / f"{name}.json"
     assert path.is_file(), (f"{path} is not vendored; run "
                             f"`bash tools/crate_receipt_vendor.sh vendor`")
-    cases = json.loads(path.read_text(encoding="utf-8"))
+    cases = load(path.read_text(encoding="utf-8"))
     assert isinstance(cases, list) and cases, f"{path} holds no cases"
     assert len(cases) == COUNTS[name], \
         f"{path} holds {len(cases)} case(s), expected {COUNTS[name]}"
@@ -353,6 +355,93 @@ def test_the_register_carries_every_action_the_contract_names():
     assert set(table.values()) == {"refuse", "warn", "record"}
     # `within` is produced by the comparison, never read from the register.
     assert "within" not in table.values()
+
+
+# =============================================================================
+# stac.json -- the mapping's STAC rows: the item fields a receipt maps to, or a refusal
+# =============================================================================
+
+def _stac_cases():
+    """Read with `load_json`, as the receipts' numbers are meant to be read: every number a
+    double, so a part's `bytes` arrives as it would from a receipt file."""
+    return _cases("stac", r.load_json)
+
+
+def _mapped(c):
+    """(fields, code): what `stac_fields` returned for one case, or the code it refused with."""
+    try:
+        return r.stac_fields(c["receipt"], assets=c["assets"],
+                             receipt_asset=c["receipt_asset"],
+                             receipt_sha256=c["receipt_sha256"]), None
+    except r.ReceiptError as e:
+        # A refusal that carries no code is its own outcome, and never equal to an expected
+        # one: "it refused" is not agreement about why.
+        return None, e.code if e.code is not None else "<refused with no code>"
+
+
+def test_every_stac_case_maps_to_the_item_fields_or_the_refusal_the_vectors_say():
+    """The mapping's STAC rows, executed. crate's R runs these cases and so does its own
+    independent Python reading of the rows; this is the third, and the only thing that says an
+    item written through stacs carries what one written through crate would.
+
+    A refusal is compared by its CODE, never its message, and an accepted case by value:
+    `stac_extensions` in order, `properties` and `assets` as canonical JSON so member order
+    and `12` against `12.0` do not matter.
+    """
+    bad = []
+    for c in _stac_cases():
+        got, code = _mapped(c)
+        if code != c["error"]:
+            bad.append(f"{c['name']}: {'accepted' if code is None else 'refused ' + code}, "
+                       f"expected {c['error'] or 'accepted'}")
+            continue
+        if got is None:
+            continue
+        want = c["expected"]
+        if sorted(got) != ["assets", "properties", "stac_extensions"]:
+            bad.append(f"{c['name']}: returned {sorted(got)}")
+        elif got["stac_extensions"] != want["stac_extensions"]:
+            bad.append(f"{c['name']} stac_extensions:\n  got      {got['stac_extensions']}"
+                       f"\n  expected {want['stac_extensions']}")
+        else:
+            for member in ("properties", "assets"):
+                if r.canonical(got[member]) != r.canonical(want[member]):
+                    bad.append(f"{c['name']} {member}:\n  got      {r.canonical(got[member])}"
+                               f"\n  expected {r.canonical(want[member])}")
+    assert bad == [], f"{len(bad)} of {COUNTS['stac']} case(s) disagree"
+
+
+def test_the_stac_vectors_hold_both_outcomes():
+    """A runner over cases that all refuse, or all map, would be checking half the mapping.
+    Every case is one or the other, and exactly one of `expected` and `error` is set."""
+    cases = _stac_cases()
+    accepted = [c for c in cases if c["error"] is None]
+    refused = [c for c in cases if c["error"] is not None]
+    assert (len(accepted), len(refused)) == (17, 125)
+    assert all(isinstance(c["expected"], dict) for c in accepted)
+    assert all(c["expected"] is None and isinstance(c["error"], str) for c in refused)
+
+
+def test_the_refusal_codes_are_exactly_the_ones_the_vectors_use():
+    """Three statements of one set, which must be one set: the codes the vectors expect, the
+    codes the module declares, and the codes its source actually raises. A code declared and
+    never raised would read as covered, and one raised and not declared is a refusal no
+    vector can match."""
+    import inspect
+    import re
+    in_vectors = {c["error"] for c in _stac_cases() if c["error"] is not None}
+    raised = set(re.findall(r'code="([a-z0-9_]+)"', inspect.getsource(r)))
+    assert raised, "no `code=\"...\"` literal found in the module, so this compares nothing"
+    assert set(r.STAC_REFUSALS) == in_vectors
+    assert raised == in_vectors
+    assert len(r.STAC_REFUSALS) == len(set(r.STAC_REFUSALS)) == 17
+    # And the contract's own table of them, in the README vendored beside the vectors: the
+    # first cell of each row after the `| code | refused |` header.
+    readme = (VECTORS / DIRS["stac"] / "README.md").read_text(encoding="utf-8")
+    table = readme[readme.index("| code | refused |"):].split("\n\n")[0]
+    tabled = {code for row in table.splitlines()[2:]
+              for code in re.findall(r"`([a-z0-9_]+)`", row.split("|")[1])}
+    assert tabled == in_vectors
 
 
 # =============================================================================

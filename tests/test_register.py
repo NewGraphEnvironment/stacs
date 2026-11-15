@@ -1927,6 +1927,20 @@ def test_an_item_that_claims_a_recipe_its_receipt_does_not_have_is_inconsistent(
     assert r.rc == 1
 
 
+def test_a_receipt_the_mapping_refuses_marks_its_item_inconsistent(env, api):
+    """A receipt that is valid to the form and still has no item fields: the form's pattern
+    admits month 13, so `write` publishes it, and the mapping refuses an instant that does not
+    exist. The item is marked with the reason and the run goes on -- never `same`, which
+    would be agreement with a receipt that maps to nothing."""
+    never = "2026-13-08T00:00:00Z"
+    data, digest, rid = _receipt_bytes(env, _receipt_doc(time=never))
+    published = [_item_with_receipt("a0", digest, rid, time=never)]
+    r = _receipt_run(env, api, published, [_edited(published[0])], data=data)
+    assert "1 inconsistent" in r.out, r.out
+    assert "maps to no item fields (time_not_utc)" in r.err, r.err
+    assert r.rc == 1
+
+
 def test_a_receipt_whose_digest_does_not_match_the_item_is_inconsistent(env, api):
     """The check that the receipt read is the one the item claims. Without it, a receipt
     fetched by convention could belong to anything."""

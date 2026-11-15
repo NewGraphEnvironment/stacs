@@ -115,6 +115,55 @@ against a backup.
 `check` at `v0.16.0`: `OK: 16 file(s) match NewGraphEnvironment/crate@v0.16.0, and all 4 frozen
 URLs serve them`. Full suite: 823 passed.
 
+## Phase 2: baselines and mutation table (2026-11-15)
+
+Before the code changed, `stac.json` over `stac_fields` at `e674cda`: 87 of 142 by accept or
+refuse (55 accepted where crate refuses), and 17 of 142 by code, since `ReceiptError` carried
+none and only the accept cases could agree. After: 142 of 142 by code. Full suite: 852 passed
+on Python 3.12 and on 3.11 before the review's additions, 875 on 3.12 after them.
+
+Each guard removed in turn from `src/stacs/receipt.py` (driver in the session scratchpad; the
+file restored and compared after). "Cases" is the count the runner reported disagreeing.
+
+| guard removed | `stac.json` cases red | stacs tests red besides the runner |
+|---|---|---|
+| `_block`: null read as absent | 8 | the `item_verdict` refusal test, `test_stac_fields_refuses_a_malformed_code_block_rather_than_crashing` |
+| `_block`: any non-object read as absent | 40 | 20 more |
+| `receipt_version_unknown` | 6 | 1 |
+| `recipe_id_missing` | 4 | `test_only_a_migrated_receipt_may_have_no_recipe_identity` |
+| `recipe_id_on_migrated` | 1 | same |
+| `recipe_id_not_sha256` | 9 | none |
+| `time_not_utc`, the whole check | 20 | 2 |
+| real-instant half (`return True`) | 6 | `test_item_problems_catches_each_way_an_item_can_be_wrong` |
+| month range | 2 | 2 |
+| `_UTC_TIME` `fullmatch` to `match` | 1 | `test_item_problems_catches_each_way_an_item_can_be_wrong` |
+| `_UTC_TIME` `[0-9]` to `\d` | 1 | same |
+| `version_not_string` | 4 | none |
+| `repo_name_empty` | 1 | none |
+| `href_not_a_part` | 4 | `test_stac_fields_refuses_an_asset_href_that_is_not_a_part` |
+| `part_sha256_not_sha256` | runner red (a `KeyError`, not a count) | none |
+| `_whole`: negative | 1 | `test_item_problems_catches_each_way_an_item_can_be_wrong` |
+| `_whole`: fraction | 1 | same |
+| `_whole`: not a number | 4 | none |
+| `receipt_asset_not_string` | 2 | none |
+| `receipt_asset_empty` | 1 | none |
+| `receipt_asset_in_assets` | 1 | none |
+| `receipt_asset_without_digest` | 1 | `test_stac_fields_needs_the_digest_for_the_receipt_asset` |
+| `digest_without_receipt_asset` | 1 | none |
+| `digest_not_sha256` | 9 | none |
+| `_SHA256_HEX` `fullmatch` to `match` | 6 | `test_multihash_refuses_anything_but_a_sha256`, the audit test |
+| `_MULTIHASH_SHA256` `fullmatch` to `match` | none | `test_item_problems_catches_each_way_an_item_can_be_wrong` |
+| processing extension only with software | 2 | `test_a_migrated_receipt_leaves_the_field_out_rather_than_publishing_a_null` |
+
+Run before the review's additions (F9, F10, F17), which add tests and no guard this table
+removes. The two guards they did add (`item_verdict`'s catch, the non-object part) get their
+mutation check in the branch review.
+
+Measured, and left alone: `write` accepts a `context.time` of month 13 (the form schema's
+pattern admits it), and `stac_fields` refuses the receipt it wrote. crate's R raises two codes
+its published table and vectors do not hold (`assets_not_named`, `href_empty`); stacs publishes
+an asset keyed `""`.
+
 ## Errors Encountered
 
 | Error | Resolution |

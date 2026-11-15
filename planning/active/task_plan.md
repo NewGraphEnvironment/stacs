@@ -96,15 +96,15 @@ Purpose: the vendored files sit at versioned paths, and `check` proves each serv
 
 Purpose: all 142 `stac.json` cases agree, each refusal by its code.
 
-- [ ] Test first: `tests/test_receipt_vectors.py` runs `stac.json` through the public
+- [x] Test first: `tests/test_receipt_vectors.py` runs `stac.json` through the public
       `stac_fields` (receipts read with `load_json`), count pinned at 142, `stac_extensions`
       compared in order, `properties` and `assets` as canonical JSON, a refusal by `e.code`;
       recorded red at 55 before the code changes
-- [ ] `ReceiptError(message, code=None)` with a `code` attribute
-- [ ] `_SHA256_HEX`, `_MULTIHASH_SHA256`, `_UTC_TIME`: `[0-9]` for `\d`, `fullmatch` at every use
-- [ ] `_utc_instant()`: the form's pattern and a real instant (month, a day that month has,
+- [x] `ReceiptError(message, code=None)` with a `code` attribute
+- [x] `_SHA256_HEX`, `_MULTIHASH_SHA256`, `_UTC_TIME`: `[0-9]` for `\d`, `fullmatch` at every use
+- [x] `_utc_instant()`: the form's pattern and a real instant (month, a day that month has,
       hour 00-23, minute and second 00-59), used by `stac_fields` and `item_problems`
-- [ ] `stac_fields` refuses, with crate's code: a block or entry present but not an object,
+- [x] `stac_fields` refuses, with crate's code: a block or entry present but not an object,
       `null` included (`output`, `recipe`, `result`, `context`, `recipe.code` and each entry,
       `result.parts` and the named part); `output.receipt_version` not `1.0.0`; `recipe_id`
       missing on a receipt that was not migrated, or set on a migrated one; `context.time`
@@ -112,14 +112,22 @@ Purpose: all 142 `stac.json` cases agree, each refusal by its code.
       repository name; `bytes` negative or not whole; `receipt_asset` not a string, empty, or
       also a key of `assets`; `receipt_sha256` without `receipt_asset`; a digest that is not 64
       lower-case hex
-- [ ] Existing refusals take their code (`href_not_a_part`, `part_sha256_not_sha256`,
+- [x] Existing refusals take their code (`href_not_a_part`, `part_sha256_not_sha256`,
       `receipt_asset_without_digest`, `recipe_id_not_sha256`, `digest_not_sha256`)
-- [ ] A test that the codes `stac_fields` can raise are exactly the 17 `stac.json` uses
-- [ ] `tests/test_receipt.py` and the docstring examples of `stac_fields` and `item_verdict`:
+- [x] A test that the codes `stac_fields` can raise are exactly the 17 `stac.json` uses
+- [x] `tests/test_receipt.py` and the docstring examples of `stac_fields` and `item_verdict`:
       the bare receipts they build gain `receipt_version`, `context.time` and a `recipe_id`
       where the mapping now requires them; a new test that `item_verdict` on a receipt the
       mapping refuses raises `ReceiptError`, which `_receipt_verdicts` reports as `inconsistent`
-- [ ] Mutation table: remove each new guard in turn and name the `stac.json` cases that go red
+- [x] Mutation table: remove each new guard in turn and name the `stac.json` cases that go red
+- [x] *(review, F9)* `item_verdict` returns `inconsistent`, with the mapping's code in the note,
+      for a receipt the mapping refuses, where it raised for a null node and returned for a
+      string one. This replaces "raises `ReceiptError`" in the checkbox above
+- [x] *(review, F10)* a part an asset names that is present but not an object is a
+      disagreement in `item_verdict`, where it was skipped as "not described" and read `same`
+- [x] *(review, F7, F17, F18)* presence of `migrated_from`, the calendar, and the code table in
+      the vendored README are each pinned by a stacs test
+- [x] *(review, F13)* "at least 0" is in `_whole`, so the audit refuses a negative `file:size`
 
 ## Phase 3: The comparison names its register
 
