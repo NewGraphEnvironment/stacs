@@ -9,6 +9,7 @@ contract is refused by name rather than hashed into something plausible.
 import copy
 import datetime
 import hashlib
+import json
 import os
 import stat
 from pathlib import Path
@@ -744,6 +745,52 @@ def test_a_file_size_that_is_not_the_parts_count_is_a_disagreement(size):
             "assets": {"data": {"href": "x.tif", "file:size": size}}}
     got = r.item_verdict(item, item, rec)
     assert (got.verdict, got.fields) == ("inconsistent", ("assets[data].file:size",)), got
+
+
+@pytest.mark.parametrize("where,value,verdict", [
+    ("properties.receipt:recipe_id", "c" * 64, "changed"),
+    ("properties.processing:datetime", "2026-11-09T00:00:00Z", "rebuilt"),
+    ("properties.processing:software", {"stacs": "9.9.9"}, "rebuilt"),
+    ("assets.data.file:checksum", "1220" + "d" * 64, "rebuilt"),
+    ("assets.data.file:size", 13, "rebuilt"),
+])
+def test_each_mirrored_field_decides_the_verdict_when_the_served_side_moves(where, value,
+                                                                           verdict):
+    """`_mirrored` names the five fields the two sides are compared in, and it is a list kept
+    by hand beside the one `stac_fields` publishes. Dropping `processing:datetime`,
+    `processing:software` or `file:size` from it left the suite green, and a served item that
+    differed only there would then have read `same`. One case per member."""
+    rec = {"output": _form(), "context": _when(),
+           "recipe": {"recipe_id": "a" * 64, "code": {"stacs": {"version": "0.3.0"}}},
+           "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 12}}}}
+    fields = r.stac_fields(rec, assets={"data": "x.tif"})
+    published = {"properties": dict(fields["properties"]),
+                 "assets": {"data": {"href": "x.tif", **fields["assets"]["data"]}}}
+    assert r.item_verdict(published, published, rec).verdict == "same", "control"
+    served = json.loads(json.dumps(published))
+    node = served
+    *path, key = where.split(".")
+    for part in path:
+        node = node[part]
+    node[key] = value
+    got = r.item_verdict(published, served, rec)
+    assert got.verdict == verdict, got
+    assert got.fields == (where if path[0] == "properties"
+                          else f"assets[{path[1]}].{key}",), got.fields
+
+
+def test_the_mirrored_fields_are_the_ones_the_mapping_publishes():
+    """The two lists, held to one: every field `stac_fields` returns for a receipt with every
+    kind of field is one `_mirrored` reads back, and nothing else is."""
+    rec = {"output": _form(), "context": _when(),
+           "recipe": {"recipe_id": "a" * 64, "code": {"stacs": {"version": "0.3.0"}}},
+           "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 12}}}}
+    fields = r.stac_fields(rec, assets={"data": "x.tif"})
+    published = {key: f"properties.{key}" for key in fields["properties"]}
+    published.update({f"{key}": f"assets[data].{key}" for key in fields["assets"]["data"]})
+    assert len(published) == 5
+    item = {"properties": fields["properties"], "assets": {"data": fields["assets"]["data"]}}
+    assert sorted(r._mirrored(item)) == sorted(published.values())
 
 
 def test_an_asset_that_carries_neither_file_field_still_agrees_with_a_good_part():

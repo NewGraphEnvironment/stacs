@@ -248,7 +248,7 @@ from memory of the code. Every quantified claim the branch added, walked against
 | the list of what `stac_fields` now refuses | NEWS | **was wider**: "a repository whose `version` is not a non-empty string" took in a null or missing version, which is left out, not refused. Reworded. The other ten items hold, each by a `stac.json` case |
 | "Of the receipts `validate` passes, the mapping refuses two kinds" | NEWS | holds: 28 = 17 argument + 8 instant + 3 newline, and round 2's fuzz over every path of the worked case found no third |
 | the audit's refusals (newline on three fields; digits and instants on one; negative size) | NEWS | holds: one audit case each |
-| where the note carries the mapping's code | NEWS | **was wider twice** (rounds 1 and 2); now states the exception, and "a string, a number or a list" became "present and neither an object nor null", since a bool is one too |
+| where the note carries the mapping's code | NEWS | **was wider three times** (rounds 1, 2 and 3: this row said "holds" after round 2 and round 3 showed it did not). The sentence no longer lists exceptions; see round 3 below |
 | "Code that constructs a `Comparison` itself must now pass both" | NEWS | holds: neither field has a default |
 | "Each is vendored here at its version and re-checked in CI" (three parts) | README | holds: schema, register and mapping each have a tag row and a URL row |
 | "`code` is one of `STAC_REFUSALS`", with two exceptions | `stac_fields` docstring | holds: `test_the_refusal_codes_are_exactly_the_ones_the_vectors_use` and the two uncoded raises, read |
@@ -256,6 +256,57 @@ from memory of the code. Every quantified claim the branch added, walked against
 | "all passing", the vectors table, "seven `STAC item` rows", the 55 by code | parity note | hold: counted by round 1's reviewer from the base module and the vendored files |
 
 Full suite: 896 passed.
+
+## Code-check round 3 (2026-11-15, `review-round3.md`)
+
+One finding against the diff, inside round 2's fix, and the third on one NEWS sentence: its
+list of where the note does not carry the mapping's code named the node check and missed
+`receipt.read`, which on `verify` runs before `item_verdict` and refuses a receipt of another
+form or with a non-object `output` in its own words. The reviewer found no input where the
+head returns agreement over a receipt the mapping refuses, and no new exception.
+
+The reviewer's reading of the mechanism, which is one link longer than mine: on `verify` the
+question "does this receipt map?" goes through a chain (the fetch, `receipt.read`,
+`item_verdict`'s receipt guard, its node check, its digest check, then `stac_fields`). Every
+link says `inconsistent`, which is why the verdict is safe. Any sentence about WHICH link
+answers is derived by hand, and that is what failed three times.
+
+| finding | disposition |
+|---|---|
+| NEWS listed one exception to "the note carries the code" and there are two more | The sentence now says the note carries the code where the mapping is the check that refuses, and lists nothing. Measured below, and asserted |
+| *(predates the branch)* `_mirrored`'s field list is a second copy of what `stac_fields` publishes, and three of its five members were held by no test | Two tests: one case per member, and the two lists held to one. Three mutations red |
+| *(predates the branch)* an item built from what `stac_fields` returns for a migrated receipt has no `receipt:recipe_id`, so `audit --require-receipt` files it as missing a receipt | Added to #17 as a decision |
+
+### How the loop ended
+
+On an enumeration, not a quiet round: every round found something inside the previous fix.
+
+**The code.** `test_item_verdict_is_inconsistent_wherever_the_mapping_refuses_the_receipt`
+walks all 142 cases. Round 3 tried to make it pass falsely and could not within the 123 it
+executes: the arm counts are asserted, it reaches the asset rows from items carrying no file
+field, and narrowing the hand-off turns it red. It now also asserts which check answered: of
+the 106 refused receipts, the mapping answers 90 with that case's own code and the node check
+16. It does not reach the 19 argument cases, four of which (`href_not_a_part`) read `same`:
+that is #17's family, known and filed.
+
+**The prose.** The claim that kept failing is gone, and what replaced it is measured in
+`verify`'s own order, `receipt.read` first, over the same 106:
+
+| check that answers | cases | note carries the case's code |
+|---|---|---|
+| `stac_fields` | 75 | 75 |
+| the node check | 16 | 0 |
+| `receipt.read` | 15 | 0 |
+
+So "where the mapping is the check that refuses, the note carries its code" is 75 of 75.
+Round 3 also executed eight quantified claims the table above did not list, and walked the
+docstrings and comments of `receipt.py`, `register.py`, the vendor script and the workflow;
+all hold. The other pairs it was asked about (`receipt.read` against the mapping's version
+check, `register()` against `REGISTER_VERSION`, the script's blocks against the tests,
+`STAC_REFUSALS` against the code) each agree on every vector.
+
+Three rounds, three reviewer agents, plus the plan reviewer: four agents in all. Full suite:
+902 passed.
 
 ## Errors Encountered
 

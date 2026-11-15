@@ -32,12 +32,12 @@ Versions track the package. A tag is a release consumers can pin with
   `processing:datetime` is written in digits outside ASCII or is not an instant that exists
   (month 13, 29 February in a common year, hour 24), or when a `file:size` is negative.
 - **Behaviour change:** `verify` reports an item `inconsistent` when the mapping refuses the
-  receipt it links, or refuses a part one of the item's assets names by its exact key. The
-  note carries the mapping's code, except where `recipe`, `context`, `result` or
-  `result.parts` is present and neither an object nor null, which an earlier check reports
-  by the node's name. `receipt.item_verdict` asks `stac_fields` about those assets and returns
-  `inconsistent` where it refuses; it used to return that for some such receipts, raise for
-  others, and read a part held as `null` as not described at all.
+  receipt it links, or refuses a part one of the item's assets names by its exact key. Where
+  the mapping is the check that refuses, the note carries its code; a check that runs before
+  it answers in its own words for a receipt it cannot read. `receipt.item_verdict` asks
+  `stac_fields` about those assets and returns `inconsistent` where it refuses; it used to
+  return that for some such receipts, raise for others, and read a part held as `null` as not
+  described at all.
 - `receipt.compare` names the rulebook behind its verdict: `Comparison.register` is the
   register version it read, and `Comparison.overrides` each action the caller's `overrides`
   changed. Code that constructs a `Comparison` itself must now pass both.

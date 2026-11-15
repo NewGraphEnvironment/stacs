@@ -23,4 +23,6 @@
 - Code-check round 2: 1 finding, inside round 1's fix (a NEWS sentence wider than the code);
   fixed, and the enumeration over all 142 vector cases and every quantified claim is in
   `findings.md`
-- Next: round 3
+- Code-check round 3: 1 finding, the same NEWS sentence; the claim is replaced by one that is
+  measured (75 of 75) and asserted. The loop ended on the enumeration in `findings.md`
+- Next: archive, PR

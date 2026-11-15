@@ -504,6 +504,7 @@ def test_item_verdict_is_inconsistent_wherever_the_mapping_refuses_the_receipt()
     passing by refusing everything.
     """
     counted = {"refused": 0, "agreed": 0, "argument": 0}
+    answered = {"the mapping, by the case's code": 0, "the node check": 0}
     bad = []
     for c in _stac_cases():
         assets = {key: {"href": href} for key, href in c["assets"].items()}
@@ -525,7 +526,20 @@ def test_item_verdict_is_inconsistent_wherever_the_mapping_refuses_the_receipt()
         counted["refused"] += 1
         if got.verdict != "inconsistent" or got.ok:
             bad.append(f"{c['name']} ({c['error']}): {got.verdict}")
+        # Which check answered, counted rather than described: three rounds running, a
+        # sentence listing where the note carries the mapping's code was wider than the code.
+        # Where the mapping answers, the note must carry THIS case's code and no other.
+        elif any("maps to no item fields" in note for note in got.notes):
+            answered["the mapping, by the case's code"] += 1
+            if not any(f"({c['error']})" in note for note in got.notes):
+                bad.append(f"{c['name']}: note carries another code than {c['error']}: "
+                           f"{got.notes}")
+        elif any("present but not objects" in note for note in got.notes):
+            answered["the node check"] += 1
+        else:
+            bad.append(f"{c['name']}: an unrecognised note {got.notes}")
     assert bad == []
+    assert answered == {"the mapping, by the case's code": 90, "the node check": 16}, answered
     # Every case is in exactly one arm, and the arm that proves something is not empty.
     assert counted == {"refused": 106, "agreed": 17, "argument": 19}, counted
     assert sum(counted.values()) == COUNTS["stac"]
