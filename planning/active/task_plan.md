@@ -140,18 +140,24 @@ Purpose: all 142 `stac.json` cases agree, each refusal by its code.
 
 ## Phase 4: Documentation and the record
 
-- [ ] `NEWS.md` under `## Unreleased`: the re-vendor and version pins, `stac.json` in CI, and
+- [x] `NEWS.md` under `## Unreleased`: the re-vendor and version pins, `stac.json` in CI, and
       each **behaviour change** (`stac_fields` refusals, the audit's stricter patterns,
       `Comparison`'s two new fields)
-- [ ] `docs/receipts.md` and the `stac_fields`, `compare`, `register` docstrings: the versions,
+- [x] `docs/receipts.md` and the `stac_fields`, `compare`, `register` docstrings: the versions,
       the refusal codes and where they are tabled
-- [ ] `research/receipt_parity.md`, revised in place: tag `v0.16.0`, the vectors table gains
+- [x] `research/receipt_parity.md`, revised in place: tag `v0.16.0`, the vectors table gains
       `stac.json` (142) and the measured 87-to-142, the "not covered" list loses what is now
       covered, the STAC row count is seven, the header's verified date moves
-- [ ] `uv run --group docs mkdocs build --strict` (no `-q`) passes
-- [ ] File a stacs issue for a defect found here and left out of scope: the table-cell patterns
+- [x] `uv run --group docs mkdocs build --strict` (no `-q`) passes
+- [x] File a stacs issue for a defect found here and left out of scope: the table-cell patterns
       `_DATE` and `_DATETIME` use `.match` with `$` and `\d`, so a date cell with a trailing
       newline is hashed into a fingerprint (measured: `"2026-01-01\n"` passes `_DATE`)
+- [x] *(review, F2)* `docs/receipts.md` is one include line, so the prose edited is the
+      `receipts` section of `README.md`, markers kept and links absolute
+- [x] *(review, F5)* crate's R raises two refusal codes its table and vectors do not hold; filed
+      with crate as crate#65 and recorded in the parity note. stacs coins no code for them
+- [x] The out-of-scope defect is filed as #16, widened by a measurement made here: `validate`
+      passes a value ending in a newline, because `jsonschema` reads `$` as Python does
 
 ## Validation
 

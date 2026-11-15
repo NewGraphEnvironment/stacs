@@ -184,9 +184,12 @@ identifies the recipe alone. Each item's receipt is published beside it and link
 asset with role `metadata`; the identity fields are mirrored onto the item so a STAC client
 or a pgstac queryable needs no second fetch.
 
-The contract, its JSON Schema and its test vectors are
-[crate](https://github.com/NewGraphEnvironment/crate)'s. They are vendored here at a pinned
-tag and re-checked against it in CI, because the test suite runs offline.
+The contract and its test vectors are
+[crate](https://github.com/NewGraphEnvironment/crate)'s, in three parts that are each
+versioned on their own: the receipt form, the register `compare` reads, and the mapping
+`stac_fields` executes. Each is vendored here at its version and re-checked in CI, against
+the crate tag it came from and the URL crate serves it at, because the test suite runs
+offline.
 
 ```python
 from stacs import receipt
@@ -200,8 +203,17 @@ fields = receipt.stac_fields(receipt.read("build/items/a0_receipt.json"),
 receipt.compare(before, after).verdict      # 'identical' | 'equivalent' | 'different'
 ```
 
+`stac_fields` executes the `STAC item` rows of crate's mapping, and crate's vectors for
+those rows run against it. A receipt the mapping refuses raises a `ReceiptError` whose `code`
+is crate's name for the refusal, tabled beside
+[the mapping](https://github.com/NewGraphEnvironment/crate/tree/main/inst/extdata/receipt/mapping):
+a missing or impossible `context.time`, a `recipe_id` missing where the receipt was not
+migrated, a block that is present but not an object.
+
 `compare` is crate's comparison of **two receipts**, and its three verdicts are crate's,
-decided by crate's register of which fields may differ and what a difference means.
+decided by crate's register of which fields may differ and what a difference means. The
+result names the register version it was judged under (`.register`) and each action an
+override changed (`.overrides`).
 
 `verify` answers a different question and uses its own four words for it, because there it
 has one receipt and the identity fields an item mirrors on each side:
@@ -211,7 +223,7 @@ has one receipt and the identity fields an item mirrors on each side:
 | `same` | the body differs in something the receipt does not describe |
 | `rebuilt` | one recipe, different output: built again from the same inputs |
 | `changed` | the published and served items name different recipes |
-| `inconsistent` | the item's provenance could not be established: it disagrees with the receipt it links, that receipt could not be read, or it links none |
+| `inconsistent` | the item's provenance could not be established: it disagrees with the receipt it links, that receipt could not be read or maps to no item fields, or it links none |
 
 A catalogue declares that it carries receipts with `require_receipt = true` under
 `[catalogue]`, or `--require-receipt`. `audit` then refuses an item whose receipt fields are

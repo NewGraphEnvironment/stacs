@@ -177,6 +177,20 @@ an asset keyed `""`.
 
 Full suite: 878 passed.
 
+## Phase 4: what the form passes that the mapping refuses (2026-11-15)
+
+Of the 125 receipts `stac.json` refuses, 28 pass `receipt.validate`: 17 are refused for an
+argument (`assets`, `receipt_asset`, `receipt_sha256`) and not for the receipt, 8 hold a
+`context.time` that is not an instant that exists, and 3 hold a `recipe_id`, a `context.time`
+or a part's `sha256` followed by a newline. The last three pass because `jsonschema` applies
+the schema's patterns with Python's `re`, where `$` also matches before a trailing newline.
+Filed as #16 with the table-cell patterns.
+
+`table_canonical` hashes a date cell of `"2026-01-01\n"`, of Arabic-Indic digits, and of
+`"2026-13-45"`, and a datetime cell followed by a newline (#16).
+
+`mkdocs build --strict`: exit 0, no `WARNING` line.
+
 ## Errors Encountered
 
 | Error | Resolution |

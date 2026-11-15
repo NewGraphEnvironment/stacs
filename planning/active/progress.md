@@ -16,4 +16,7 @@
   `item_verdict` (a refused receipt and a non-object part are `inconsistent`, never `same`);
   F5 goes to crate as a gap in its published code table
 - Phase 3 done: `Comparison.register` and `Comparison.overrides`, with a mutation table
-- Next: Phase 4
+- Phase 4 done: NEWS, the README receipts section, `research/receipt_parity.md` revised in
+  place; filed #16 (trailing newline in table cells and `validate`) and crate#65 (two refusal
+  codes outside crate's table)
+- Next: `/code-check branch`, then archive and PR
