@@ -208,6 +208,55 @@ Mutation rows for the fixes: no asset handed to the mapping (19 tests red), chec
 compared (1), size not compared (1), `compare` naming the form's version (1), `register()`
 reading the form's directory (1). Full suite: 884 passed.
 
+## Code-check round 2 (2026-11-15, `review-round2.md`)
+
+One finding against the diff, inside round 1's fix: the NEWS sentence that fix rewrote was
+wider than the code in two places. The reviewer's differential fuzz of 40,000 triples across
+the base, the commit before the fix and the head found the fix moved 11, all toward
+`inconsistent`, and none from `inconsistent` to agreement.
+
+| finding | disposition |
+|---|---|
+| "returns that verdict wherever `stac_fields` would refuse" was false for a receipt that is not an object: `item_verdict` raised `AttributeError` (the guard was missing at the base too) | `item_verdict` guards `receipt` as it guards the two items, and returns `inconsistent` with `block_not_object`; 5 cases pinned |
+| "with the refusal's code in the note" was false where the node check answers before the mapping | NEWS says where the code is and is not carried |
+| *(not a finding)* a comment in `register.py` said `item_verdict` raises on a non-hex `recipe_id` | Comment corrected |
+| *(predates the branch)* `isinstance(size, bool)` in the size comparison had no test | `test_a_file_size_that_is_not_the_parts_count_is_a_disagreement`, 6 cases |
+| *(predates the branch)* an asset whose href is not spelled exactly as a part's key is not compared (an absolute href, `./x.tif`); an asset entry that is not an object is skipped; a `file:size` integer past a double raises `OverflowError` | Added to #17 |
+
+### The enumeration that ends the loop
+
+Two rounds each found a defect inside the previous fix, so a quiet round is not the stop. Both
+were one mechanism, in two places.
+
+**In the code:** `item_verdict` and `stac_fields` read one receipt separately, so a rule the
+mapping gained reached one of them. The candidate set is every receipt the contract's vectors
+hold, and `test_item_verdict_is_inconsistent_wherever_the_mapping_refuses_the_receipt` walks
+it: of 142 cases, 106 are refused for the receipt and every one is `inconsistent`; 17 are
+accepted and every one, given the fields the case expects, is `same`; 19 are refused for an
+argument `item_verdict` does not pass. Nothing sits above its source of truth: the test's
+counts are asserted, and removing the hand-off to `stac_fields`, the catch, or the receipt
+guard each turns it red.
+
+**In the prose:** a sentence quantified over the refusals ("every", "wherever") and written
+from memory of the code. Every quantified claim the branch added, walked against the code:
+
+| claim | where | verdict |
+|---|---|---|
+| "compares each with the versioned URL crate serves it at" (register, mapping) | NEWS | holds: two `URLS` rows, pinned by `test_each_part_of_the_contract_is_checked_at_the_version_the_module_reads` |
+| "142 cases ... each a set of fields or a refusal with a code" | NEWS | holds: `test_the_stac_vectors_hold_both_outcomes` |
+| "agrees on all 142 now, compared by code" | NEWS | holds: the runner |
+| the list of what `stac_fields` now refuses | NEWS | **was wider**: "a repository whose `version` is not a non-empty string" took in a null or missing version, which is left out, not refused. Reworded. The other ten items hold, each by a `stac.json` case |
+| "Of the receipts `validate` passes, the mapping refuses two kinds" | NEWS | holds: 28 = 17 argument + 8 instant + 3 newline, and round 2's fuzz over every path of the worked case found no third |
+| the audit's refusals (newline on three fields; digits and instants on one; negative size) | NEWS | holds: one audit case each |
+| where the note carries the mapping's code | NEWS | **was wider twice** (rounds 1 and 2); now states the exception, and "a string, a number or a list" became "present and neither an object nor null", since a bool is one too |
+| "Code that constructs a `Comparison` itself must now pass both" | NEWS | holds: neither field has a default |
+| "Each is vendored here at its version and re-checked in CI" (three parts) | README | holds: schema, register and mapping each have a tag row and a URL row |
+| "`code` is one of `STAC_REFUSALS`", with two exceptions | `stac_fields` docstring | holds: `test_the_refusal_codes_are_exactly_the_ones_the_vectors_use` and the two uncoded raises, read |
+| "Every such field is listed whether or not it differed" | `Comparison` docstring | holds: `test_an_override_that_changes_an_action_is_named_on_the_comparison` |
+| "all passing", the vectors table, "seven `STAC item` rows", the 55 by code | parity note | hold: counted by round 1's reviewer from the base module and the vendored files |
+
+Full suite: 896 passed.
+
 ## Errors Encountered
 
 | Error | Resolution |

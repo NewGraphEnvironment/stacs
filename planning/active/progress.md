@@ -20,4 +20,7 @@
   place; filed #16 (trailing newline in table cells and `validate`) and crate#65 (two refusal
   codes outside crate's table)
 - Code-check round 1: 4 findings against the diff, all fixed; 2 that predate it filed as #17
-- Next: round 2
+- Code-check round 2: 1 finding, inside round 1's fix (a NEWS sentence wider than the code);
+  fixed, and the enumeration over all 142 vector cases and every quantified claim is in
+  `findings.md`
+- Next: round 3

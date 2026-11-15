@@ -20,8 +20,9 @@ Versions track the package. A tag is a release consumers can pin with
   is not `1.0.0`; a `recipe_id` that is null or missing on a receipt that was not migrated, or
   set on a migrated one; a `context.time` that is missing or not an instant that exists; a
   block or entry that is present but not an object, `null` included; a repository whose
-  `version` is not a non-empty string, or whose name is empty; a part whose `bytes` is
-  negative; a `receipt_asset` that is not a string, is empty or is also a key of `assets`; and
+  `version` is set to anything but a non-empty string (a null or missing one is still left
+  out), or whose name is empty; a part an asset names whose `bytes` is negative; a
+  `receipt_asset` that is not a string, is empty or is also a key of `assets`; and
   a `receipt_sha256` given with no `receipt_asset`. Of the receipts `receipt.validate` passes,
   the mapping refuses two kinds: one whose `context.time` is not an instant that exists, and
   one whose `recipe_id`, `context.time` or a part's `sha256` ends in a newline.
@@ -31,10 +32,12 @@ Versions track the package. A tag is a release consumers can pin with
   `processing:datetime` is written in digits outside ASCII or is not an instant that exists
   (month 13, 29 February in a common year, hour 24), or when a `file:size` is negative.
 - **Behaviour change:** `verify` reports an item `inconsistent` when the mapping refuses the
-  receipt it links, or refuses a part one of the item's assets names, with the refusal's code
-  in the note. `receipt.item_verdict` asks `stac_fields` about those assets, so it returns
-  that verdict wherever `stac_fields` would refuse; it used to return it for some such
-  receipts, raise for others, and read a part held as `null` as not described at all.
+  receipt it links, or refuses a part one of the item's assets names by its exact key. The
+  note carries the mapping's code, except where `recipe`, `context`, `result` or
+  `result.parts` is present and neither an object nor null, which an earlier check reports
+  by the node's name. `receipt.item_verdict` asks `stac_fields` about those assets and returns
+  `inconsistent` where it refuses; it used to return that for some such receipts, raise for
+  others, and read a part held as `null` as not described at all.
 - `receipt.compare` names the rulebook behind its verdict: `Comparison.register` is the
   register version it read, and `Comparison.overrides` each action the caller's `overrides`
   changed. Code that constructs a `Comparison` itself must now pass both.

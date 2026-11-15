@@ -721,6 +721,31 @@ def test_a_part_the_mapping_refuses_is_never_same(part, asset_fields, code):
     assert any(f"({code})" in note and "x.tif" in note for note in got.notes), got.notes
 
 
+@pytest.mark.parametrize("receipt", [None, [], "receipt.json", 5, True])
+def test_a_receipt_that_is_not_an_object_is_inconsistent_not_a_crash(receipt):
+    """The one argument of the three that was read unguarded: `receipt.get` raised
+    AttributeError, where the mapping refuses the same value as `block_not_object`."""
+    item = {"properties": {"receipt:recipe_id": "a" * 64}}
+    got = r.item_verdict(item, item, receipt)
+    assert got.verdict == "inconsistent" and not got.ok, got
+    assert any("(block_not_object)" in note for note in got.notes), got.notes
+    with pytest.raises(r.ReceiptError) as e:
+        r.stac_fields(receipt)
+    assert e.value.code == "block_not_object"
+
+
+@pytest.mark.parametrize("size", [True, "12", [12], None, 13, 12.5])
+def test_a_file_size_that_is_not_the_parts_count_is_a_disagreement(size):
+    """`True == 1` and `float(True) == 1.0`, so the type has to be asked first: an item
+    publishing `file:size: true` over a one-byte part must not read as agreement."""
+    rec = {"output": _form(), "recipe": {"recipe_id": "a" * 64}, "context": _when(),
+           "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 1 if size is True else 12}}}}
+    item = {"properties": {"receipt:recipe_id": "a" * 64},
+            "assets": {"data": {"href": "x.tif", "file:size": size}}}
+    got = r.item_verdict(item, item, rec)
+    assert (got.verdict, got.fields) == ("inconsistent", ("assets[data].file:size",)), got
+
+
 def test_an_asset_that_carries_neither_file_field_still_agrees_with_a_good_part():
     """The other direction of the test above: asking the mapping about every asset that names
     a part must not turn an item that publishes no file fields into a disagreement."""

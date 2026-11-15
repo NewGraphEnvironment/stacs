@@ -1591,6 +1591,14 @@ def item_verdict(published, served, receipt, receipt_sha256=None) -> ItemVerdict
         if not isinstance(doc, dict):
             raise ReceiptError(f"the {name} item is not a JSON object, got "
                                f"{type(doc).__name__}")
+    if not isinstance(receipt, dict):
+        # The mapping refuses this as `block_not_object`, and so it is the same verdict as
+        # every other receipt the mapping refuses. Without it, `receipt.get` below raised
+        # AttributeError: the one argument of the three that was read unguarded.
+        return ItemVerdict("inconsistent", ("receipt",),
+                           (f"the receipt it links maps to no item fields "
+                            f"(block_not_object): a receipt is a JSON object, got "
+                            f"{type(receipt).__name__}",))
     notes = []
 
     # Nodes this verdict depends on. `_mapping` turns a present non-mapping into `{}`, which
