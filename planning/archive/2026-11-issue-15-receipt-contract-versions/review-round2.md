@@ -160,4 +160,4 @@ Full suite on the head: 884 passed.
 - The fuzz's junk values held no integer past 2^53 and no `roles` mutation; those two were
   probed by hand, above.
 
-/Users/airvine/Projects/repo/stacs/planning/active/review-round2.md
+planning/active/review-round2.md

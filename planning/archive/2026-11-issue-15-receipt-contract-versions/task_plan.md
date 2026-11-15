@@ -164,7 +164,7 @@ Purpose: all 142 `stac.json` cases agree, each refusal by its code.
 - [x] Tests pass
 - [x] `/code-check` clean (once over the branch with `/code-check branch`)
 - [x] PWF checkboxes match landed work
-- [ ] `/planning-archive` on completion
+- [x] `/planning-archive` on completion
 
 How each change is proved:
 

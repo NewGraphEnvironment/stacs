@@ -25,4 +25,4 @@
   `findings.md`
 - Code-check round 3: 1 finding, the same NEWS sentence; the claim is replaced by one that is
   measured (75 of 75) and asserted. The loop ended on the enumeration in `findings.md`
-- Next: archive, PR
+- Archived to `planning/archive/2026-11-issue-15-receipt-contract-versions/`; PR next
