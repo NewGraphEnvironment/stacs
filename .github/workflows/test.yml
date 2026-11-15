@@ -22,7 +22,8 @@ jobs:
       # Before pytest, because this is the one step that needs the network: the suite itself is
       # offline (conftest.py refuses every non-loopback lookup), so the vendored copy of crate's
       # receipt contract is what the tests read. This proves the vendored bytes are the ones
-      # crate published at the pinned tag, and that both frozen schema URLs still serve them.
+      # crate published at the pinned tag, and that each frozen URL (the two schemas, the
+      # register and the mapping, each at its own version) still serves them.
       # Bounded, so a hung fetch cannot hold the job (and its concurrency group) for hours.
       - run: bash tools/crate_receipt_vendor.sh check
         timeout-minutes: 5

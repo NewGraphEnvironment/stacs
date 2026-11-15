@@ -79,9 +79,12 @@ def test_the_vendored_contract_sits_inside_the_package_directory():
     next test pins, plus the `uv build` check in the release path.
     """
     from importlib import resources
+
+    from stacs import receipt
     root = resources.files("stacs").joinpath("data", "receipt")
-    for name in ("v1.0.0/schema.json", "v1.0.0/stac_schema.json", "register.csv",
-                 "mapping.csv", "SOURCE"):
+    for name in ("v1.0.0/schema.json", "v1.0.0/stac_schema.json",
+                 f"register/v{receipt.REGISTER_VERSION}/register.csv",
+                 f"mapping/v{receipt.MAPPING_VERSION}/mapping.csv", "SOURCE"):
         ref = root.joinpath(*name.split("/"))
         assert ref.is_file(), f"{name} is not inside the installed package"
         assert ref.read_text(encoding="utf-8").strip(), f"{name} is empty"

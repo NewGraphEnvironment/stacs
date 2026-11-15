@@ -22,19 +22,28 @@ import pytest
 
 from stacs import receipt as r
 
-VECTORS = Path(__file__).resolve().parent / "vectors" / "receipt" / "v1.0.0"
+VECTORS = Path(__file__).resolve().parent / "vectors" / "receipt"
 
-# The v1.0.0 case counts. Pinned, so a truncated or replaced file fails here rather than
-# passing over fewer cases: "they are frozen with the receipt schema v1.0.0, a change is a new
-# version directory, never an edit."
-COUNTS = {"numbers": 2637, "jcs": 10, "recipe_id": 7, "fingerprint": 13, "compare": 9}
+# Where each vector file lives. The three parts of the contract are versioned apart, so the
+# hashing vectors sit with the form, `compare.json` with the register whose actions it tests,
+# and a directory is named from the version constant the module reads: moving a constant
+# without vendoring its vectors fails here as a missing file.
+DIRS = {"numbers": f"v{r.RECEIPT_VERSION}", "jcs": f"v{r.RECEIPT_VERSION}",
+        "recipe_id": f"v{r.RECEIPT_VERSION}", "fingerprint": f"v{r.RECEIPT_VERSION}",
+        "compare": f"register/v{r.REGISTER_VERSION}",
+        "stac": f"mapping/v{r.MAPPING_VERSION}"}
+
+# The case counts. Pinned, so a truncated or replaced file fails here rather than passing over
+# fewer cases: "a released version is never edited", so a count moves only with a version.
+COUNTS = {"numbers": 2637, "jcs": 10, "recipe_id": 7, "fingerprint": 13, "compare": 9,
+          "stac": 142}
 
 
-def _cases(name):
-    path = VECTORS / f"{name}.json"
+def _cases(name, load=json.loads):
+    path = VECTORS / DIRS[name] / f"{name}.json"
     assert path.is_file(), (f"{path} is not vendored; run "
                             f"`bash tools/crate_receipt_vendor.sh vendor`")
-    cases = json.loads(path.read_text(encoding="utf-8"))
+    cases = load(path.read_text(encoding="utf-8"))
     assert isinstance(cases, list) and cases, f"{path} holds no cases"
     assert len(cases) == COUNTS[name], \
         f"{path} holds {len(cases)} case(s), expected {COUNTS[name]}"
@@ -346,6 +355,194 @@ def test_the_register_carries_every_action_the_contract_names():
     assert set(table.values()) == {"refuse", "warn", "record"}
     # `within` is produced by the comparison, never read from the register.
     assert "within" not in table.values()
+
+
+# =============================================================================
+# A comparison names the rulebook it was judged under
+# =============================================================================
+
+def test_every_comparison_names_the_register_version_it_read():
+    """The version constant is also the directory `register()` reads and the directory these
+    nine pairs were vendored into, so the name on a comparison is the name of the rows that
+    produced it. Against the constant, not a literal: a literal here would still pass after
+    the register moved. That it is the REGISTER's constant and not the form's, which is equal
+    today, is `test_the_register_is_read_and_named_by_its_own_version_not_the_forms`."""
+    for c in _cases("compare"):
+        got = r.compare(c["a"], c["b"])
+        assert got.register == r.REGISTER_VERSION, c["name"]
+        assert got.overrides == (), c["name"]
+
+
+def test_an_override_that_changes_an_action_is_named_on_the_comparison():
+    """Listed whether or not that field differed: the verdict was reached under the changed
+    rule either way, and a reader of the comparison has to be able to tell."""
+    c = _pairs()["toolchain only"]
+    table = r.register()
+    assert table["context.toolchain"] == "record" and table["output.schema"] == "warn"
+    got = r.compare(c["a"], c["b"], {"output.schema": "refuse", "context.toolchain": "refuse"})
+    assert got.verdict == "different"
+    # Sorted by field as bytes, and `output.schema` did not differ in this pair.
+    assert got.overrides == (("context.toolchain", "refuse"), ("output.schema", "refuse"))
+    assert "output.schema" not in [d.field for d in got.differences]
+
+
+def test_restating_the_registers_own_action_is_not_an_override():
+    c = _pairs()["toolchain only"]
+    got = r.compare(c["a"], c["b"], {"context.toolchain": "record", "context.time": "record"})
+    assert (got.verdict, got.overrides) == ("identical", ())
+
+
+# =============================================================================
+# stac.json -- the mapping's STAC rows: the item fields a receipt maps to, or a refusal
+# =============================================================================
+
+def _stac_cases():
+    """Read with `load_json`, as the receipts' numbers are meant to be read: every number a
+    double, so a part's `bytes` arrives as it would from a receipt file."""
+    return _cases("stac", r.load_json)
+
+
+def _mapped(c):
+    """(fields, code): what `stac_fields` returned for one case, or the code it refused with."""
+    try:
+        return r.stac_fields(c["receipt"], assets=c["assets"],
+                             receipt_asset=c["receipt_asset"],
+                             receipt_sha256=c["receipt_sha256"]), None
+    except r.ReceiptError as e:
+        # A refusal that carries no code is its own outcome, and never equal to an expected
+        # one: "it refused" is not agreement about why.
+        return None, e.code if e.code is not None else "<refused with no code>"
+
+
+def test_every_stac_case_maps_to_the_item_fields_or_the_refusal_the_vectors_say():
+    """The mapping's STAC rows, executed. crate's R runs these cases and so does its own
+    independent Python reading of the rows; this is the third, and the only thing that says an
+    item written through stacs carries what one written through crate would.
+
+    A refusal is compared by its CODE, never its message, and an accepted case by value:
+    `stac_extensions` in order, `properties` and `assets` as canonical JSON so member order
+    and `12` against `12.0` do not matter.
+    """
+    bad = []
+    for c in _stac_cases():
+        got, code = _mapped(c)
+        if code != c["error"]:
+            bad.append(f"{c['name']}: {'accepted' if code is None else 'refused ' + code}, "
+                       f"expected {c['error'] or 'accepted'}")
+            continue
+        if got is None:
+            continue
+        want = c["expected"]
+        if sorted(got) != ["assets", "properties", "stac_extensions"]:
+            bad.append(f"{c['name']}: returned {sorted(got)}")
+        elif got["stac_extensions"] != want["stac_extensions"]:
+            bad.append(f"{c['name']} stac_extensions:\n  got      {got['stac_extensions']}"
+                       f"\n  expected {want['stac_extensions']}")
+        else:
+            for member in ("properties", "assets"):
+                if r.canonical(got[member]) != r.canonical(want[member]):
+                    bad.append(f"{c['name']} {member}:\n  got      {r.canonical(got[member])}"
+                               f"\n  expected {r.canonical(want[member])}")
+    assert bad == [], f"{len(bad)} of {COUNTS['stac']} case(s) disagree"
+
+
+def test_the_stac_vectors_hold_both_outcomes():
+    """A runner over cases that all refuse, or all map, would be checking half the mapping.
+    Every case is one or the other, and exactly one of `expected` and `error` is set."""
+    cases = _stac_cases()
+    accepted = [c for c in cases if c["error"] is None]
+    refused = [c for c in cases if c["error"] is not None]
+    assert (len(accepted), len(refused)) == (17, 125)
+    assert all(isinstance(c["expected"], dict) for c in accepted)
+    assert all(c["expected"] is None and isinstance(c["error"], str) for c in refused)
+
+
+def test_the_refusal_codes_are_exactly_the_ones_the_vectors_use():
+    """Three statements of one set, which must be one set: the codes the vectors expect, the
+    codes the module declares, and the codes its source actually raises. A code declared and
+    never raised would read as covered, and one raised and not declared is a refusal no
+    vector can match."""
+    import inspect
+    import re
+    in_vectors = {c["error"] for c in _stac_cases() if c["error"] is not None}
+    raised = set(re.findall(r'code="([a-z0-9_]+)"', inspect.getsource(r)))
+    assert raised, "no `code=\"...\"` literal found in the module, so this compares nothing"
+    assert set(r.STAC_REFUSALS) == in_vectors
+    assert raised == in_vectors
+    assert len(r.STAC_REFUSALS) == len(set(r.STAC_REFUSALS)) == 17
+    # And the contract's own table of them, in the README vendored beside the vectors: the
+    # first cell of each row after the `| code | refused |` header.
+    readme = (VECTORS / DIRS["stac"] / "README.md").read_text(encoding="utf-8")
+    table = readme[readme.index("| code | refused |"):].split("\n\n")[0]
+    tabled = {code for row in table.splitlines()[2:]
+              for code in re.findall(r"`([a-z0-9_]+)`", row.split("|")[1])}
+    assert tabled == in_vectors
+
+
+# =============================================================================
+# item_verdict against the same 142 cases: it never agrees where the mapping refuses
+# =============================================================================
+
+# The refusals that are about `stac_fields`' own arguments, which `item_verdict` does not
+# pass: it names no receipt asset, and an asset whose href is not a part's key is, to it, an
+# asset the receipt does not describe (a thumbnail), never an error.
+ARGUMENT_REFUSALS = {"href_not_a_part", "receipt_asset_not_string", "receipt_asset_empty",
+                     "receipt_asset_in_assets", "receipt_asset_without_digest",
+                     "digest_without_receipt_asset", "digest_not_sha256"}
+
+
+def test_item_verdict_is_inconsistent_wherever_the_mapping_refuses_the_receipt():
+    """The enumeration that ended the review of this code. Three rounds each found `item_verdict`
+    agreeing with, or crashing on, a receipt that `stac_fields` refuses, and each time it was
+    the same mechanism: the two functions read one receipt separately, so a rule the mapping
+    gained reached one of them. `item_verdict` now asks `stac_fields`, and this walks every
+    case the contract has rather than the ones a reviewer thought of.
+
+    For each case, an item is built from the case's own `assets`. Where the mapping refuses
+    the RECEIPT, the verdict must be `inconsistent`. Where it accepts, the item is given the
+    fields the case expects, and the verdict must be `same` -- the direction that stops this
+    passing by refusing everything.
+    """
+    counted = {"refused": 0, "agreed": 0, "argument": 0}
+    answered = {"the mapping, by the case's code": 0, "the node check": 0}
+    bad = []
+    for c in _stac_cases():
+        assets = {key: {"href": href} for key, href in c["assets"].items()}
+        item = {"properties": {}, "assets": assets}
+        if c["error"] in ARGUMENT_REFUSALS:
+            counted["argument"] += 1
+            continue
+        if c["error"] is None:
+            item["properties"] = dict(c["expected"]["properties"])
+            for key, fields in c["expected"]["assets"].items():
+                if key in assets:
+                    assets[key].update(fields)
+            got = r.item_verdict(item, item, c["receipt"])
+            counted["agreed"] += 1
+            if got.verdict != "same":
+                bad.append(f"{c['name']}: {got.verdict} {got.fields} {got.notes}")
+            continue
+        got = r.item_verdict(item, item, c["receipt"])
+        counted["refused"] += 1
+        if got.verdict != "inconsistent" or got.ok:
+            bad.append(f"{c['name']} ({c['error']}): {got.verdict}")
+        # Which check answered, counted rather than described: three rounds running, a
+        # sentence listing where the note carries the mapping's code was wider than the code.
+        # Where the mapping answers, the note must carry THIS case's code and no other.
+        elif any("maps to no item fields" in note for note in got.notes):
+            answered["the mapping, by the case's code"] += 1
+            if not any(f"({c['error']})" in note for note in got.notes):
+                bad.append(f"{c['name']}: note carries another code than {c['error']}: "
+                           f"{got.notes}")
+        elif any("present but not objects" in note for note in got.notes):
+            answered["the node check"] += 1
+        else:
+            bad.append(f"{c['name']}: an unrecognised note {got.notes}")
+    assert bad == []
+    assert answered == {"the mapping, by the case's code": 90, "the node check": 16}, answered
+    # Every case is in exactly one arm, and the arm that proves something is not empty.
+    assert counted == {"refused": 106, "agreed": 17, "argument": 19}, counted
+    assert sum(counted.values()) == COUNTS["stac"]
 
 
 # =============================================================================

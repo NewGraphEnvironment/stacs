@@ -1,5 +1,5 @@
 repo: NewGraphEnvironment/crate
-tag: v0.12.0
+tag: v0.16.0
 
 The receipt contract, vendored because the test suite is offline. Re-vendor with
 `bash tools/crate_receipt_vendor.sh vendor`; CI runs `check` before pytest.
@@ -9,12 +9,15 @@ git blob sha of each file as vendored:
   c87e45cf61ddcd39f42255f3e7d6b7a51f11ddfe  tests/vectors/receipt/v1.0.0/jcs.json  (<- inst/extdata/receipt/vectors/v1.0.0/jcs.json)
   d194f995e88bd1f7d49f7f54ca500cda7a906b90  tests/vectors/receipt/v1.0.0/recipe_id.json  (<- inst/extdata/receipt/vectors/v1.0.0/recipe_id.json)
   a05a774db0cd22cddfa0da8058c354d7a3211921  tests/vectors/receipt/v1.0.0/fingerprint.json  (<- inst/extdata/receipt/vectors/v1.0.0/fingerprint.json)
-  45495a54fbea90ff89a692c31848e09667789804  tests/vectors/receipt/v1.0.0/compare.json  (<- inst/extdata/receipt/vectors/v1.0.0/compare.json)
-  ef85f1f2ffb058908f1a613a263cdd614fb586b5  tests/vectors/receipt/v1.0.0/README.md  (<- inst/extdata/receipt/vectors/v1.0.0/README.md)
+  e11c7217f2ad1e152a59697ead3ded0ba17d4130  tests/vectors/receipt/v1.0.0/README.md  (<- inst/extdata/receipt/vectors/v1.0.0/README.md)
+  45495a54fbea90ff89a692c31848e09667789804  tests/vectors/receipt/register/v1.0.0/compare.json  (<- inst/extdata/receipt/register/v1.0.0/compare.json)
+  8059144e3c9d7bb85ba6405cd6edbbd734c511b4  tests/vectors/receipt/register/v1.0.0/README.md  (<- inst/extdata/receipt/register/v1.0.0/README.md)
+  ffa08b8fec8880ff2f0ff9990e0ff1070f4cc7f4  tests/vectors/receipt/mapping/v1.1.0/stac.json  (<- inst/extdata/receipt/mapping/v1.1.0/stac.json)
+  e927e0e007604bf749d5d591901e6977279b92f3  tests/vectors/receipt/mapping/v1.1.0/README.md  (<- inst/extdata/receipt/mapping/v1.1.0/README.md)
   5c72e5cec6d55f1934474690461d86265af9b686  src/stacs/data/receipt/v1.0.0/schema.json  (<- pkgdown/assets/receipt/v1.0.0/schema.json)
   cca42ab60764c74d8b7358c59a839f2d0da00aaf  src/stacs/data/receipt/v1.0.0/stac_schema.json  (<- pkgdown/assets/stac/receipt/v1.0.0/schema.json)
-  0c5b72fa025a0357ed4fb1a52301bbe3fd86e0bd  src/stacs/data/receipt/register.csv  (<- inst/extdata/receipt/register.csv)
-  866571165787223cfbaedfc768a81ccd24e9ff69  src/stacs/data/receipt/mapping.csv  (<- inst/extdata/receipt/mapping.csv)
+  0c5b72fa025a0357ed4fb1a52301bbe3fd86e0bd  src/stacs/data/receipt/register/v1.0.0/register.csv  (<- inst/extdata/receipt/register/v1.0.0/register.csv)
+  c96cc6cab2df027c14b155bf36961e2ce2131d7e  src/stacs/data/receipt/mapping/v1.1.0/mapping.csv  (<- inst/extdata/receipt/mapping/v1.1.0/mapping.csv)
   3f8756cbf0c4b546e51c1d2dfe71346342e054dc  tests/vectors/receipt/examples/worked_case/build_1/receipt.json  (<- inst/extdata/receipt/examples/worked_case/build_1/receipt.json)
   ff55047913a0a3f7e4b5364bc24c6cb19ca7c24d  tests/vectors/receipt/examples/worked_case/build_2/receipt.json  (<- inst/extdata/receipt/examples/worked_case/build_2/receipt.json)
   abe3efc7a3f242cc0f8a10c6ad652d95339ad961  tests/vectors/receipt/examples/item.json  (<- pkgdown/assets/stac/receipt/examples/item.json)

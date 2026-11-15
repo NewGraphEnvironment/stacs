@@ -3,6 +3,45 @@
 Versions track the package. A tag is a release consumers can pin with
 `tag = "vX.Y.Z"` in `[tool.uv.sources]`; `pyproject.toml` carries the same version.
 
+## Unreleased
+
+- **crate's receipt contract, each part at its own version** (#15). crate versioned the
+  register and the mapping apart from the receipt form, so the vendored copies are pinned by
+  contract version as the schemas already were: register v1.0.0 and mapping v1.1.0, vendored
+  from crate tag `v0.16.0`. The CI check compares each with the versioned URL crate serves it
+  at, as well as with the tag. Inside the package the two files moved to
+  `data/receipt/register/v1.0.0/register.csv` and `data/receipt/mapping/v1.1.0/mapping.csv`.
+- crate's `stac.json` runs in CI: 142 cases that pin how a receipt becomes an item's fields,
+  each a set of fields or a refusal with a code. `receipt.stac_fields` agreed on 87 before
+  this release and agrees on all 142 now, compared by code.
+- **Behaviour change:** `receipt.stac_fields` refuses what mapping v1.1.0 refuses, with a
+  `ReceiptError` whose new `code` attribute is crate's name for the refusal
+  (`receipt.STAC_REFUSALS` lists them). It now refuses a receipt whose `output.receipt_version`
+  is not `1.0.0`; a `recipe_id` that is null or missing on a receipt that was not migrated, or
+  set on a migrated one; a `context.time` that is missing or not an instant that exists; a
+  block or entry that is present but not an object, `null` included; a repository whose
+  `version` is set to anything but a non-empty string (a null or missing one is still left
+  out), or whose name is empty; a part an asset names whose `bytes` is negative; a
+  `receipt_asset` that is not a string, is empty or is also a key of `assets`; and
+  a `receipt_sha256` given with no `receipt_asset`. Of the receipts `receipt.validate` passes,
+  the mapping refuses two kinds: one whose `context.time` is not an instant that exists, and
+  one whose `recipe_id`, `context.time` or a part's `sha256` ends in a newline.
+- **Behaviour change:** the item checks behind `audit --require-receipt`, which also run
+  before a `register` or `load` write, share those patterns. An item is refused when
+  `receipt:recipe_id`, `processing:datetime` or a `file:checksum` ends in a newline, when
+  `processing:datetime` is written in digits outside ASCII or is not an instant that exists
+  (month 13, 29 February in a common year, hour 24), or when a `file:size` is negative.
+- **Behaviour change:** `verify` reports an item `inconsistent` when the mapping refuses the
+  receipt it links, or refuses a part one of the item's assets names by its exact key. Where
+  the mapping is the check that refuses, the note carries its code; a check that runs before
+  it answers in its own words for a receipt it cannot read. `receipt.item_verdict` asks
+  `stac_fields` about those assets and returns `inconsistent` where it refuses; it used to
+  return that for some such receipts, raise for others, and read a part held as `null` as not
+  described at all.
+- `receipt.compare` names the rulebook behind its verdict: `Comparison.register` is the
+  register version it read, and `Comparison.overrides` each action the caller's `overrides`
+  changed. Code that constructs a `Comparison` itself must now pass both.
+
 ## 0.3.0
 
 - **Provenance receipts** (#12). `stacs.receipt` reads, writes and compares a provenance

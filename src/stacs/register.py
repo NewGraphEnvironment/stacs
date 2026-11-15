@@ -898,9 +898,11 @@ def _receipt_verdicts(target, ids, by_id, fetch_dir, work, log) -> dict:
                         published[item_id], served[item_id], doc,
                         receipt_sha256=hashlib.sha256(data).hexdigest())
                 except receipt.ReceiptError as e:
-                    # INSIDE the guard. `item_verdict` raises on input `read` accepts -- a
-                    # non-hex recipe_id, a non-ISO context.time, a NaN in a mirrored property
-                    # (json.load takes those). ReceiptError subclasses ValueError, so it
+                    # INSIDE the guard. `item_verdict` raises on input `read` accepts: a
+                    # NaN in a mirrored property (json.load takes those). A receipt the
+                    # mapping refuses -- a non-hex recipe_id, a context.time that is not an
+                    # instant -- no longer raises; it comes back `inconsistent` with the
+                    # mapping's code. ReceiptError subclasses ValueError, so it
                     # escaped `run`'s `except RegisterError` to exit 2, naming neither item
                     # nor URL and discarding the drift lists already computed (round 3).
                     out[item_id] = receipt.ItemVerdict(

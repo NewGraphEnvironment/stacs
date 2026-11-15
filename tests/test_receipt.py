@@ -9,6 +9,7 @@ contract is refused by name rather than hashed into something plausible.
 import copy
 import datetime
 import hashlib
+import json
 import os
 import stat
 from pathlib import Path
@@ -478,6 +479,18 @@ def test_reindent_round_trips_a_nested_document():
 
 EXAMPLE = Path(__file__).resolve().parent / "vectors" / "receipt" / "examples" / "item.json"
 
+# What the mapping requires of every receipt before it reads anything else: the form it was
+# written to, and when it was built. Functions, so no test can change another's fixture.
+WHEN = "2026-11-08T00:00:00Z"
+
+
+def _form(**more):
+    return {"receipt_version": r.RECEIPT_VERSION, **more}
+
+
+def _when():
+    return {"time": WHEN}
+
 
 def test_crates_example_item_has_nothing_wrong_with_it():
     """The oracle for `item_problems`. A checker that refused everything would pass every
@@ -496,7 +509,7 @@ def test_stac_fields_produces_the_property_names_and_extensions_the_example_carr
     not ship, so it pins the field names, the extension list and the multihash form."""
     item = r.load_json(EXAMPLE.read_text(encoding="utf-8"))
     receipt = {
-        "output": {}, "context": {"time": item["properties"]["processing:datetime"]},
+        "output": _form(), "context": {"time": item["properties"]["processing:datetime"]},
         "recipe": {"recipe_id": item["properties"]["receipt:recipe_id"],
                    "code": {"flooded": {"version": "0.7.0"}}},
         "result": {"parts": {"floodplain_all_ff02.tif": {
@@ -521,7 +534,7 @@ def test_stac_fields_produces_the_property_names_and_extensions_the_example_carr
 def test_stac_fields_lists_all_three_extensions_not_just_the_receipt_one():
     """An item emitting `file:*` or `processing:*` without their URLs is non-conformant, and
     the receipt field schema cannot notice: it constrains only `receipt:`-prefixed keys."""
-    receipt = {"output": {}, "context": {"time": "2026-11-08T00:00:00Z"},
+    receipt = {"output": _form(), "context": _when(),
                "recipe": {"recipe_id": "a" * 64, "code": {"stacs": {"version": "0.2.0"}}},
                "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 1}}}}
     assert r.stac_fields(receipt, assets={"data": "x.tif"})["stac_extensions"] == [
@@ -531,19 +544,34 @@ def test_stac_fields_lists_all_three_extensions_not_just_the_receipt_one():
 def test_a_migrated_receipt_leaves_the_field_out_rather_than_publishing_a_null():
     """The schema types it `string`, so a null would be refused -- and a null recipe_id in a
     queryable reads as "made this way" for every migrated item at once."""
-    receipt = {"output": {"migrated_from": "manifest.json"},
-               "recipe": {"recipe_id": None}, "result": {}, "context": {}}
+    receipt = {"output": _form(migrated_from="manifest.json"),
+               "recipe": {"recipe_id": None}, "result": {}, "context": _when()}
     fields = r.stac_fields(receipt)
     assert "receipt:recipe_id" not in fields["properties"]
-    assert r.EXTENSION_URL not in fields["stac_extensions"]
+    assert fields["stac_extensions"] == [r.PROCESSING_EXTENSION_URL]
+
+
+@pytest.mark.parametrize("output,recipe,code", [
+    (_form(), {"recipe_id": None}, "recipe_id_missing"),
+    (_form(), {}, "recipe_id_missing"),
+    (_form(migrated_from="manifest.json"), {"recipe_id": "a" * 64}, "recipe_id_on_migrated"),
+], ids=["null, not migrated", "absent, not migrated", "set, migrated"])
+def test_only_a_migrated_receipt_may_have_no_recipe_identity(output, recipe, code):
+    """The other half of the rule above. A null `recipe_id` used to be left out whatever the
+    receipt was, so a receipt that had simply lost its identity produced an item that read as
+    migrated -- and one set on a migrated receipt was published as though it were vouched for."""
+    with pytest.raises(r.ReceiptError) as e:
+        r.stac_fields({"output": output, "recipe": recipe, "result": {}, "context": _when()})
+    assert e.value.code == code
 
 
 def test_stac_fields_refuses_an_asset_href_that_is_not_a_part():
     """Guessing would publish another file's digest under this asset."""
-    receipt = {"output": {}, "recipe": {}, "context": {},
+    receipt = {"output": _form(), "recipe": {"recipe_id": "a" * 64}, "context": _when(),
                "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 1}}}}
-    with pytest.raises(r.ReceiptError, match="not a part of this receipt"):
+    with pytest.raises(r.ReceiptError, match="not a part of this receipt") as e:
         r.stac_fields(receipt, assets={"data": "y.tif"})
+    assert e.value.code == "href_not_a_part"
 
 
 def test_stac_fields_needs_the_digest_for_the_receipt_asset():
@@ -563,7 +591,9 @@ def test_the_receipt_asset_checksum_is_the_digest_write_returned(tmp_path):
 
 
 def test_multihash_refuses_anything_but_a_sha256():
-    for bad in ("1220" + "a" * 64, "A" * 64, "abc", None, 1):
+    # The last two are what `^[0-9a-f]{64}$` under `re.match` let through: `$` also matches
+    # before a trailing newline, and the digest was then published with the newline in it.
+    for bad in ("1220" + "a" * 64, "A" * 64, "abc", None, 1, "a" * 64 + "\n", "\n" + "a" * 64):
         with pytest.raises(r.ReceiptError, match="64 lowercase hex"):
             r.multihash(bad)
 
@@ -596,12 +626,224 @@ def _example_item(**changes):
     ({"assets.receipt.roles": ["data"]}, "no asset links the receipt"),
     ({"assets.receipt.type": "text/plain"}, "no asset links the receipt"),
     ({"assets.floodplain.file:size": 1.5}, "not whole"),
+    # What the patterns used to admit: a trailing newline (`$` under `re.match`), any Unicode
+    # digit (`\d`), and an instant that does not exist, which the pattern alone cannot see.
+    ({"properties.receipt:recipe_id": "a" * 64 + "\n"}, "not 64 lowercase hex"),
+    ({"properties.processing:datetime": "2026-10-14T12:42:04Z\n"}, "ISO 8601"),
+    ({"properties.processing:datetime": "٢٠٢٦-10-14T12:42:04Z"}, "ISO 8601"),
+    ({"properties.processing:datetime": "2026-13-14T12:42:04Z"}, "ISO 8601"),
+    ({"properties.processing:datetime": "2026-02-29T12:42:04Z"}, "ISO 8601"),
+    ({"properties.processing:datetime": "2026-10-14T24:00:00Z"}, "ISO 8601"),
+    ({"assets.floodplain.file:checksum": "1220" + "a" * 64 + "\n"}, "multihash"),
+    ({"assets.floodplain.file:size": -1}, "negative"),
 ], ids=["no id", "uppercase id", "short id", "extension missing", "rogue receipt key",
-        "bad datetime", "bad multihash", "wrong role", "wrong type", "fractional size"])
+        "bad datetime", "bad multihash", "wrong role", "wrong type", "fractional size",
+        "id with a trailing newline", "datetime with a trailing newline",
+        "datetime in other digits", "month 13", "29 February in a common year", "hour 24",
+        "multihash with a trailing newline", "negative size"])
 def test_item_problems_catches_each_way_an_item_can_be_wrong(changes, match):
     problems = r.item_problems(_example_item(**changes))
     assert problems, changes
     assert any(match in p for p in problems), problems
+
+
+@pytest.mark.parametrize("time", ["2024-02-29T23:59:59Z", "2026-10-14T12:42:04.5Z",
+                                  "2026-12-31T00:00:00Z"])
+def test_item_problems_accepts_an_instant_that_exists(time):
+    """The other direction of the cases above: a check that refused every datetime would pass
+    all of them."""
+    assert r.item_problems(_example_item(**{"properties.processing:datetime": time})) == []
+
+
+@pytest.mark.parametrize("change,code", [
+    ({"context": {}}, "time_not_utc"),
+    ({"context": {"time": "2026-13-01T00:00:00Z"}}, "time_not_utc"),
+    ({"output": {}}, "receipt_version_unknown"),
+    ({"output": None}, "block_not_object"),
+    ({"output": "1.0.0"}, "block_not_object"),
+    ({"recipe": {"recipe_id": None}}, "recipe_id_missing"),
+    ({"recipe": None}, "block_not_object"),
+    ({"result": None}, "block_not_object"),
+    ({"context": None}, "block_not_object"),
+    ({"result": {"parts": None}}, "block_not_object"),
+    ({"recipe": {"recipe_id": "a" * 64, "code": None}}, "block_not_object"),
+    ({"recipe": {"recipe_id": "a" * 64, "code": {"stacs": "0.3.0"}}}, "block_not_object"),
+], ids=["no time", "month 13", "no form version", "null output", "output a string",
+        "no recipe identity", "null recipe", "null result", "null context", "null parts",
+        "null code", "a code entry that is a string"])
+def test_a_receipt_the_mapping_refuses_is_inconsistent_never_same(change, code):
+    """`item_verdict` compares an item with what its receipt maps to, so a receipt the mapping
+    refuses has nothing to be compared with: `inconsistent`, with the mapping's code in the
+    note, and never `same`, which would be agreement with a receipt nobody could map.
+
+    `null` is the case that needed this. The node check ahead of the mapping reads an absent
+    node and a null one alike, so a `recipe` that was a string returned `inconsistent` while
+    one that was null raised: two routes for one fact. `output` and `recipe.code` are not
+    nodes that check names at all.
+    """
+    item = {"properties": {"receipt:recipe_id": "a" * 64}}
+    good = {"output": _form(), "recipe": {"recipe_id": "a" * 64}, "result": {},
+            "context": _when()}
+    assert r.item_verdict(item, item, good).verdict == "same", "control"
+    got = r.item_verdict(item, item, {**good, **change})
+    assert got.verdict == "inconsistent" and not got.ok, got
+    assert any(f"({code})" in note for note in got.notes), got.notes
+
+
+@pytest.mark.parametrize("part,asset_fields,code", [
+    (None, {"file:checksum": "1220" + "f" * 64}, "block_not_object"),
+    ("x", {"file:checksum": "1220" + "f" * 64}, "block_not_object"),
+    ([], {}, "block_not_object"),
+    (7, {}, "block_not_object"),
+    # A part the mapping refuses, behind an asset that does not carry the field that would
+    # have shown it: the walk that used to live in `item_verdict` consulted a part only
+    # through the fields the item happened to publish.
+    ({"sha256": "b" * 64 + "\n", "bytes": 12}, {"file:size": 12}, "part_sha256_not_sha256"),
+    ({"sha256": "b" * 64, "bytes": -5}, {"file:checksum": "1220" + "b" * 64},
+     "bytes_not_whole"),
+    ({"sha256": "b" * 64, "bytes": 1.5}, {}, "bytes_not_whole"),
+    ({}, {}, "part_sha256_not_sha256"),
+], ids=["null part", "string part", "list part, no file fields", "number part, no file fields",
+        "digest with a newline, size only", "negative bytes, checksum only",
+        "fractional bytes, no file fields", "empty part, no file fields"])
+def test_a_part_the_mapping_refuses_is_never_same(part, asset_fields, code):
+    """An asset of the item names a part of the receipt, so the mapping has to be able to map
+    that part, whichever of `file:checksum` and `file:size` the item carries -- none
+    included. `item_verdict` asks `stac_fields` for exactly the assets that name a part, so
+    there is one reading of the asset rows and not a second copy that agrees with it only
+    where someone remembered to keep it in step."""
+    rec = {"output": _form(), "recipe": {"recipe_id": "a" * 64}, "context": _when(),
+           "result": {"parts": {"x.tif": part}}}
+    item = {"properties": {"receipt:recipe_id": "a" * 64},
+            "assets": {"data": {"href": "x.tif", **asset_fields},
+                       "thumb": {"href": "t.png", "file:checksum": r.multihash("e" * 64)}}}
+    got = r.item_verdict(item, item, rec)
+    assert got.verdict == "inconsistent" and not got.ok, got
+    assert any(f"({code})" in note and "x.tif" in note for note in got.notes), got.notes
+
+
+@pytest.mark.parametrize("receipt", [None, [], "receipt.json", 5, True])
+def test_a_receipt_that_is_not_an_object_is_inconsistent_not_a_crash(receipt):
+    """The one argument of the three that was read unguarded: `receipt.get` raised
+    AttributeError, where the mapping refuses the same value as `block_not_object`."""
+    item = {"properties": {"receipt:recipe_id": "a" * 64}}
+    got = r.item_verdict(item, item, receipt)
+    assert got.verdict == "inconsistent" and not got.ok, got
+    assert any("(block_not_object)" in note for note in got.notes), got.notes
+    with pytest.raises(r.ReceiptError) as e:
+        r.stac_fields(receipt)
+    assert e.value.code == "block_not_object"
+
+
+@pytest.mark.parametrize("size", [True, "12", [12], None, 13, 12.5])
+def test_a_file_size_that_is_not_the_parts_count_is_a_disagreement(size):
+    """`True == 1` and `float(True) == 1.0`, so the type has to be asked first: an item
+    publishing `file:size: true` over a one-byte part must not read as agreement."""
+    rec = {"output": _form(), "recipe": {"recipe_id": "a" * 64}, "context": _when(),
+           "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 1 if size is True else 12}}}}
+    item = {"properties": {"receipt:recipe_id": "a" * 64},
+            "assets": {"data": {"href": "x.tif", "file:size": size}}}
+    got = r.item_verdict(item, item, rec)
+    assert (got.verdict, got.fields) == ("inconsistent", ("assets[data].file:size",)), got
+
+
+@pytest.mark.parametrize("where,value,verdict", [
+    ("properties.receipt:recipe_id", "c" * 64, "changed"),
+    ("properties.processing:datetime", "2026-11-09T00:00:00Z", "rebuilt"),
+    ("properties.processing:software", {"stacs": "9.9.9"}, "rebuilt"),
+    ("assets.data.file:checksum", "1220" + "d" * 64, "rebuilt"),
+    ("assets.data.file:size", 13, "rebuilt"),
+])
+def test_each_mirrored_field_decides_the_verdict_when_the_served_side_moves(where, value,
+                                                                           verdict):
+    """`_mirrored` names the five fields the two sides are compared in, and it is a list kept
+    by hand beside the one `stac_fields` publishes. Dropping `processing:datetime`,
+    `processing:software` or `file:size` from it left the suite green, and a served item that
+    differed only there would then have read `same`. One case per member."""
+    rec = {"output": _form(), "context": _when(),
+           "recipe": {"recipe_id": "a" * 64, "code": {"stacs": {"version": "0.3.0"}}},
+           "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 12}}}}
+    fields = r.stac_fields(rec, assets={"data": "x.tif"})
+    published = {"properties": dict(fields["properties"]),
+                 "assets": {"data": {"href": "x.tif", **fields["assets"]["data"]}}}
+    assert r.item_verdict(published, published, rec).verdict == "same", "control"
+    served = json.loads(json.dumps(published))
+    node = served
+    *path, key = where.split(".")
+    for part in path:
+        node = node[part]
+    node[key] = value
+    got = r.item_verdict(published, served, rec)
+    assert got.verdict == verdict, got
+    assert got.fields == (where if path[0] == "properties"
+                          else f"assets[{path[1]}].{key}",), got.fields
+
+
+def test_the_mirrored_fields_are_the_ones_the_mapping_publishes():
+    """The two lists, held to one: every field `stac_fields` returns for a receipt with every
+    kind of field is one `_mirrored` reads back, and nothing else is."""
+    rec = {"output": _form(), "context": _when(),
+           "recipe": {"recipe_id": "a" * 64, "code": {"stacs": {"version": "0.3.0"}}},
+           "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 12}}}}
+    fields = r.stac_fields(rec, assets={"data": "x.tif"})
+    published = {key: f"properties.{key}" for key in fields["properties"]}
+    published.update({f"{key}": f"assets[data].{key}" for key in fields["assets"]["data"]})
+    assert len(published) == 5
+    item = {"properties": fields["properties"], "assets": {"data": fields["assets"]["data"]}}
+    assert sorted(r._mirrored(item)) == sorted(published.values())
+
+
+def test_an_asset_that_carries_neither_file_field_still_agrees_with_a_good_part():
+    """The other direction of the test above: asking the mapping about every asset that names
+    a part must not turn an item that publishes no file fields into a disagreement."""
+    rec = {"output": _form(), "recipe": {"recipe_id": "a" * 64}, "context": _when(),
+           "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 12}}}}
+    item = {"properties": {"receipt:recipe_id": "a" * 64},
+            "assets": {"data": {"href": "x.tif"}, "also": {"href": "x.tif", "file:size": 12.0}}}
+    assert r.item_verdict(item, item, rec).verdict == "same"
+
+
+def test_the_register_is_read_and_named_by_its_own_version_not_the_forms(monkeypatch):
+    """`REGISTER_VERSION` and `RECEIPT_VERSION` are both `1.0.0` today, so code that used the
+    wrong one is the same program and no vector can tell. Moved apart here: `register()` must
+    look for the register's directory, and a comparison must name the register's version."""
+    monkeypatch.setattr(r, "_DATA", {})
+    monkeypatch.setattr(r, "REGISTER_VERSION", "9.9.9")
+    with pytest.raises(r.ReceiptError, match=r"register/v9\.9\.9/register\.csv"):
+        r.register()
+    monkeypatch.setattr(r, "_DATA", {"register": {"context.time": "record"}})
+    one = {"output": {}, "recipe": {}, "result": {}, "context": {}}
+    assert r.compare(one, one).register == "9.9.9"
+    assert r.RECEIPT_VERSION == "1.0.0"
+
+
+@pytest.mark.parametrize("time,real", [
+    ("2024-02-29T00:00:00Z", True), ("2026-02-29T00:00:00Z", False),
+    # The century rule, and a year the form's pattern admits that `datetime` does not have.
+    ("2000-02-29T00:00:00Z", True), ("1900-02-29T00:00:00Z", False),
+    ("0000-02-29T00:00:00Z", True),
+    ("2026-04-30T00:00:00Z", True), ("2026-04-31T00:00:00Z", False),
+    ("2026-00-10T00:00:00Z", False), ("2026-01-00T00:00:00Z", False),
+    ("2026-01-01T23:59:59Z", True), ("2026-01-01T23:59:60Z", False),
+    ("2026-01-01T23:60:00Z", False),
+])
+def test_an_instant_is_real_by_the_calendar_not_by_its_shape(time, real):
+    """The mapping's vectors hold two years and two month lengths, so the rest of the calendar
+    is pinned here: computed by arithmetic as crate computes it, since a date library would
+    refuse year 0000, which the form's pattern and crate both accept."""
+    assert r._utc_instant(time) is real
+
+
+def test_a_receipt_is_migrated_by_the_presence_of_the_key_not_its_value():
+    """As the form schema's `if` decides it, and as `write` does. Every vector that is
+    migrated holds a string there, so reading the VALUE would pass all of them and still call
+    `migrated_from: null` a receipt that lost its identity."""
+    receipt = {"output": _form(migrated_from=None), "recipe": {"recipe_id": None},
+               "result": {}, "context": _when()}
+    assert "receipt:recipe_id" not in r.stac_fields(receipt)["properties"]
+    with pytest.raises(r.ReceiptError) as e:
+        r.stac_fields({**receipt, "recipe": {"recipe_id": "a" * 64}})
+    assert e.value.code == "recipe_id_on_migrated"
 
 
 def test_item_problems_refuses_something_that_is_not_an_item():
@@ -625,7 +867,8 @@ def test_a_second_metadata_json_asset_does_not_make_an_item_inconsistent():
     the FIRST. Two producers for one fact, so it fired on good input: an item carrying a QA
     report or a legacy manifest as a second `metadata`/`application/json` asset was reported
     `inconsistent`, and `verify` turned that into a non-zero status."""
-    rec = {"output": {}, "recipe": {"recipe_id": "a" * 64}, "result": {}, "context": {}}
+    rec = {"output": _form(), "recipe": {"recipe_id": "a" * 64}, "result": {},
+           "context": _when()}
     item = {"properties": {"receipt:recipe_id": "a" * 64},
             "assets": {"receipt": {"href": "a0_receipt.json", "type": "application/json",
                                    "roles": ["metadata"],
@@ -682,7 +925,7 @@ def test_an_items_asset_fields_are_checked_against_the_receipts_parts():
     asset fields were always `{}` and `file:checksum` / `file:size` were never compared with
     `result.parts` -- two of the five mirrored fields. An item contradicting its own receipt
     in both, on BOTH sides, read `same` with `ok` true, and `same` sets no exit status."""
-    rec = {"output": {}, "recipe": {"recipe_id": "a" * 64}, "context": {},
+    rec = {"output": _form(), "recipe": {"recipe_id": "a" * 64}, "context": _when(),
            "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 12}}}}
     good = {"properties": {"receipt:recipe_id": "a" * 64},
             "assets": {"data": {"href": "x.tif", "file:checksum": r.multihash("b" * 64),
@@ -704,7 +947,7 @@ def test_an_items_asset_fields_are_checked_against_the_receipts_parts():
 def test_an_asset_the_receipt_does_not_describe_is_not_a_disagreement():
     """An overview, a thumbnail, or the receipt itself: not a part, so there is nothing to
     compare it with. Refusing them would make every real item inconsistent."""
-    rec = {"output": {}, "recipe": {"recipe_id": "a" * 64}, "context": {},
+    rec = {"output": _form(), "recipe": {"recipe_id": "a" * 64}, "context": _when(),
            "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 12}}}}
     item = {"properties": {"receipt:recipe_id": "a" * 64},
             "assets": {"data": {"href": "x.tif", "file:checksum": r.multihash("b" * 64)},
@@ -785,7 +1028,9 @@ def test_item_verdict_never_agrees_over_a_node_it_could_not_read(value, member):
     can be established from it.
     """
     item = {"properties": {"receipt:recipe_id": "a" * 64}}
-    got = r.item_verdict(item, item, {member: value})
+    receipt = {"output": _form(), "recipe": {"recipe_id": "a" * 64}, "result": {},
+               "context": _when(), member: value}
+    got = r.item_verdict(item, item, receipt)
     if member == "assets":
         # A receipt's `assets` is not a member of a receipt at all, so it is not consulted.
         assert got.verdict == "same", (member, value, got)
@@ -804,7 +1049,7 @@ def test_a_malformed_receipt_node_is_inconsistent_not_same(where, doc_key, value
     for an item whose asset fields contradicted the receipt -- because the asset half of the
     published-vs-receipt check, which round 1 added for exactly this symptom, was skipped for
     every asset once `parts` became `{}`."""
-    good = {"output": {}, "recipe": {"recipe_id": "a" * 64}, "context": {},
+    good = {"output": _form(), "recipe": {"recipe_id": "a" * 64}, "context": _when(),
             "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 12}}}}
     item = {"properties": {"receipt:recipe_id": "a" * 64},
             "assets": {"data": {"href": "x.tif", "file:checksum": r.multihash("f" * 64),
@@ -824,8 +1069,10 @@ def test_a_malformed_receipt_node_is_inconsistent_not_same(where, doc_key, value
 @pytest.mark.parametrize("member", ["assets", "properties"])
 @pytest.mark.parametrize("value", ["x", [], 7])
 def test_a_malformed_item_node_is_inconsistent_not_same(side, member, value):
-    good = {"output": {}, "recipe": {"recipe_id": "a" * 64}, "context": {}, "result": {}}
+    good = {"output": _form(), "recipe": {"recipe_id": "a" * 64}, "context": _when(),
+            "result": {}}
     item = {"properties": {"receipt:recipe_id": "a" * 64}, "assets": {}}
+    assert r.item_verdict(item, item, good).verdict == "same", "control"
     pair = {"published": dict(item), "served": dict(item)}
     pair[side][member] = value
     got = r.item_verdict(pair["published"], pair["served"], good)
@@ -849,16 +1096,22 @@ def test_item_problems_is_total_where_stac_fields_refuses(value):
         r.stac_fields({"recipe": value, "result": value, "context": value})
 
 
-@pytest.mark.parametrize("code", ["a string", ["repo"], 7])
+@pytest.mark.parametrize("code", ["a string", ["repo"], 7, None, {"stacs": "0.3.0"},
+                                  {"stacs": None}])
 def test_stac_fields_refuses_a_malformed_code_block_rather_than_crashing(code):
     """The last instance of round 1's mechanism, found by enumerating every member read in
     `src/stacs/*.py` rather than by a reviewer: `(recipe.get("code") or {}).items()` kept a
     truthy non-mapping and raised AttributeError. `item_verdict` calls `stac_fields` on a
-    receipt nothing validated, so it has to refuse rather than crash."""
-    fields = r.stac_fields({"recipe": {"recipe_id": "a" * 64, "code": code},
-                            "result": {}, "context": {}, "output": {}})
-    assert "processing:software" not in fields["properties"]
-    assert fields["properties"]["receipt:recipe_id"] == "a" * 64
+    receipt nothing validated, so it has to refuse rather than crash.
+
+    This test used to assert that a malformed `code` was read as "no repositories", and the
+    item came back with no `processing:software` and no error. Mapping v1.1.0 names that as
+    the wrong answer: a block or entry present but not an object, `null` included, is refused.
+    """
+    with pytest.raises(r.ReceiptError, match="present but not an object") as e:
+        r.stac_fields({"recipe": {"recipe_id": "a" * 64, "code": code},
+                       "result": {}, "context": _when(), "output": _form()})
+    assert e.value.code == "block_not_object"
 
 
 # =============================================================================
@@ -934,7 +1187,7 @@ def test_an_asset_href_that_is_not_a_string_is_not_used_as_a_dict_key(href):
     This is a third mechanism: a JSON value consumed as a dict KEY. The enumeration after
     round 1 could not see it, because its population was member reads.
     """
-    rec = {"output": {}, "recipe": {"recipe_id": "a" * 64}, "context": {},
+    rec = {"output": _form(), "recipe": {"recipe_id": "a" * 64}, "context": _when(),
            "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 1}}}}
     item = {"properties": {"receipt:recipe_id": "a" * 64},
             "assets": {"data": {"href": href, "file:checksum": r.multihash("b" * 64)}}}
@@ -949,7 +1202,7 @@ def test_an_asset_href_that_is_not_a_string_is_not_used_as_a_dict_key(href):
 
 @pytest.mark.parametrize("href", [["x.tif"], {"a": 1}, 7])
 def test_stac_fields_refuses_a_non_string_href_from_its_caller(href):
-    rec = {"output": {}, "recipe": {}, "context": {},
+    rec = {"output": _form(), "recipe": {"recipe_id": "a" * 64}, "context": _when(),
            "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 1}}}}
     with pytest.raises(r.ReceiptError, match="href must be a string"):
         r.stac_fields(rec, assets={"data": href})
@@ -977,8 +1230,8 @@ def test_item_verdict_never_says_same_over_a_node_it_could_not_read():
     consults -- a second list here would be the "two lists that happen to agree" shape that
     produced three of this branch's defects.
     """
-    good_receipt = {"output": {}, "recipe": {"recipe_id": "a" * 64}, "context": {},
-                    "result": {"parts": {}}}
+    good_receipt = {"output": _form(), "recipe": {"recipe_id": "a" * 64},
+                    "context": _when(), "result": {"parts": {}}}
     good_item = {"properties": {"receipt:recipe_id": "a" * 64}, "assets": {}}
     assert r.item_verdict(good_item, good_item, good_receipt).verdict == "same", "control"
 

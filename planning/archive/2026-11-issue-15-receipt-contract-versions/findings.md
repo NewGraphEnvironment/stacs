@@ -1,0 +1,315 @@
+# Findings — crate's receipt register and mapping are versioned, and mapping v1.1.0 pins the STAC mapping: re-vendor, pin by version, run stac.json (#15)
+
+## Issue context
+
+**If we do it:** stacs pins the receipt register and mapping by contract version, the way it already pins the schema, its comparison names the rulebook that produced each verdict, and its `stac_fields()` passes the vectors that now pin the STAC mapping. **If we never do:** the next re-vendor fails on moved paths, and stacs keeps pinning a crate commit rather than a version of the contract.
+
+## What changed in crate
+
+crate versioned the register and the mapping (https://github.com/NewGraphEnvironment/crate/issues/58), so these paths move from the next crate release:
+
+| was | now |
+|---|---|
+| `inst/extdata/receipt/register.csv` | `inst/extdata/receipt/register/v1.0.0/register.csv` |
+| `inst/extdata/receipt/mapping.csv` | `inst/extdata/receipt/mapping/v1.0.0/mapping.csv` |
+| `inst/extdata/receipt/vectors/v1.0.0/compare.json` | `inst/extdata/receipt/register/v1.0.0/compare.json` |
+
+The bytes did not change: the blob shas are the ones `src/stacs/data/receipt/SOURCE` already records (`0c5b72fa…` register, `86657116…` mapping, `45495a54…` compare.json). Register v1.0.0 and mapping v1.0.0 are exactly what stacs vendors at v0.12.0. Only `vectors/v1.0.0/README.md` differs on the next re-vendor (it no longer describes `compare.json`, which has its own `register/v1.0.0/README.md`).
+
+Both are also published at frozen versioned URLs, beside the schema, with a changelog stating the rules:
+
+- `https://newgraphenvironment.github.io/crate/receipt/register/v1.0.0/register.csv`
+- `https://newgraphenvironment.github.io/crate/receipt/mapping/v1.0.0/mapping.csv`
+- `https://newgraphenvironment.github.io/crate/receipt/CHANGELOG.md`
+
+A receipt's `receipt_version` stays the form's only: a register or mapping change never moves it. crate's comparison now carries `register` (the version it was judged under) and `overrides` (each field a declaration overrode, with its declared action), and `print()` reads `equivalent (receipts only; register v1.0.0)`.
+
+## Proposed
+
+- [ ] `tools/crate_receipt_vendor.sh`: the new source paths, and vendor `compare.json` and its README from `register/v1.0.0/`
+- [ ] Pin the register and mapping by version (path or URL) rather than tag + blob sha alone, and have `check` compare the vendored copies with the served versioned URLs, as it does the schema
+- [ ] stacs's comparison names the register version it read, to match crate's
+
+Nothing breaks before stacs re-vendors: its tag pin keeps reading the old paths at v0.12.0.
+
+## Since crate#59 and #60: mapping v1.1.0 and `stac.json`
+
+crate's next release adds mapping v1.1.0 (https://github.com/NewGraphEnvironment/crate/issues/59, https://github.com/NewGraphEnvironment/crate/issues/60). Its rows for older records are unchanged. Its `STAC item` rows now state what v1.0.0 left open:
+
+- a null `recipe_id` or `version` is left out
+- a part with no asset is not mirrored
+- an asset whose href names no part is refused
+- the receipt asset's `file:checksum` is the digest of the published receipt's bytes, with no `file:size`
+
+`inst/extdata/receipt/mapping/v1.1.0/stac.json` pins each rule: receipts, and the item fields each maps to or a refusal code. crate's own `crt_receipt_stac()` runs it, and so does an independent Python check in crate's `data-raw/receipt_vectors_crosscheck.py`. The format is in that directory's `README.md`.
+
+`stac.json` is generated: every path the mapping reads, each in every state (absent, null, the wrong type, empty, each way the value can be malformed). Each refusal has a code, which crate's R carries on its condition and a runner compares, never the message. The codes are tabled in the directory's `README.md`.
+
+Run over stacs origin/main (3b08621), `stac_fields()` agrees on 87 of the 142 cases. Each of the other 55 is a case stacs accepts and crate refuses:
+
+- **The form and the identity.** `output.receipt_version` is not checked, so any form is read as 1.0.0 (`receipt_version_unknown`). A `recipe_id` that is null or absent on a receipt that was not migrated is left out, so the item reads as migrated (`recipe_id_missing`). One set on a migrated receipt is published (`recipe_id_on_migrated`).
+- **`context.time`.** When absent or null it is left out; crate requires it. An impossible instant (month 13 or 00, day 00, the 31st of November, 29 February 2026, hour 24, minute 60, second 60) is published, where the processing extension declares `format: date-time`. `_UTC_TIME` uses `\d`, so Arabic-Indic digits pass, and `$` lets a trailing newline through (`time_not_utc`).
+- **A trailing newline** on `recipe_id`, a part's `sha256` or `receipt_sha256`. `match` with `^…$` matches before it, so `fullmatch` is needed.
+- **Non-object blocks.** `output`, `recipe`, `recipe.code` or a `recipe.code` entry that is null or not an object is read as absent or skipped (`block_not_object`). A repository with an empty name is published as a `processing:software` key (`repo_name_empty`).
+- **Values.** A `version` that is a number, `true`, an array or empty (`version_not_string`), and a negative `bytes` (`bytes_not_whole`).
+- **Arguments.** A `receipt_asset` that is not a string, or is empty. A `receipt_sha256` with no `receipt_asset` is ignored. A `receipt_asset` that is also in `assets` replaces that part's asset.
+
+- [ ] Vendor `mapping/v1.1.0/` (`mapping.csv`, `stac.json`, `README.md`) and run `stac.json` in the offline suite, comparing each refusal's code
+- [ ] Refuse the cases above in `stac_fields()`
+
+## Exploration (2026-11-15)
+
+crate read at its tags over HTTPS; stacs at `e674cda`.
+
+- crate tags: `v0.15.0` is the first with `register/v1.0.0/` and `mapping/v1.0.0/`;
+  `v0.16.0` (2026-11-11) is the first with `mapping/v1.1.0/`. Every receipt file at
+  `v0.16.0` has the blob sha it has on crate's `main` (`ecadfc6`).
+- `register.csv`, `mapping.csv` (v1.0.0) and `compare.json` at `v0.16.0` `cmp` clean against
+  the copies vendored here. `vectors/v1.0.0/README.md` differs (it no longer describes
+  `compare.json`).
+- Served under `https://newgraphenvironment.github.io/crate/receipt/`: 200 for
+  `register/v1.0.0/register.csv` (3486 B, equal to the vendored copy),
+  `mapping/v1.0.0/mapping.csv`, `mapping/v1.1.0/mapping.csv` (6059 B, equal to the tag) and
+  `CHANGELOG.md`; 404 for `mapping/v1.1.0/stac.json` and `register/v1.0.0/compare.json`.
+- `stac.json` is a list of 142 cases, keys `name, receipt, assets, receipt_asset,
+  receipt_sha256, expected, error`: 17 accept cases and 125 refusals over 17 codes
+  (`block_not_object` 44, `time_not_utc` 20, `part_sha256_not_sha256` 11,
+  `recipe_id_not_sha256` 9, `digest_not_sha256` 9, `receipt_version_unknown` 6,
+  `bytes_not_whole` 6, `href_not_a_part` 4, `recipe_id_missing` 4, `version_not_string` 4,
+  `receipt_asset_not_string` 2, and one each of `receipt_asset_without_digest`,
+  `digest_without_receipt_asset`, `receipt_asset_in_assets`, `recipe_id_on_migrated`,
+  `repo_name_empty`, `receipt_asset_empty`).
+- `stac_fields` at `e674cda` agrees on 87 of 142. The 55 it accepts and crate refuses:
+  `block_not_object` 17, `time_not_utc` 13, `receipt_version_unknown` 6,
+  `recipe_id_missing` 4, `version_not_string` 4, `receipt_asset_not_string` 2, and one each
+  of `digest_without_receipt_asset`, `receipt_asset_in_assets`, `recipe_id_on_migrated`,
+  `repo_name_empty`, `recipe_id_not_sha256`, `part_sha256_not_sha256`, `bytes_not_whole`,
+  `digest_not_sha256`, `receipt_asset_empty`. No accept case disagrees and nothing raised
+  outside `ReceiptError`.
+- The form schema (v1.0.0) already refuses a missing `context.time`, a null or missing
+  `recipe_id` on a receipt that was not migrated, and a `recipe_id` set on a migrated one.
+  It accepts month 13 in `context.time`.
+- crate's comparison: `register = receipt_register_version()` (`"1.0.0"`), and `overrides`,
+  the declared action of each field whose action the declaration changed, named by field and
+  sorted by name (radix); restating the register's own action is not an override
+  (`R/crt_receipt_compare.R` at `v0.16.0`). `receipt_mapping_version()` is `"1.1.0"`.
+- crate's `data-raw/receipt_vectors_crosscheck.py` is an independent Python reading of the
+  mapping's STAC rows; the processing extension is listed for every accepted receipt, since
+  `context.time` is required.
+- Out of scope, measured: `_DATE` (`^-?\d{4,}-\d{2}-\d{2}$` with `.match`) accepts
+  `"2026-01-01\n"`, so a table cell with a trailing newline is hashed.
+
+## Phase 1: mutation table (2026-11-15)
+
+Each applied to the working tree alone, the named check run, then restored and `cmp`'d
+against a backup.
+
+| mutation | went red |
+|---|---|
+| `register.csv` copied back to its old unversioned path | `test_nothing_sits_in_the_vendored_directories_that_the_script_does_not_list` |
+| the register row removed from `URLS` | `test_each_part_of_the_contract_is_checked_at_the_version_the_module_reads`, `test_the_frozen_url_count_is_the_number_of_urls_listed`, and `check` (`checked 3 frozen URL(s), expected 4`, exit 1) |
+| `FROZEN_URLS=3` | `test_the_frozen_url_count_is_the_number_of_urls_listed` |
+| one byte appended to the vendored `register.csv` | `test_every_blob_sha_in_source_is_the_file_beside_it`, and `check` twice (differs from the tag; the served URL no longer matches), exit 1 |
+| `REGISTER_VERSION = "1.1.0"` with nothing vendored | 18 tests across the contract, vector and package files |
+
+`check` at `v0.16.0`: `OK: 16 file(s) match NewGraphEnvironment/crate@v0.16.0, and all 4 frozen
+URLs serve them`. Full suite: 823 passed.
+
+## Phase 2: baselines and mutation table (2026-11-15)
+
+Before the code changed, `stac.json` over `stac_fields` at `e674cda`: 87 of 142 by accept or
+refuse (55 accepted where crate refuses), and 17 of 142 by code, since `ReceiptError` carried
+none and only the accept cases could agree. After: 142 of 142 by code. Full suite: 852 passed
+on Python 3.12 and on 3.11 before the review's additions, 875 on 3.12 after them.
+
+Each guard removed in turn from `src/stacs/receipt.py` (driver in the session scratchpad; the
+file restored and compared after). "Cases" is the count the runner reported disagreeing.
+
+| guard removed | `stac.json` cases red | stacs tests red besides the runner |
+|---|---|---|
+| `_block`: null read as absent | 8 | the `item_verdict` refusal test, `test_stac_fields_refuses_a_malformed_code_block_rather_than_crashing` |
+| `_block`: any non-object read as absent | 40 | 20 more |
+| `receipt_version_unknown` | 6 | 1 |
+| `recipe_id_missing` | 4 | `test_only_a_migrated_receipt_may_have_no_recipe_identity` |
+| `recipe_id_on_migrated` | 1 | same |
+| `recipe_id_not_sha256` | 9 | none |
+| `time_not_utc`, the whole check | 20 | 2 |
+| real-instant half (`return True`) | 6 | `test_item_problems_catches_each_way_an_item_can_be_wrong` |
+| month range | 2 | 2 |
+| `_UTC_TIME` `fullmatch` to `match` | 1 | `test_item_problems_catches_each_way_an_item_can_be_wrong` |
+| `_UTC_TIME` `[0-9]` to `\d` | 1 | same |
+| `version_not_string` | 4 | none |
+| `repo_name_empty` | 1 | none |
+| `href_not_a_part` | 4 | `test_stac_fields_refuses_an_asset_href_that_is_not_a_part` |
+| `part_sha256_not_sha256` | runner red (a `KeyError`, not a count) | none |
+| `_whole`: negative | 1 | `test_item_problems_catches_each_way_an_item_can_be_wrong` |
+| `_whole`: fraction | 1 | same |
+| `_whole`: not a number | 4 | none |
+| `receipt_asset_not_string` | 2 | none |
+| `receipt_asset_empty` | 1 | none |
+| `receipt_asset_in_assets` | 1 | none |
+| `receipt_asset_without_digest` | 1 | `test_stac_fields_needs_the_digest_for_the_receipt_asset` |
+| `digest_without_receipt_asset` | 1 | none |
+| `digest_not_sha256` | 9 | none |
+| `_SHA256_HEX` `fullmatch` to `match` | 6 | `test_multihash_refuses_anything_but_a_sha256`, the audit test |
+| `_MULTIHASH_SHA256` `fullmatch` to `match` | none | `test_item_problems_catches_each_way_an_item_can_be_wrong` |
+| processing extension only with software | 2 | `test_a_migrated_receipt_leaves_the_field_out_rather_than_publishing_a_null` |
+
+Run before the review's additions (F9, F10, F17), which add tests and no guard this table
+removes. The two guards they did add (`item_verdict`'s catch, the non-object part) get their
+mutation check in the branch review.
+
+Measured, and left alone: `write` accepts a `context.time` of month 13 (the form schema's
+pattern admits it), and `stac_fields` refuses the receipt it wrote. crate's R raises two codes
+its published table and vectors do not hold (`assets_not_named`, `href_empty`); stacs publishes
+an asset keyed `""`.
+
+## Phase 3 and the review's two guards: mutation table (2026-11-15)
+
+| mutation | went red |
+|---|---|
+| an override that restates the register is listed | `test_restating_the_registers_own_action_is_not_an_override` |
+| no override is ever listed | `test_an_override_that_changes_an_action_is_named_on_the_comparison` |
+| overrides in another order | same |
+| `register="0.0.0"` in place of the constant | `test_every_comparison_names_the_register_version_it_read` |
+| `item_verdict` compares a refused receipt against nothing | `test_a_receipt_the_mapping_refuses_is_inconsistent_never_same`, 12 cases |
+| a non-object part skipped as not described | `test_a_part_an_asset_names_that_is_not_an_object_is_never_same`, 4 cases |
+
+Full suite: 878 passed.
+
+## Phase 4: what the form passes that the mapping refuses (2026-11-15)
+
+Of the 125 receipts `stac.json` refuses, 28 pass `receipt.validate`: 17 are refused for an
+argument (`assets`, `receipt_asset`, `receipt_sha256`) and not for the receipt, 8 hold a
+`context.time` that is not an instant that exists, and 3 hold a `recipe_id`, a `context.time`
+or a part's `sha256` followed by a newline. The last three pass because `jsonschema` applies
+the schema's patterns with Python's `re`, where `$` also matches before a trailing newline.
+Filed as #16 with the table-cell patterns.
+
+`table_canonical` hashes a date cell of `"2026-01-01\n"`, of Arabic-Indic digits, and of
+`"2026-13-45"`, and a datetime cell followed by a newline (#16).
+
+`mkdocs build --strict`: exit 0, no `WARNING` line.
+
+## Code-check round 1 (2026-11-15, `review-round1.md`)
+
+Six findings, four against the diff, each reproduced before it was acted on.
+
+| finding | disposition |
+|---|---|
+| `item_verdict` could still read `same` for a part the mapping refuses, when the item carried only one of `file:checksum` and `file:size`, or neither (inside the plan review's F10 fix) | Fixed at the mechanism: `item_verdict` no longer keeps its own copy of the asset rows. It hands `stac_fields` the item's assets that name a part and compares what comes back. 8 cases pinned |
+| `stac_fields`' docstring said every refusal carries a code; two do not | Docstring and comment say which two and why |
+| `assert r.REGISTER_VERSION in DIRS["compare"]` cannot fail, and swapping `REGISTER_VERSION` for `RECEIPT_VERSION` left the suite green, both being `1.0.0` | The assert is gone; `test_the_register_is_read_and_named_by_its_own_version_not_the_forms` moves the two apart with `monkeypatch` |
+| NEWS said three fields newly refuse a digit outside ASCII; that is new for `processing:datetime` only | Reworded |
+| *(predates the branch)* `item_verdict` never checks a mirrored field the item publishes that the receipt does not produce | Filed as #17 |
+| *(predates the branch)* `asset.get("roles") or []` keeps a truthy non-list, so `in` raises `TypeError` out of `audit` and `verify` | Filed as #17 |
+
+Mutation rows for the fixes: no asset handed to the mapping (19 tests red), checksum not
+compared (1), size not compared (1), `compare` naming the form's version (1), `register()`
+reading the form's directory (1). Full suite: 884 passed.
+
+## Code-check round 2 (2026-11-15, `review-round2.md`)
+
+One finding against the diff, inside round 1's fix: the NEWS sentence that fix rewrote was
+wider than the code in two places. The reviewer's differential fuzz of 40,000 triples across
+the base, the commit before the fix and the head found the fix moved 11, all toward
+`inconsistent`, and none from `inconsistent` to agreement.
+
+| finding | disposition |
+|---|---|
+| "returns that verdict wherever `stac_fields` would refuse" was false for a receipt that is not an object: `item_verdict` raised `AttributeError` (the guard was missing at the base too) | `item_verdict` guards `receipt` as it guards the two items, and returns `inconsistent` with `block_not_object`; 5 cases pinned |
+| "with the refusal's code in the note" was false where the node check answers before the mapping | NEWS says where the code is and is not carried |
+| *(not a finding)* a comment in `register.py` said `item_verdict` raises on a non-hex `recipe_id` | Comment corrected |
+| *(predates the branch)* `isinstance(size, bool)` in the size comparison had no test | `test_a_file_size_that_is_not_the_parts_count_is_a_disagreement`, 6 cases |
+| *(predates the branch)* an asset whose href is not spelled exactly as a part's key is not compared (an absolute href, `./x.tif`); an asset entry that is not an object is skipped; a `file:size` integer past a double raises `OverflowError` | Added to #17 |
+
+### The enumeration that ends the loop
+
+Two rounds each found a defect inside the previous fix, so a quiet round is not the stop. Both
+were one mechanism, in two places.
+
+**In the code:** `item_verdict` and `stac_fields` read one receipt separately, so a rule the
+mapping gained reached one of them. The candidate set is every receipt the contract's vectors
+hold, and `test_item_verdict_is_inconsistent_wherever_the_mapping_refuses_the_receipt` walks
+it: of 142 cases, 106 are refused for the receipt and every one is `inconsistent`; 17 are
+accepted and every one, given the fields the case expects, is `same`; 19 are refused for an
+argument `item_verdict` does not pass. Nothing sits above its source of truth: the test's
+counts are asserted, and removing the hand-off to `stac_fields`, the catch, or the receipt
+guard each turns it red.
+
+**In the prose:** a sentence quantified over the refusals ("every", "wherever") and written
+from memory of the code. Every quantified claim the branch added, walked against the code:
+
+| claim | where | verdict |
+|---|---|---|
+| "compares each with the versioned URL crate serves it at" (register, mapping) | NEWS | holds: two `URLS` rows, pinned by `test_each_part_of_the_contract_is_checked_at_the_version_the_module_reads` |
+| "142 cases ... each a set of fields or a refusal with a code" | NEWS | holds: `test_the_stac_vectors_hold_both_outcomes` |
+| "agrees on all 142 now, compared by code" | NEWS | holds: the runner |
+| the list of what `stac_fields` now refuses | NEWS | **was wider**: "a repository whose `version` is not a non-empty string" took in a null or missing version, which is left out, not refused. Reworded. The other ten items hold, each by a `stac.json` case |
+| "Of the receipts `validate` passes, the mapping refuses two kinds" | NEWS | holds: 28 = 17 argument + 8 instant + 3 newline, and round 2's fuzz over every path of the worked case found no third |
+| the audit's refusals (newline on three fields; digits and instants on one; negative size) | NEWS | holds: one audit case each |
+| where the note carries the mapping's code | NEWS | **was wider three times** (rounds 1, 2 and 3: this row said "holds" after round 2 and round 3 showed it did not). The sentence no longer lists exceptions; see round 3 below |
+| "Code that constructs a `Comparison` itself must now pass both" | NEWS | holds: neither field has a default |
+| "Each is vendored here at its version and re-checked in CI" (three parts) | README | holds: schema, register and mapping each have a tag row and a URL row |
+| "`code` is one of `STAC_REFUSALS`", with two exceptions | `stac_fields` docstring | holds: `test_the_refusal_codes_are_exactly_the_ones_the_vectors_use` and the two uncoded raises, read |
+| "Every such field is listed whether or not it differed" | `Comparison` docstring | holds: `test_an_override_that_changes_an_action_is_named_on_the_comparison` |
+| "all passing", the vectors table, "seven `STAC item` rows", the 55 by code | parity note | hold: counted by round 1's reviewer from the base module and the vendored files |
+
+Full suite: 896 passed.
+
+## Code-check round 3 (2026-11-15, `review-round3.md`)
+
+One finding against the diff, inside round 2's fix, and the third on one NEWS sentence: its
+list of where the note does not carry the mapping's code named the node check and missed
+`receipt.read`, which on `verify` runs before `item_verdict` and refuses a receipt of another
+form or with a non-object `output` in its own words. The reviewer found no input where the
+head returns agreement over a receipt the mapping refuses, and no new exception.
+
+The reviewer's reading of the mechanism, which is one link longer than mine: on `verify` the
+question "does this receipt map?" goes through a chain (the fetch, `receipt.read`,
+`item_verdict`'s receipt guard, its node check, its digest check, then `stac_fields`). Every
+link says `inconsistent`, which is why the verdict is safe. Any sentence about WHICH link
+answers is derived by hand, and that is what failed three times.
+
+| finding | disposition |
+|---|---|
+| NEWS listed one exception to "the note carries the code" and there are two more | The sentence now says the note carries the code where the mapping is the check that refuses, and lists nothing. Measured below, and asserted |
+| *(predates the branch)* `_mirrored`'s field list is a second copy of what `stac_fields` publishes, and three of its five members were held by no test | Two tests: one case per member, and the two lists held to one. Three mutations red |
+| *(predates the branch)* an item built from what `stac_fields` returns for a migrated receipt has no `receipt:recipe_id`, so `audit --require-receipt` files it as missing a receipt | Added to #17 as a decision |
+
+### How the loop ended
+
+On an enumeration, not a quiet round: every round found something inside the previous fix.
+
+**The code.** `test_item_verdict_is_inconsistent_wherever_the_mapping_refuses_the_receipt`
+walks all 142 cases. Round 3 tried to make it pass falsely and could not within the 123 it
+executes: the arm counts are asserted, it reaches the asset rows from items carrying no file
+field, and narrowing the hand-off turns it red. It now also asserts which check answered: of
+the 106 refused receipts, the mapping answers 90 with that case's own code and the node check
+16. It does not reach the 19 argument cases, four of which (`href_not_a_part`) read `same`:
+that is #17's family, known and filed.
+
+**The prose.** The claim that kept failing is gone, and what replaced it is measured in
+`verify`'s own order, `receipt.read` first, over the same 106:
+
+| check that answers | cases | note carries the case's code |
+|---|---|---|
+| `stac_fields` | 75 | 75 |
+| the node check | 16 | 0 |
+| `receipt.read` | 15 | 0 |
+
+So "where the mapping is the check that refuses, the note carries its code" is 75 of 75.
+Round 3 also executed eight quantified claims the table above did not list, and walked the
+docstrings and comments of `receipt.py`, `register.py`, the vendor script and the workflow;
+all hold. The other pairs it was asked about (`receipt.read` against the mapping's version
+check, `register()` against `REGISTER_VERSION`, the script's blocks against the tests,
+`STAC_REFUSALS` against the code) each agree on every vector.
+
+Three rounds, three reviewer agents, plus the plan reviewer: four agents in all. Full suite:
+902 passed.
+
+## Errors Encountered
+
+| Error | Resolution |
+|-------|------------|
+| Two tests stayed red after `receipt.py` was restored from a backup with `cp` | The restored file had the size and mtime second of the mutated one, so Python reused the mutated bytecode cache. `touch` the file after a restore (or run mutations with `PYTHONDONTWRITEBYTECODE=1`). |

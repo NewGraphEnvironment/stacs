@@ -1,10 +1,11 @@
 # Receipt parity: holding two implementations of one contract byte for byte
 
-**Verified:** 2026-11-08 · **Issues:** stacs#12, crate#43, crate#44, crate#23 ·
+**Verified:** 2026-11-15 · **Issues:** stacs#12, stacs#15, stacs#16, crate#43, crate#44,
+crate#23, crate#58, crate#59, crate#60, crate#65 ·
 **Produced by:** `tests/test_receipt_vectors.py` over the vendored
-`tests/vectors/receipt/v1.0.0/`, and `tools/crate_receipt_vendor.sh check` ·
-**Status:** OPEN — the contract is frozen at receipt schema v1.0.0; what is not covered is
-named below.
+`tests/vectors/receipt/`, and `tools/crate_receipt_vendor.sh check` ·
+**Status:** OPEN — the contract is frozen at receipt form v1.0.0, register v1.0.0 and mapping
+v1.1.0; what is not covered is named below.
 
 crate's provenance receipt has two implementations: crate's in R, and `stacs.receipt` in
 Python. They must produce the same bytes, because a `recipe_id` is published inside items and
@@ -13,17 +14,27 @@ not checked, and the traps that cost time.
 
 ## What keeps them aligned
 
-crate's test vectors, frozen with the schema version at
-`inst/extdata/receipt/vectors/v1.0.0/` and vendored here at tag `v0.12.0`. Measured
-2026-11-08, all passing through this package's own public API:
+crate's test vectors. The contract has three parts, each versioned on its own (crate#58), and
+each part's vectors are frozen with it: the hashing with the form
+(`inst/extdata/receipt/vectors/v1.0.0/`), `compare.json` with the register
+(`register/v1.0.0/`) and `stac.json` with the mapping (`mapping/v1.1.0/`). Vendored here from
+tag `v0.16.0`. Measured 2026-11-15, all passing through this package's own public API:
 
-| vectors | cases | what each pins |
-|---|---|---|
-| `numbers.json` | 2,637 | the RFC 8785 spelling of a double, from its bits |
-| `jcs.json` | 10 | canonical JSON of a parsed document, including two top-level scalars |
-| `recipe_id.json` | 7 | the canonical bytes of a recipe and its SHA-256 |
-| `fingerprint.json` | 13 | a table's canonical form and its fingerprint |
-| `compare.json` | 9 | the verdict and the exact ordered `(field, action)` list |
+| vectors | part | cases | what each pins |
+|---|---|---|---|
+| `numbers.json` | form | 2,637 | the RFC 8785 spelling of a double, from its bits |
+| `jcs.json` | form | 10 | canonical JSON of a parsed document, including two top-level scalars |
+| `recipe_id.json` | form | 7 | the canonical bytes of a recipe and its SHA-256 |
+| `fingerprint.json` | form | 13 | a table's canonical form and its fingerprint |
+| `compare.json` | register | 9 | the verdict and the exact ordered `(field, action)` list |
+| `stac.json` | mapping | 142 | the item fields a receipt maps to (17 cases), or the code it is refused with (125 cases, 17 codes) |
+
+`stac.json` is the one that moved this package. Before mapping v1.1.0 the STAC rows had no
+vectors, and `stac_fields` as first written agreed with 87 of the 142: every one of the other
+55 was a receipt it mapped and crate refuses. By code: `block_not_object` 17 (a block that
+was `null` or not an object, read as absent), `time_not_utc` 13, `receipt_version_unknown` 6,
+`recipe_id_missing` 4, `version_not_string` 4, and 11 across ten other codes. A refusal is
+compared by its **code**, never its message, so `ReceiptError` carries one.
 
 Two further artifacts do what no vector can:
 
@@ -37,8 +48,10 @@ Two further artifacts do what no vector can:
   agree with whatever this code happens to do.
 
 The vendored copies are re-checked against the tag before pytest, because the suite runs
-offline and could not fetch them. The same step proves each frozen schema URL still serves the
-vendored bytes, which is crate's never-edit rule enforced from the consumer's side.
+offline and could not fetch them. The same step proves each frozen URL still serves the
+vendored bytes — the two schemas, the register and the mapping, each at its version — which is
+crate's never-edit rule enforced from the consumer's side. crate serves no URL for
+`compare.json` or `stac.json`, so those two are checked against the tag alone.
 
 ## What is not covered, and should not be assumed
 
@@ -50,9 +63,18 @@ vendored bytes, which is crate's never-edit rule enforced from the consumer's si
 - **`crt_receipt_migrate`.** Reading an older record into a receipt is crate's; this package
   reads and writes migrated receipts (null `recipe_id`, `output.migrated_from`) but does not
   produce them.
-- **`mapping.csv`'s non-STAC rows.** Only the six `STAC item` rows are used, and of those the
+- **`mapping.csv`'s non-STAC rows.** Only the seven `STAC item` rows are used, and of those the
   `properties.version` ← `context.legacy` row is deliberately skipped: a release label is not
   provenance.
+- **The shape of the `assets` argument.** Every `stac.json` case passes `assets` as an object
+  with non-empty keys and hrefs. crate's R refuses an empty key and an empty href with two
+  codes its table and vectors do not hold (crate#65); here an empty key is published and an
+  empty href is refused as naming no part. Nothing compares the two on it.
+- **The calendar beyond what the vectors hold.** `stac.json` has two years and two month
+  lengths. The century rule and year 0000 are pinned by this package's own test, computed by
+  arithmetic as crate computes it, since a date library refuses year 0000.
+- **A date or datetime cell of a table.** The mapping's patterns were tightened; the table
+  fingerprint's were not, and still hash a cell with a trailing newline (stacs#16).
 
 ## Where the two implementations genuinely differ
 
@@ -65,6 +87,9 @@ vendored bytes, which is crate's never-edit rule enforced from the consumer's si
   R-written receipt may hold `"CO"` where a Python one holds `["CO"]` — and those are **two
   different `recipe_id`s for one intent**. Nothing in either implementation can detect it;
   any output written from both languages has to agree per setting.
+- **What `write` accepts and `stac_fields` refuses.** The form's pattern for `context.time`
+  admits month 13, so `write`, which validates against the form, publishes a receipt whose
+  item fields the mapping then refuses. On the verify path that item reads `inconsistent`.
 - **Type refusals.** crate refuses a list of R-specific hazards by name (`integer64`, a
   `Date` as a value, names on an atomic vector). Those have no Python meaning; this package
   refuses its own (`bool` before `int`, `Decimal`, a naive `datetime`, `bytes`), which is the
@@ -96,6 +121,13 @@ vendored bytes, which is crate's never-edit rule enforced from the consumer's si
 - **Both published schemas are draft-07 with no `$ref` carrying sibling keywords**, so
   Python's `jsonschema` and R's ajv read them alike; and the field schema's
   `patternProperties: {"^(?!receipt:)": {}}` negative lookahead is valid in Python `re`.
+- **`validate` passes a value that ends in a newline.** `jsonschema` applies the form
+  schema's patterns with Python's `re`, where `$` also matches before a trailing newline. Of
+  the 125 receipts `stac.json` refuses, 28 pass `validate`: 17 are refused for an argument
+  and not the receipt, 8 hold an instant that does not exist, which the form's pattern
+  admits, and 3 hold a `recipe_id`, a `context.time` or a part's `sha256` followed by a
+  newline (stacs#16). So `validate` is not a guard for the mapping, and the mapping checks
+  with `fullmatch` and `[0-9]`.
 - **A `oneOf` makes `jsonschema`'s message useless**, and `best_match` prefers the branch
   selector ("'Collection' was expected" about an Item) because it is shallower. Descend into
   the context and drop each branch's own `type` error first.
