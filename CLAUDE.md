@@ -86,6 +86,11 @@ cuts the release itself: its gate reads this repo as a Python package and does t
 the `## Unreleased` rename, the `uv lock`, the release commit, the tag and the GitHub
 release. Don't do it by hand.
 
+A release whose `NEWS.md` section carries a **Behaviour change** entry is a minor bump:
+0.2.0, 0.3.0 and 0.4.0 each did, and no patch release has. `/gh-pr-merge` infers the bump by
+counting past releases and read 0.4.0 as a patch, so check its `BUMP:` line against this
+before the release commit (owner's choice for 0.4.0, 2026-11-15).
+
 <!-- BEGIN SOUL CONVENTIONS — DO NOT EDIT BELOW THIS LINE -->
 
 
