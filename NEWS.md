@@ -3,7 +3,7 @@
 Versions track the package. A tag is a release consumers can pin with
 `tag = "vX.Y.Z"` in `[tool.uv.sources]`; `pyproject.toml` carries the same version.
 
-## Unreleased
+## 0.4.0
 
 - **crate's receipt contract, each part at its own version** (#15). crate versioned the
   register and the mapping apart from the receipt form, so the vendored copies are pinned by
