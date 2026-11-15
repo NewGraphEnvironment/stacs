@@ -2,7 +2,8 @@
 
 The suite is offline (`conftest.py`), so the contract cannot be fetched at test time: crate's
 test vectors, its two frozen JSON Schemas, its register and its mapping table live in this
-repository, vendored at a pinned tag by `tools/crate_receipt_vendor.sh`.
+repository, each at its own version, vendored from a pinned tag by
+`tools/crate_receipt_vendor.sh`.
 
 Three things can go wrong quietly, so each has a test here:
 
@@ -85,6 +86,105 @@ def test_every_vendored_contract_file_is_present_and_not_empty(dest):
     assert path.is_file(), (f"{dest} is not vendored; run "
                             f"`bash tools/crate_receipt_vendor.sh vendor`")
     assert path.stat().st_size > 0, f"{dest} is empty"
+
+
+# The two directories the script vendors into. Everything in them comes from crate.
+VENDORED_DIRS = ("src/stacs/data/receipt", "tests/vectors/receipt")
+
+
+def _strays(root: Path, listed: set[str]) -> list[str]:
+    """Files under the vendored directories that the script's list does not name.
+
+    Returned rather than asserted, so the test below can show it saying no.
+    """
+    found = []
+    for top in VENDORED_DIRS:
+        assert (root / top).is_dir(), f"{top} is missing, so this walk would find nothing"
+        for path in sorted((root / top).rglob("*")):
+            rel = path.relative_to(root).as_posix()
+            # A dotfile is the operating system's (.DS_Store), never something the package or
+            # a runner reads by name.
+            if path.is_file() and not path.name.startswith(".") and rel not in listed:
+                found.append(rel)
+    return found
+
+
+def test_nothing_sits_in_the_vendored_directories_that_the_script_does_not_list():
+    """`vendor` writes the files it lists and removes nothing, so a path that crate moved
+    leaves its old copy behind: `register.csv` at the unversioned path would still be there,
+    still readable, and no longer checked against anything. SOURCE is the script's own
+    record, so it is the one file here the list does not name."""
+    listed = set(_destinations()) | {"src/stacs/data/receipt/SOURCE"}
+    assert _strays(REPO, listed) == [], \
+        "remove the stray file(s), or add them to FILES in tools/crate_receipt_vendor.sh"
+
+
+def test_the_stray_check_notices_a_file_the_list_does_not_name(tmp_path):
+    """Shown saying no, on a copy: one unlisted file in each vendored directory."""
+    for top in VENDORED_DIRS:
+        (tmp_path / top / "v9.9.9").mkdir(parents=True)
+        (tmp_path / top / "listed.csv").write_text("x")
+        (tmp_path / top / "v9.9.9" / "left_behind.csv").write_text("x")
+        (tmp_path / top / ".DS_Store").write_text("x")
+    listed = {f"{top}/listed.csv" for top in VENDORED_DIRS}
+    assert _strays(tmp_path, listed) == [f"{top}/v9.9.9/left_behind.csv"
+                                         for top in VENDORED_DIRS]
+
+
+# =============================================================================
+# The pins: each part of the contract at its own version
+# =============================================================================
+
+HOST = "https://newgraphenvironment.github.io/crate"
+
+
+def _frozen() -> dict[str, str]:
+    """{url: destination} from the script's URLS block."""
+    return dict(_block(_script(), "URLS"))
+
+
+def test_each_part_of_the_contract_is_checked_at_the_version_the_module_reads():
+    """The module names a version of the form, the register and the mapping, and the script
+    checks a served URL for each. Nothing but this ties the two: move a constant without
+    vendoring that version and the package reads a directory `check` never compared, and move
+    a URL row without the constant and `check` proves a version the package does not read."""
+    from stacs import receipt as r
+    data = "src/stacs/data/receipt"
+    want = {
+        r.SCHEMA_URL: f"{data}/v{r.RECEIPT_VERSION}/schema.json",
+        r.EXTENSION_URL: f"{data}/v{r.RECEIPT_VERSION}/stac_schema.json",
+        f"{HOST}/receipt/register/v{r.REGISTER_VERSION}/register.csv":
+            f"{data}/register/v{r.REGISTER_VERSION}/register.csv",
+        f"{HOST}/receipt/mapping/v{r.MAPPING_VERSION}/mapping.csv":
+            f"{data}/mapping/v{r.MAPPING_VERSION}/mapping.csv",
+    }
+    assert _frozen() == want
+
+
+def test_every_frozen_url_is_checked_against_a_file_vendored_from_the_tag():
+    """A URL compared with a file the tag diff does not cover would be checked against bytes
+    of unknown origin."""
+    assert set(_frozen().values()) <= set(_destinations())
+
+
+def test_the_frozen_url_count_is_the_number_of_urls_listed():
+    """`check` compares the number of URLs it reached with this literal, so a literal that
+    drifted below the list would let a URL go unchecked and still print OK."""
+    m = re.search(r"^FROZEN_URLS=(\d+)$", _script(), re.MULTILINE)
+    assert m is not None, "the script has no FROZEN_URLS literal"
+    assert int(m.group(1)) == len(_frozen())
+
+
+def test_the_vectors_for_each_part_sit_under_the_version_the_module_reads():
+    """`compare.json` tests the register's actions and `stac.json` the mapping's STAC rows,
+    so each is vendored beside the version it pins and nowhere else."""
+    from stacs import receipt as r
+    dests = _destinations()
+    assert f"tests/vectors/receipt/register/v{r.REGISTER_VERSION}/compare.json" in dests
+    assert f"tests/vectors/receipt/mapping/v{r.MAPPING_VERSION}/stac.json" in dests
+    assert [d for d in dests if d.endswith(("compare.json", "stac.json"))] == [
+        f"tests/vectors/receipt/register/v{r.REGISTER_VERSION}/compare.json",
+        f"tests/vectors/receipt/mapping/v{r.MAPPING_VERSION}/stac.json"]
 
 
 SOURCE = REPO / "src" / "stacs" / "data" / "receipt" / "SOURCE"

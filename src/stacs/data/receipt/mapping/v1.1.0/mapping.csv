@@ -36,11 +36,12 @@ floodplains provenance.json,link_log.host,context.legacy,,,"the host of link's b
 floodplains provenance.json,link_log.run_id,context.run[link_run_id],,,
 floodplains provenance.json,link_log.run_uid,context.run[link_run_uid],,,
 floodplains provenance.json,link_log.*,context.legacy,,,"the rest of link's log row (config_hash, dates, schema)"
-STAC item,properties.processing:datetime,context.time,,processing:datetime,
-STAC item,properties.processing:software.{repo},recipe.code[{repo}].version,,processing:software,"a repository of ours; a third-party tool goes to context.toolchain"
-STAC item,properties.receipt:recipe_id,recipe.recipe_id,,receipt:recipe_id,
-STAC item,assets.*.file:checksum,result.parts[*].sha256,multihash,file:checksum,the asset's href relative to the item is the part's path
-STAC item,assets.*.file:size,result.parts[*].bytes,,file:size,
+STAC item,properties.processing:datetime,context.time,,processing:datetime,"required, and a real UTC instant: a receipt with none, or with a month, day, hour, minute or second that does not exist, is refused"
+STAC item,properties.processing:software.{repo},recipe.code[{repo}].version,,processing:software,"a repository of ours; a third-party tool goes to context.toolchain. A repository whose version is null is left out, and with none versioned the property is left out; a repository with an empty name is refused"
+STAC item,properties.receipt:recipe_id,recipe.recipe_id,,receipt:recipe_id,"left out for a migrated receipt (output.migrated_from), whose recipe_id is null: an item never publishes a null identity. A recipe_id missing on any other receipt is refused, and so is one set on a migrated receipt"
+STAC item,assets.*.file:checksum,result.parts[*].sha256,multihash,file:checksum,"every asset but the receipt's, which has its own row: the asset's href relative to the item is the part's path. A part no asset names is not mirrored, and two assets may name one part; an asset whose href names no part is an error, never a guessed or omitted checksum"
+STAC item,assets.*.file:size,result.parts[*].bytes,,file:size,every asset but the receipt's
+STAC item,assets.{receipt}.file:checksum,,multihash,file:checksum,"the asset that links the receipt: SHA-256 of the published receipt's bytes, which the writer returns, never from a part (a receipt is not one of its own parts). It carries no file:size, deliberately: the digest identifies the bytes"
 STAC item,properties.version,context.legacy,,version,"a release label, not provenance"
 any record,{repo}_sha,recipe.code[{repo}].commit,,,"link_sha, fresh_sha, fwapg_sha: a commit of one of our repositories"
 any record,{repo}_version,recipe.code[{repo}].version,,processing:software,

@@ -13,28 +13,35 @@
 #
 #   1. Are the vendored bytes the ones crate published at CRATE_TAG? A diff against the tag
 #      catches an edited vendored file, and a moved tag.
-#   2. Does each frozen schema URL still serve those bytes? crate's rule is that a published
-#      version is never edited; this is that rule enforced from the consumer's side.
+#   2. Does each frozen URL still serve those bytes: the two schemas, the register and the
+#      mapping, each at its own version? crate's rule is that a published version is never
+#      edited; this is that rule enforced from the consumer's side.
 #
 # Fetched over plain HTTPS from a public repository, so it needs no credentials and works the
 # same locally and in Actions. --fail turns an HTTP error into a non-zero exit, and -L follows
-# the redirect that the schema URLs serve (without it curl saves the redirect page as the file).
+# the redirect that the frozen URLs serve (without it curl saves the redirect page as the file).
 
 set -euo pipefail
 
-CRATE_TAG=v0.12.0
+CRATE_TAG=v0.16.0
 CRATE_REPO=NewGraphEnvironment/crate
 RAW="https://raw.githubusercontent.com/${CRATE_REPO}/${CRATE_TAG}"
 
 # Where each file comes from in crate, and where it lands here. Two destinations, for two
 # different promises:
 #
-#   tests/vectors/receipt/v1.0.0/  the executable half of the contract. Frozen with the schema
-#                                 version: "a change is a new version directory, never an edit".
-#   src/stacs/data/receipt/       what the package itself reads at run time. The schemas are
-#                                 frozen by their version URL; register.csv and mapping.csv are
-#                                 NOT versioned in crate, so they are pinned to CRATE_TAG and
-#                                 may gain rows in a later one.
+#   tests/vectors/receipt/   the executable half of the contract, which no wheel ships. Each
+#                            part of the contract is versioned on its own, and a directory here
+#                            is named for the part and version whose vectors it holds:
+#                              v1.0.0/           the hashing, frozen with the receipt form
+#                              register/v1.0.0/  compare.json, the register's verdicts
+#                              mapping/v1.1.0/   stac.json, the mapping's STAC rows
+#                            "A change is a new version directory, never an edit."
+#   src/stacs/data/receipt/  what the package ships. The two schemas, the register and the
+#                            mapping are each frozen at a version URL (URLS below), so the pin
+#                            is the contract's version; CRATE_TAG is only where the bytes are
+#                            fetched from. A new register or mapping version is a new row here
+#                            and a new constant in src/stacs/receipt.py, never an edit in place.
 #
 # One space-separated "<source path> <destination path>" per line.
 FILES='
@@ -42,12 +49,15 @@ inst/extdata/receipt/vectors/v1.0.0/numbers.json tests/vectors/receipt/v1.0.0/nu
 inst/extdata/receipt/vectors/v1.0.0/jcs.json tests/vectors/receipt/v1.0.0/jcs.json
 inst/extdata/receipt/vectors/v1.0.0/recipe_id.json tests/vectors/receipt/v1.0.0/recipe_id.json
 inst/extdata/receipt/vectors/v1.0.0/fingerprint.json tests/vectors/receipt/v1.0.0/fingerprint.json
-inst/extdata/receipt/vectors/v1.0.0/compare.json tests/vectors/receipt/v1.0.0/compare.json
 inst/extdata/receipt/vectors/v1.0.0/README.md tests/vectors/receipt/v1.0.0/README.md
+inst/extdata/receipt/register/v1.0.0/compare.json tests/vectors/receipt/register/v1.0.0/compare.json
+inst/extdata/receipt/register/v1.0.0/README.md tests/vectors/receipt/register/v1.0.0/README.md
+inst/extdata/receipt/mapping/v1.1.0/stac.json tests/vectors/receipt/mapping/v1.1.0/stac.json
+inst/extdata/receipt/mapping/v1.1.0/README.md tests/vectors/receipt/mapping/v1.1.0/README.md
 pkgdown/assets/receipt/v1.0.0/schema.json src/stacs/data/receipt/v1.0.0/schema.json
 pkgdown/assets/stac/receipt/v1.0.0/schema.json src/stacs/data/receipt/v1.0.0/stac_schema.json
-inst/extdata/receipt/register.csv src/stacs/data/receipt/register.csv
-inst/extdata/receipt/mapping.csv src/stacs/data/receipt/mapping.csv
+inst/extdata/receipt/register/v1.0.0/register.csv src/stacs/data/receipt/register/v1.0.0/register.csv
+inst/extdata/receipt/mapping/v1.1.0/mapping.csv src/stacs/data/receipt/mapping/v1.1.0/mapping.csv
 inst/extdata/receipt/examples/worked_case/build_1/receipt.json tests/vectors/receipt/examples/worked_case/build_1/receipt.json
 inst/extdata/receipt/examples/worked_case/build_2/receipt.json tests/vectors/receipt/examples/worked_case/build_2/receipt.json
 pkgdown/assets/stac/receipt/examples/item.json tests/vectors/receipt/examples/item.json
@@ -57,15 +67,19 @@ pkgdown/assets/stac/receipt/examples/item.json tests/vectors/receipt/examples/it
 # receipt FILE has on disk (canonical JSON, pretty-printed at indent 2, empty containers
 # collapsed, one trailing newline), and a real item carrying the mirrored identity fields.
 
-# The frozen URLs the package writes into receipts and items, each with the vendored copy that
-# must still match it. These are the ones crate promises never to edit.
+# The frozen URLs, each with the vendored copy that must still match it: the two schemas the
+# package writes into receipts and items, and the register and mapping versions it reads. These
+# are the ones crate promises never to edit. crate serves no URL for compare.json or stac.json,
+# so those two are checked against the tag alone.
 URLS='
 https://newgraphenvironment.github.io/crate/receipt/v1.0.0/schema.json src/stacs/data/receipt/v1.0.0/schema.json
 https://newgraphenvironment.github.io/crate/stac/receipt/v1.0.0/schema.json src/stacs/data/receipt/v1.0.0/stac_schema.json
+https://newgraphenvironment.github.io/crate/receipt/register/v1.0.0/register.csv src/stacs/data/receipt/register/v1.0.0/register.csv
+https://newgraphenvironment.github.io/crate/receipt/mapping/v1.1.0/mapping.csv src/stacs/data/receipt/mapping/v1.1.0/mapping.csv
 '
 # How many URLS above must actually be checked. A literal, compared with the number the loop
-# reached: the success line names "both frozen URLs", and a claim in a message is not a check.
-FROZEN_URLS=2
+# reached: the success line names this many frozen URLs, and a claim in a message is not a check.
+FROZEN_URLS=4
 
 SOURCE_FILE=src/stacs/data/receipt/SOURCE
 
@@ -131,7 +145,7 @@ EOF
 
   [ "$n" -gt 0 ] || { echo "FAIL: the file list is empty, so this check would pass on anything" >&2; exit 1; }
 
-  # Counted, because the success line below claims both frozen URLs were checked. Without
+  # Counted, because the success line below claims every frozen URL was checked. Without
   # this, blanking or mangling URLS makes the script exit 0 while asserting it checked them --
   # a guard that fails toward pass, found in review.
   local u=0 url
@@ -178,7 +192,7 @@ INNER
     echo "$bad problem(s) against ${CRATE_REPO}@${CRATE_TAG}" >&2
     exit 1
   fi
-  echo "OK: $n file(s) match ${CRATE_REPO}@${CRATE_TAG}, and both frozen URLs serve them"
+  echo "OK: $n file(s) match ${CRATE_REPO}@${CRATE_TAG}, and all $FROZEN_URLS frozen URLs serve them"
 }
 
 main "$@"

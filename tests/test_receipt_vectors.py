@@ -22,16 +22,23 @@ import pytest
 
 from stacs import receipt as r
 
-VECTORS = Path(__file__).resolve().parent / "vectors" / "receipt" / "v1.0.0"
+VECTORS = Path(__file__).resolve().parent / "vectors" / "receipt"
 
-# The v1.0.0 case counts. Pinned, so a truncated or replaced file fails here rather than
-# passing over fewer cases: "they are frozen with the receipt schema v1.0.0, a change is a new
-# version directory, never an edit."
+# Where each vector file lives. The three parts of the contract are versioned apart, so the
+# hashing vectors sit with the form, `compare.json` with the register whose actions it tests,
+# and a directory is named from the version constant the module reads: moving a constant
+# without vendoring its vectors fails here as a missing file.
+DIRS = {"numbers": f"v{r.RECEIPT_VERSION}", "jcs": f"v{r.RECEIPT_VERSION}",
+        "recipe_id": f"v{r.RECEIPT_VERSION}", "fingerprint": f"v{r.RECEIPT_VERSION}",
+        "compare": f"register/v{r.REGISTER_VERSION}"}
+
+# The case counts. Pinned, so a truncated or replaced file fails here rather than passing over
+# fewer cases: "a released version is never edited", so a count moves only with a version.
 COUNTS = {"numbers": 2637, "jcs": 10, "recipe_id": 7, "fingerprint": 13, "compare": 9}
 
 
 def _cases(name):
-    path = VECTORS / f"{name}.json"
+    path = VECTORS / DIRS[name] / f"{name}.json"
     assert path.is_file(), (f"{path} is not vendored; run "
                             f"`bash tools/crate_receipt_vendor.sh vendor`")
     cases = json.loads(path.read_text(encoding="utf-8"))

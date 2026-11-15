@@ -99,7 +99,24 @@ crate read at its tags over HTTPS; stacs at `e674cda`.
 - Out of scope, measured: `_DATE` (`^-?\d{4,}-\d{2}-\d{2}$` with `.match`) accepts
   `"2026-01-01\n"`, so a table cell with a trailing newline is hashed.
 
+## Phase 1: mutation table (2026-11-15)
+
+Each applied to the working tree alone, the named check run, then restored and `cmp`'d
+against a backup.
+
+| mutation | went red |
+|---|---|
+| `register.csv` copied back to its old unversioned path | `test_nothing_sits_in_the_vendored_directories_that_the_script_does_not_list` |
+| the register row removed from `URLS` | `test_each_part_of_the_contract_is_checked_at_the_version_the_module_reads`, `test_the_frozen_url_count_is_the_number_of_urls_listed`, and `check` (`checked 3 frozen URL(s), expected 4`, exit 1) |
+| `FROZEN_URLS=3` | `test_the_frozen_url_count_is_the_number_of_urls_listed` |
+| one byte appended to the vendored `register.csv` | `test_every_blob_sha_in_source_is_the_file_beside_it`, and `check` twice (differs from the tag; the served URL no longer matches), exit 1 |
+| `REGISTER_VERSION = "1.1.0"` with nothing vendored | 18 tests across the contract, vector and package files |
+
+`check` at `v0.16.0`: `OK: 16 file(s) match NewGraphEnvironment/crate@v0.16.0, and all 4 frozen
+URLs serve them`. Full suite: 823 passed.
+
 ## Errors Encountered
 
 | Error | Resolution |
 |-------|------------|
+| Two tests stayed red after `receipt.py` was restored from a backup with `cp` | The restored file had the size and mtime second of the mutated one, so Python reused the mutated bytecode cache. `touch` the file after a restore (or run mutations with `PYTHONDONTWRITEBYTECODE=1`). |

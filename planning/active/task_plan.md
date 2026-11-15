@@ -68,25 +68,28 @@ Recommendations, each taken unless the plan is edited at approval (owner, 2026-1
 
 Purpose: the vendored files sit at versioned paths, and `check` proves each served version.
 
-- [ ] `tools/crate_receipt_vendor.sh`: `CRATE_TAG=v0.16.0`; `FILES` reads
+- [x] `tools/crate_receipt_vendor.sh`: `CRATE_TAG=v0.16.0`; `FILES` reads
       `register/v1.0.0/register.csv`, `mapping/v1.1.0/mapping.csv`,
       `register/v1.0.0/{compare.json,README.md}` and `mapping/v1.1.0/{stac.json,README.md}`,
       landing at the paths in decision 3; drop the two unversioned rows and
       `vectors/v1.0.0/compare.json`
-- [ ] `URLS` gains the served `register/v1.0.0/register.csv` and `mapping/v1.1.0/mapping.csv`;
+- [x] `URLS` gains the served `register/v1.0.0/register.csv` and `mapping/v1.1.0/mapping.csv`;
       `FROZEN_URLS=4`; the success line and its comments stop saying "both"; the comment that
       the register and mapping "are NOT versioned in crate" is rewritten
-- [ ] `git mv` the three byte-identical files to their new paths, then run `vendor` (network) so
+- [x] `git mv` the three byte-identical files to their new paths, then run `vendor` (network) so
       `SOURCE` is rewritten by the script, and `check` reads `OK`
-- [ ] `receipt.py`: `REGISTER_VERSION = "1.0.0"`, `MAPPING_VERSION = "1.1.0"`, `REGISTER_URL`,
-      `MAPPING_URL` written in full as `SCHEMA_URL` is; `register()` reads
-      `register/v1.0.0/register.csv`
-- [ ] Tests: each URL constant is pinned to its version constant and to a row of the script's
+- [x] `receipt.py`: `REGISTER_VERSION = "1.0.0"`, `MAPPING_VERSION = "1.1.0"`; `register()` reads
+      `register/v1.0.0/register.csv`. *(Corrected while building: no `REGISTER_URL` or
+      `MAPPING_URL` constant. Nothing reads one at run time, and a crate URL that is not a
+      schema trips the deployment-name guard, whose carve-out is deliberately the two schema
+      URLs. The served URLs live in the script's `URLS` block, and a test ties each to its
+      version constant.)*
+- [x] Tests: each URL constant is pinned to its version constant and to a row of the script's
       `URLS` block; `test_package.py` and the compare runner read the new paths; a new guard
       that no file under `src/stacs/data/receipt/` or `tests/vectors/receipt/` is absent from
       the script's `FILES` (a stale unversioned copy left behind would otherwise still be read)
-- [ ] `.github/workflows/test.yml`: the step comment names the register and mapping URLs too
-- [ ] Mutation check: restore an old-path file, delete a `URLS` row, edit one vendored byte;
+- [x] `.github/workflows/test.yml`: the step comment names the register and mapping URLs too
+- [x] Mutation check: restore an old-path file, delete a `URLS` row, edit one vendored byte;
       each turns a named test or `check` red
 
 ## Phase 2: `stac_fields()` under mapping v1.1.0

@@ -16,8 +16,11 @@ it is taken over can move only with a new receipt schema version. The two forms 
 different on purpose: `verify`'s drops `links` and null members to absorb what pgstac's round
 trip changes, and a receipt's applies no STAC rules at all. Neither may be used for the other.
 
-The contract is crate's, vendored under `data/receipt/` at a pinned tag and checked against it
-in CI; crate's test vectors are the only thing keeping the two implementations in step.
+The contract is crate's, in three parts that are each versioned on their own: the form (the
+fields a receipt has), the register (what a difference in each field does to a comparison) and
+the mapping (how a receipt's fields become an item's). Each is vendored under `data/receipt/`
+at its version and checked in CI against the tag it came from and the URL crate serves it at;
+crate's test vectors are the only thing keeping the two implementations in step.
 """
 
 import copy
@@ -51,6 +54,17 @@ RECEIPT_VERSION = "1.0.0"
 # pins each against RECEIPT_VERSION so the two cannot drift apart.
 SCHEMA_URL = "https://newgraphenvironment.github.io/crate/receipt/v1.0.0/schema.json"
 EXTENSION_URL = "https://newgraphenvironment.github.io/crate/stac/receipt/v1.0.0/schema.json"
+
+# The other two parts of the contract, each versioned apart from the form. A receipt carries
+# only RECEIPT_VERSION: a register or mapping change never moves it.
+#
+# REGISTER_VERSION is the rulebook `compare` reads, and every `Comparison` names it, because a
+# verdict is a function of the register's rows. MAPPING_VERSION is the mapping `stac_fields`
+# executes; nothing published carries it yet. A released version is never edited, so moving
+# either is a new vendored directory (`tools/crate_receipt_vendor.sh`) and a deliberate change
+# here, and the tests pin each constant to the directory and the served URL the script checks.
+REGISTER_VERSION = "1.0.0"
+MAPPING_VERSION = "1.1.0"
 
 # JCS treats every JSON number as an IEEE double, and `rfc8785` refuses a Python int outside
 # the range a double holds exactly rather than round it.
@@ -802,7 +816,8 @@ def register() -> dict:
         ['record', 'refuse', 'warn']
     """
     if "register" not in _DATA:
-        rows = csv.DictReader(io.StringIO(_data_text("register.csv")))
+        rows = csv.DictReader(io.StringIO(
+            _data_text("register", f"v{REGISTER_VERSION}", "register.csv")))
         table = {}
         for row in rows:
             field, action = (row.get("field") or "").strip(), (row.get("action") or "").strip()
