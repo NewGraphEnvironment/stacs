@@ -1,0 +1,105 @@
+# Findings — crate's receipt register and mapping are versioned, and mapping v1.1.0 pins the STAC mapping: re-vendor, pin by version, run stac.json (#15)
+
+## Issue context
+
+**If we do it:** stacs pins the receipt register and mapping by contract version, the way it already pins the schema, its comparison names the rulebook that produced each verdict, and its `stac_fields()` passes the vectors that now pin the STAC mapping. **If we never do:** the next re-vendor fails on moved paths, and stacs keeps pinning a crate commit rather than a version of the contract.
+
+## What changed in crate
+
+crate versioned the register and the mapping (https://github.com/NewGraphEnvironment/crate/issues/58), so these paths move from the next crate release:
+
+| was | now |
+|---|---|
+| `inst/extdata/receipt/register.csv` | `inst/extdata/receipt/register/v1.0.0/register.csv` |
+| `inst/extdata/receipt/mapping.csv` | `inst/extdata/receipt/mapping/v1.0.0/mapping.csv` |
+| `inst/extdata/receipt/vectors/v1.0.0/compare.json` | `inst/extdata/receipt/register/v1.0.0/compare.json` |
+
+The bytes did not change: the blob shas are the ones `src/stacs/data/receipt/SOURCE` already records (`0c5b72fa…` register, `86657116…` mapping, `45495a54…` compare.json). Register v1.0.0 and mapping v1.0.0 are exactly what stacs vendors at v0.12.0. Only `vectors/v1.0.0/README.md` differs on the next re-vendor (it no longer describes `compare.json`, which has its own `register/v1.0.0/README.md`).
+
+Both are also published at frozen versioned URLs, beside the schema, with a changelog stating the rules:
+
+- `https://newgraphenvironment.github.io/crate/receipt/register/v1.0.0/register.csv`
+- `https://newgraphenvironment.github.io/crate/receipt/mapping/v1.0.0/mapping.csv`
+- `https://newgraphenvironment.github.io/crate/receipt/CHANGELOG.md`
+
+A receipt's `receipt_version` stays the form's only: a register or mapping change never moves it. crate's comparison now carries `register` (the version it was judged under) and `overrides` (each field a declaration overrode, with its declared action), and `print()` reads `equivalent (receipts only; register v1.0.0)`.
+
+## Proposed
+
+- [ ] `tools/crate_receipt_vendor.sh`: the new source paths, and vendor `compare.json` and its README from `register/v1.0.0/`
+- [ ] Pin the register and mapping by version (path or URL) rather than tag + blob sha alone, and have `check` compare the vendored copies with the served versioned URLs, as it does the schema
+- [ ] stacs's comparison names the register version it read, to match crate's
+
+Nothing breaks before stacs re-vendors: its tag pin keeps reading the old paths at v0.12.0.
+
+## Since crate#59 and #60: mapping v1.1.0 and `stac.json`
+
+crate's next release adds mapping v1.1.0 (https://github.com/NewGraphEnvironment/crate/issues/59, https://github.com/NewGraphEnvironment/crate/issues/60). Its rows for older records are unchanged. Its `STAC item` rows now state what v1.0.0 left open:
+
+- a null `recipe_id` or `version` is left out
+- a part with no asset is not mirrored
+- an asset whose href names no part is refused
+- the receipt asset's `file:checksum` is the digest of the published receipt's bytes, with no `file:size`
+
+`inst/extdata/receipt/mapping/v1.1.0/stac.json` pins each rule: receipts, and the item fields each maps to or a refusal code. crate's own `crt_receipt_stac()` runs it, and so does an independent Python check in crate's `data-raw/receipt_vectors_crosscheck.py`. The format is in that directory's `README.md`.
+
+`stac.json` is generated: every path the mapping reads, each in every state (absent, null, the wrong type, empty, each way the value can be malformed). Each refusal has a code, which crate's R carries on its condition and a runner compares, never the message. The codes are tabled in the directory's `README.md`.
+
+Run over stacs origin/main (3b08621), `stac_fields()` agrees on 87 of the 142 cases. Each of the other 55 is a case stacs accepts and crate refuses:
+
+- **The form and the identity.** `output.receipt_version` is not checked, so any form is read as 1.0.0 (`receipt_version_unknown`). A `recipe_id` that is null or absent on a receipt that was not migrated is left out, so the item reads as migrated (`recipe_id_missing`). One set on a migrated receipt is published (`recipe_id_on_migrated`).
+- **`context.time`.** When absent or null it is left out; crate requires it. An impossible instant (month 13 or 00, day 00, the 31st of November, 29 February 2026, hour 24, minute 60, second 60) is published, where the processing extension declares `format: date-time`. `_UTC_TIME` uses `\d`, so Arabic-Indic digits pass, and `$` lets a trailing newline through (`time_not_utc`).
+- **A trailing newline** on `recipe_id`, a part's `sha256` or `receipt_sha256`. `match` with `^…$` matches before it, so `fullmatch` is needed.
+- **Non-object blocks.** `output`, `recipe`, `recipe.code` or a `recipe.code` entry that is null or not an object is read as absent or skipped (`block_not_object`). A repository with an empty name is published as a `processing:software` key (`repo_name_empty`).
+- **Values.** A `version` that is a number, `true`, an array or empty (`version_not_string`), and a negative `bytes` (`bytes_not_whole`).
+- **Arguments.** A `receipt_asset` that is not a string, or is empty. A `receipt_sha256` with no `receipt_asset` is ignored. A `receipt_asset` that is also in `assets` replaces that part's asset.
+
+- [ ] Vendor `mapping/v1.1.0/` (`mapping.csv`, `stac.json`, `README.md`) and run `stac.json` in the offline suite, comparing each refusal's code
+- [ ] Refuse the cases above in `stac_fields()`
+
+## Exploration (2026-11-15)
+
+crate read at its tags over HTTPS; stacs at `e674cda`.
+
+- crate tags: `v0.15.0` is the first with `register/v1.0.0/` and `mapping/v1.0.0/`;
+  `v0.16.0` (2026-11-11) is the first with `mapping/v1.1.0/`. Every receipt file at
+  `v0.16.0` has the blob sha it has on crate's `main` (`ecadfc6`).
+- `register.csv`, `mapping.csv` (v1.0.0) and `compare.json` at `v0.16.0` `cmp` clean against
+  the copies vendored here. `vectors/v1.0.0/README.md` differs (it no longer describes
+  `compare.json`).
+- Served under `https://newgraphenvironment.github.io/crate/receipt/`: 200 for
+  `register/v1.0.0/register.csv` (3486 B, equal to the vendored copy),
+  `mapping/v1.0.0/mapping.csv`, `mapping/v1.1.0/mapping.csv` (6059 B, equal to the tag) and
+  `CHANGELOG.md`; 404 for `mapping/v1.1.0/stac.json` and `register/v1.0.0/compare.json`.
+- `stac.json` is a list of 142 cases, keys `name, receipt, assets, receipt_asset,
+  receipt_sha256, expected, error`: 17 accept cases and 125 refusals over 17 codes
+  (`block_not_object` 44, `time_not_utc` 20, `part_sha256_not_sha256` 11,
+  `recipe_id_not_sha256` 9, `digest_not_sha256` 9, `receipt_version_unknown` 6,
+  `bytes_not_whole` 6, `href_not_a_part` 4, `recipe_id_missing` 4, `version_not_string` 4,
+  `receipt_asset_not_string` 2, and one each of `receipt_asset_without_digest`,
+  `digest_without_receipt_asset`, `receipt_asset_in_assets`, `recipe_id_on_migrated`,
+  `repo_name_empty`, `receipt_asset_empty`).
+- `stac_fields` at `e674cda` agrees on 87 of 142. The 55 it accepts and crate refuses:
+  `block_not_object` 17, `time_not_utc` 13, `receipt_version_unknown` 6,
+  `recipe_id_missing` 4, `version_not_string` 4, `receipt_asset_not_string` 2, and one each
+  of `digest_without_receipt_asset`, `receipt_asset_in_assets`, `recipe_id_on_migrated`,
+  `repo_name_empty`, `recipe_id_not_sha256`, `part_sha256_not_sha256`, `bytes_not_whole`,
+  `digest_not_sha256`, `receipt_asset_empty`. No accept case disagrees and nothing raised
+  outside `ReceiptError`.
+- The form schema (v1.0.0) already refuses a missing `context.time`, a null or missing
+  `recipe_id` on a receipt that was not migrated, and a `recipe_id` set on a migrated one.
+  It accepts month 13 in `context.time`.
+- crate's comparison: `register = receipt_register_version()` (`"1.0.0"`), and `overrides`,
+  the declared action of each field whose action the declaration changed, named by field and
+  sorted by name (radix); restating the register's own action is not an override
+  (`R/crt_receipt_compare.R` at `v0.16.0`). `receipt_mapping_version()` is `"1.1.0"`.
+- crate's `data-raw/receipt_vectors_crosscheck.py` is an independent Python reading of the
+  mapping's STAC rows; the processing extension is listed for every accepted receipt, since
+  `context.time` is required.
+- Out of scope, measured: `_DATE` (`^-?\d{4,}-\d{2}-\d{2}$` with `.match`) accepts
+  `"2026-01-01\n"`, so a table cell with a trailing newline is hashed.
+
+## Errors Encountered
+
+| Error | Resolution |
+|-------|------------|
