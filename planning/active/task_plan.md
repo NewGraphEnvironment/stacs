@@ -21,9 +21,11 @@ normalises them, never fetches; the audit checks presence), and the API's own `/
 `next` href (`verify.py:532`), which is the configured API's answer and goes through
 `requests`, which has no `file:` adapter. Other schemes urllib would open (`ftp:`,
 `data:`) never reach `urlopen`: `_read_url` sends everything but a `file://` prefix to
-`requests`, which refuses them. `urljoin` lowercases the scheme, so `FILE:///x` and
-`file:/x` both arrive at `_read_url` as `file:///x`. The check must therefore read the
-scheme with `urlsplit`, which lowercases it, and never compare string prefixes.
+`requests`, which refuses them. (Corrected after a probe: `urljoin` returns an absolute href
+with its own scheme as written, so `FILE:///x` and `file:/x` reach `_read_url` unchanged and
+go to `requests`; only a literal `file://` prefix was ever read.) The check reads the scheme
+with `urlsplit`, which lowercases it and strips leading whitespace and tabs, so it refuses a
+superset of what reaches `urlopen`.
 
 ## Decided at the gate
 
