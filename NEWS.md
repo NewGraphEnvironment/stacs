@@ -3,6 +3,17 @@
 Versions track the package. A tag is a release consumers can pin with
 `tag = "vX.Y.Z"` in `[tool.uv.sources]`; `pyproject.toml` carries the same version.
 
+## Unreleased
+
+- **Behaviour change:** an href a published body supplies is fetched only within the scheme
+  of the URL it is resolved against, by the new `catalogue.resolve_href`: http and https
+  mix, and `file://` is read only from a `file://` base. An item link in `collection.json`
+  that leaves the collection's scheme refuses `register` in every mode before anything is
+  fetched or written. A receipt href that leaves its item's scheme makes the item
+  `inconsistent` in `verify`. Before, an absolute `file:///...` href in a catalogue served
+  over https had a file on the machine running stacs read: a receipt was hashed and
+  reported on, and in `all` or `ids` an item was upserted and served by the API (#19).
+
 ## 0.5.0
 
 - **Behaviour change:** `receipt.item_verdict` holds the published item to its receipt in

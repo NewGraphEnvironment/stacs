@@ -10,4 +10,7 @@
   item-link site reverted to `urljoin` fails 3 tests (all/drift/verify), receipt site fails 1;
   restored, 5 pass. The `drift` case was red pre-fix for a harness reason (no transport),
   fixed in the test, and re-proved by the mutation.
-- Next: Phase 3 (NEWS, README check)
+- Phase 3: NEWS `## Unreleased` Behaviour change entry; README's refusal list and
+  "What it assumes" gain the rule (the README did describe item-link resolution).
+  `mkdocs build --strict` clean, tests/test_docs.py green.
+- Next: Plan review findings, `/code-check branch`, archive, PR

@@ -72,17 +72,17 @@ scheme with `urlsplit`, which lowercases it, and never compare string prefixes.
 
 ## Phase 3: Docs and release notes
 
-- [ ] `NEWS.md` `## Unreleased`: a **Behaviour change** entry (a `file://` item link or
+- [x] `NEWS.md` `## Unreleased`: a **Behaviour change** entry (a `file://` item link or
   receipt href under an http(s) collection is now refused; it is a minor bump per
   CLAUDE.md "Versioning").
-- [ ] Check whether the README's verify/receipt prose says how hrefs resolve; add one
+- [x] Check whether the README's verify/receipt prose says how hrefs resolve; add one
   sentence only if it describes resolution (keep the section markers intact).
-- [ ] `uv run pytest` green, and `uv run mkdocs build --strict` (no `-q`) if the README
+- [x] `uv run pytest` green, and `uv run mkdocs build --strict` (no `-q`) if the README
   changed.
 
 ## Validation
 
-- [ ] Tests pass (`uv run pytest`)
+- [x] Tests pass (`uv run pytest`)
 - [ ] `/code-check` clean (once over the branch with `/code-check branch`)
 - [ ] PWF checkboxes match landed work
 - [ ] `/planning-archive` on completion
