@@ -375,6 +375,17 @@ def test_paging_refuses_every_early_exit(payloads, match):
                          session=_ScriptedSession(*payloads))
 
 
+def test_a_numeric_paging_token_is_still_followed():
+    """Round 1. The sweep refused only to stop a token reaching the set unhashable; a number
+    was followed before and is followed now, so the fix changed nothing that worked."""
+    session = _ScriptedSession(
+        {"features": [{"id": "a"}], "links": [{"rel": "next", "body": {"token": 5}}]},
+        {"features": [{"id": "b"}], "links": []})
+    assert v.ids_registered("c", api="http://api.example.invalid", session=session) == \
+        ["a", "b"]
+    assert session.bodies[1]["token"] == 5
+
+
 class _ServingSession:
     """POST /search by ids within one collection, capped at `cap` per page."""
 

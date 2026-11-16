@@ -88,11 +88,12 @@ def _search_pages(session, api: str, body: dict):
             # The only NORMAL way out: the server says there is no more.
             return
         # Read through `isinstance`, not `or {}`: a truthy body that is not an object
-        # reached `.get`, and a token that is not a string reached the set below, and both
-        # raised something other than this function's RuntimeError (#17's sweep).
+        # reached `.get`, and an object or list token reached the set below unhashable, and
+        # both raised something other than this function's RuntimeError (#17's sweep). A
+        # number is still a token, as it was.
         next_body = nxt.get("body")
         token = next_body.get("token") if isinstance(next_body, dict) else None
-        if not isinstance(token, str) or not token:
+        if isinstance(token, (dict, list)) or not token:
             raise RuntimeError(
                 f"paging stopped early: 'next' link with no token after {n} items"
             )

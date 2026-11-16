@@ -1596,44 +1596,72 @@ def _inside(path):
     return path
 
 
-def _relative_href(href, item_url):
-    """`(path, absolute)`: an asset href as a path relative to the item's directory.
+# The ports a URL leaves out, so `https://h:443/x` and `https://h/x` are one origin.
+_DEFAULT_PORTS = {"http": 80, "https": 443}
 
-    `path` is None when the href names nothing inside that directory, and `absolute` says
-    whether that was only for want of the item's URL. The contract keys a part by the href
+
+def _origin(split):
+    """`(scheme, host, port)` of a split URL, the scheme's default port filled in.
+
+    Raises ValueError on a port that is out of range or not a number, which `urlsplit`
+    itself accepts. Userinfo is not part of it: it names who asks, not what is fetched.
+    """
+    scheme = split.scheme.lower()
+    port = split.port
+    return scheme, split.hostname or "", _DEFAULT_PORTS.get(scheme) if port is None else port
+
+
+def _relative_href(href, item_url):
+    """`(path, problem)`: an asset href as a path relative to the item's directory.
+
+    `path` is None when the href names nothing inside that directory. `problem` is
+    "malformed" for an href no URL parser reads (an unclosed IPv6 host, a port that is not
+    one), "absolute" when it was only for want of the item's URL, and None otherwise. The contract keys a part by the href
     relative to the item, and the same file is spelled many ways: `./x.tif`, `sub/../x.tif`,
     `x.tif#band`, or absolute, which is how many catalogues publish (#17).
 
     A fragment never names another file, so it is dropped. A query may select another
     representation, so an href with one names no part. Dot segments are removed AFTER the
     item's directory is stripped from a resolved URL, because `urljoin` leaves them in an
-    href that is already absolute. Scheme and host compare case-insensitively, as URLs do;
-    the path does not. Percent-encoding is not decoded: a part key is the path verbatim.
+    href that is already absolute. Two URLs share an origin when scheme, host and port agree,
+    case-insensitively and with the default port filled in; the path is compared as written.
+    Percent-encoding is not decoded: a part key is the path verbatim.
+
+    Never raises on a string: `urlsplit` raises ValueError on what it cannot read, and
+    `verify` reads published bodies with no audit in front of it, so one such href would end
+    the run naming no item (round 1).
     """
-    href = urllib.parse.urldefrag(href).url
-    split = urllib.parse.urlsplit(href)
+    try:
+        href = urllib.parse.urldefrag(href).url
+        split = urllib.parse.urlsplit(href)
+        _origin(split)          # a port that is not one fails here, with or without item_url
+    except ValueError:
+        return None, "malformed"
     # A relative href's query stays in its path, so it never equals a part key; a resolved
     # URL's is split off, and is refused below.
     absolute = bool(split.scheme or split.netloc or href.startswith("/"))
     if not absolute:
         path = _inside(href)
         if path is not None:
-            return path, False
+            return path, None
         # A relative href that climbs may come back in (`../c/x.tif`), which only the item's
         # URL can tell.
     if item_url is None:
-        return None, absolute
-    base = urllib.parse.urlsplit(urllib.parse.urljoin(item_url, "."))
-    full = urllib.parse.urlsplit(urllib.parse.urljoin(item_url, href))
-    if (full.scheme.lower(), full.netloc.lower()) != (base.scheme.lower(),
-                                                      base.netloc.lower()) or full.query:
-        return None, False
+        return None, "absolute" if absolute else None
+    try:
+        base = urllib.parse.urlsplit(urllib.parse.urljoin(item_url, "."))
+        full = urllib.parse.urlsplit(urllib.parse.urljoin(item_url, href))
+        same_origin = _origin(full) == _origin(base)
+    except ValueError:
+        return None, "malformed"
+    if not same_origin or full.query:
+        return None, None
     # Normalised before the prefix test, so `/c/../c/x.tif` is under `/c/`; the base path
     # ends in `/`, so `/cat/x.tif` is not under `/c/`.
     path = posixpath.normpath(full.path)
     if not path.startswith(base.path):
-        return None, False
-    return _inside(path[len(base.path):]), False
+        return None, None
+    return _inside(path[len(base.path):]), None
 
 
 def _part_key(href, parts, item_url):
@@ -1643,13 +1671,13 @@ def _part_key(href, parts, item_url):
     Otherwise the href and every part key are normalised the same way, and a match is taken
     only if it is the only one: two part keys spelling one file (`./x.tif`, `sub/../x.tif`)
     would otherwise be compared in whichever order the receipt listed them. `problem` is
-    "ambiguous", "absolute" (no item URL to resolve it against), or None.
+    "ambiguous", "malformed", "absolute" (no item URL to resolve it against), or None.
     """
     if href in parts:
         return href, None
-    path, absolute = _relative_href(href, item_url)
+    path, problem = _relative_href(href, item_url)
     if path is None:
-        return None, "absolute" if absolute else None
+        return None, problem
     hits = [k for k in parts if isinstance(k, str) and _inside(k) == path]
     if len(hits) > 1:
         return None, "ambiguous"
@@ -1712,6 +1740,13 @@ def item_verdict(published, served, receipt, receipt_sha256=None,
     if item_url is not None and not isinstance(item_url, str):
         raise ReceiptError(f"item_url is the published item's URL, got "
                            f"{type(item_url).__name__}")
+    if item_url is not None:
+        try:
+            _origin(urllib.parse.urlsplit(item_url))
+        except ValueError as e:
+            # A ReceiptError, which `verify` turns into this item's `inconsistent`; a
+            # ValueError would end the run (round 1).
+            raise ReceiptError(f"item_url {item_url!r} is not a URL: {e}") from None
     if not isinstance(receipt, dict):
         # The mapping refuses this as `block_not_object`, and so it is the same verdict as
         # every other receipt the mapping refuses. Without it, `receipt.get` below raised
@@ -1799,7 +1834,7 @@ def item_verdict(published, served, receipt, receipt_sha256=None,
                 disagree.append(f"assets[{key}].href")
             continue
         part, problem = _part_key(href, parts, item_url)
-        if problem == "ambiguous":
+        if problem in ("ambiguous", "malformed"):
             disagree.append(f"assets[{key}].href")
         elif problem == "absolute":
             notes.append(f"asset {key!r} has an absolute href and no item URL was given, so "

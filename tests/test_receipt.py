@@ -1469,10 +1469,13 @@ def _contradicting(**asset):
     ("/catalogue/c/x.tif", ITEM_URL),
     ("../c/x.tif", ITEM_URL),
     ("https://example.invalid/catalogue/c/../c/x.tif", ITEM_URL),
+    ("https://example.invalid:443/catalogue/c/x.tif", ITEM_URL),
+    ("https://someone@example.invalid/catalogue/c/x.tif", ITEM_URL),
 ], ids=["as the part key", "dot slash", "dot dot inside", "with a fragment", "absolute",
         "absolute, upper-case scheme and host", "absolute with dot segments",
         "network-path reference", "path-absolute", "climbs out and back in",
-        "absolute, out of the directory and back in"])
+        "absolute, out of the directory and back in", "the scheme's default port",
+        "with userinfo"])
 def test_an_href_that_names_a_part_is_compared_however_it_is_spelled(href, item_url):
     """The contract keys a part by the href relative to the item. Only that exact spelling
     used to be looked up, so a contradicting `file:checksum` read `same` behind `./x.tif`,
@@ -1489,6 +1492,8 @@ def test_an_href_that_names_a_part_is_compared_however_it_is_spelled(href, item_
     ("x.tif?version=2", ITEM_URL),
     ("https://example.invalid/catalogue/c/x.tif?version=2", ITEM_URL),
     ("https://example.invalid/catalogue/cat/x.tif", ITEM_URL),
+    ("https://example.invalid/catalogue/d/x.tif", ITEM_URL),
+    ("https://example.invalid:8443/catalogue/c/x.tif", ITEM_URL),
     ("https://elsewhere.invalid/catalogue/c/x.tif", ITEM_URL),
     ("http://example.invalid/catalogue/c/x.tif", ITEM_URL),
     ("../x.tif", None),
@@ -1496,6 +1501,7 @@ def test_an_href_that_names_a_part_is_compared_however_it_is_spelled(href, item_
     (".", None),
 ], ids=["another file", "with a query", "with a query, item URL given",
         "absolute with a query", "a sibling directory sharing a prefix",
+        "a sibling directory of the same length", "another port",
         "another host", "another scheme", "climbs, no item URL", "climbs out for good",
         "the directory itself"])
 def test_an_href_that_names_no_part_is_not_compared(href, item_url):
@@ -1568,3 +1574,46 @@ def test_an_href_spelled_as_a_part_key_is_still_taken_exactly():
 def test_an_item_url_that_is_not_a_string_is_refused(bad):
     with pytest.raises(r.ReceiptError, match="item_url"):
         r.item_verdict({}, {}, _parts_receipt(), item_url=bad)
+
+
+@pytest.mark.parametrize("href", ["http://[::1/x.tif", "https://[nothex]/x.tif",
+                                  "https://example.invalid:99999/catalogue/c/x.tif",
+                                  "https://example.invalid:port/catalogue/c/x.tif"],
+                         ids=["unclosed IPv6", "bad IPv6", "port out of range",
+                              "port not a number"])
+@pytest.mark.parametrize("item_url", [None, ITEM_URL])
+def test_an_href_that_is_not_a_url_is_a_disagreement_not_a_crash(href, item_url):
+    """Round 1. `urlsplit` raises `ValueError` on these, and `_receipt_verdicts` catches only
+    `ReceiptError`, so one such published item ended `verify` with "ERROR: Invalid IPv6 URL",
+    naming no item, losing every other item's verdict. An href nothing can parse names no
+    file the item can be checked against, like an href that is not a string."""
+    item = _contradicting(href=href)
+    got = r.item_verdict(item, item, _parts_receipt(), item_url=item_url)
+    assert got.verdict == "inconsistent", got
+    assert "assets[data].href" in got.fields, got.fields
+
+
+def test_an_item_url_that_is_not_a_url_is_refused_as_a_receipt_error():
+    """`verify` turns a `ReceiptError` into that item's `inconsistent`; a `ValueError` would end
+    the run."""
+    item = _contradicting(href="https://example.invalid/catalogue/c/x.tif")
+    with pytest.raises(r.ReceiptError, match="item_url"):
+        r.item_verdict(item, item, _parts_receipt(), item_url="http://[::1/a0.json")
+
+
+def test_a_resolution_that_fails_is_a_disagreement_not_a_crash(monkeypatch):
+    """The second parse in `_relative_href`, after `urljoin`. No input found reaches it once
+    the href and `item_url` have each parsed (about 9,000 fuzzed hrefs did not), so this pins
+    the catch itself: whatever `urljoin` raises as ValueError becomes "malformed", never an
+    exception out of `verify`."""
+    real = r.urllib.parse.urljoin
+
+    def failing(base, url, *a, **k):
+        if url != ".":
+            raise ValueError("unreadable once joined")
+        return real(base, url, *a, **k)
+
+    monkeypatch.setattr(r.urllib.parse, "urljoin", failing)
+    item = _contradicting(href="https://example.invalid/catalogue/c/x.tif")
+    got = r.item_verdict(item, item, _parts_receipt(), item_url=ITEM_URL)
+    assert got.verdict == "inconsistent" and "assets[data].href" in got.fields, got

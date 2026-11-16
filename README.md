@@ -229,7 +229,7 @@ An item disagrees with its receipt when a mirrored field it publishes differs fr
 the receipt maps to, or is one the receipt does not produce. A field it leaves out is not a
 disagreement. An asset is compared with the part its href names, relative to the item:
 `./x.tif` names part `x.tif`, and `verify` resolves an absolute href against the item's own
-URL.
+URL. Percent-encoding is not decoded, so a part key and an href must spell a name alike.
 
 A catalogue declares that it carries receipts with `require_receipt = true` under
 `[catalogue]`, or `--require-receipt`. `audit` then refuses an item whose receipt fields are
