@@ -87,7 +87,7 @@ superset of what reaches `urlopen`.
 - [x] Tests pass (`uv run pytest`)
 - [x] `/code-check` clean (once over the branch with `/code-check branch`)
 - [x] PWF checkboxes match landed work
-- [ ] `/planning-archive` on completion
+- [x] `/planning-archive` on completion
 
 How each change is proved:
 - the guard: unit tests per scheme case, plus a mutation run with `resolve_href`
