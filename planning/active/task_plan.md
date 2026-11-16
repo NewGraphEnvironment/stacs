@@ -95,23 +95,23 @@ run with a traceback.
 
 ## Phase 3: Match an asset href to a part (tests first)
 
-- [ ] Failing tests: `./x.tif`, `sub/../x.tif`, an absolute href under `item_url`, an
+- [x] Failing tests: `./x.tif`, `sub/../x.tif`, an absolute href under `item_url`, an
       absolute href with no `item_url` (expect a note and no silent agreement on the asset
       half), an asset with `file:*` and no href (expect a disagreement), and an href that
       leaves the item's directory (expect it to name no part).
-- [ ] Add a helper `_part_key(href, parts, item_url)`. It tries an exact key first, which
+- [x] Add a helper `_part_key(href, parts, item_url)`. It tries an exact key first, which
       keeps today's behaviour. Then it normalises a relative path with
       `posixpath.normpath` and refuses a path that climbs above the item's directory. Then,
       when `item_url` is given, it uses `urljoin` and strips the item's directory prefix.
       The matched key goes into `named`, so `stac_fields` stays the only producer.
-- [ ] (review) In the helper: drop a fragment; an href with a query names no part; strip the
+- [x] (review) In the helper: drop a fragment; an href with a query names no part; strip the
       prefix of `urljoin(item_url, ".")` and normpath and climb-check AFTER stripping; compare
       scheme and host case-insensitively; a climbing relative href falls through to item_url;
       "absolute" for the note covers a scheme, `//host` and `/path`; part keys are matched by
       the same normalisation, and two part keys that normalise to one make the asset a
       disagreement. An asset with `file:*` and no href, or href `""`, is a disagreement in
       the asset loop itself.
-- [ ] Add `item_verdict(..., item_url=None)`. `register._receipt_verdicts` passes
+- [x] Add `item_verdict(..., item_url=None)`. `register._receipt_verdicts` passes
       `by_id[item_id]`, the URL it already resolves the receipt href against
       (register.py:848). Add a test there with absolute hrefs.
 

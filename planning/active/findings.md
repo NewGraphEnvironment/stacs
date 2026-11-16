@@ -77,3 +77,5 @@ Hits in `src/stacs/`: receipt.py:1411 (`roles`), receipt.py:1445 (`stac_extensio
 
 | Error | Resolution |
 |-------|------------|
+| A mutant survived: relative-href query guard | Redundant (a relative query stays in the path, never equals a part key); removed. The resolved-URL query check is the real one, now tested with an absolute href |
+| A mutant survived: normpath before prefix strip | The dot-segment case resolved either way; added `.../c/../c/x.tif`, which only matches when normalised first |

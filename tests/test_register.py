@@ -2003,6 +2003,33 @@ def test_an_item_whose_roles_are_not_a_list_gets_a_verdict_and_the_run_goes_on(e
     assert r.rc == 1
 
 
+def test_an_absolute_asset_href_is_matched_to_its_part_against_the_items_own_url(env, api):
+    """Issue #17. A catalogue that publishes absolute hrefs had no asset naming a part, so the
+    asset half of the check compared nothing and a contradicting `file:checksum` read `same`.
+    `verify` passes each item's own URL, the one it resolves the receipt href against."""
+    doc = _receipt_doc()
+    doc["result"]["parts"] = {"a0.tif": {"sha256": "c" * 64, "bytes": 12}}
+    data, digest, rid = _receipt_bytes(env, doc)
+    item = _item_with_receipt("a0", digest, rid, data_checksum=CK_B)   # the part says CK_A
+    item["assets"]["data"]["href"] = (env / "bucket" / "a0.tif").as_uri()
+    r = _receipt_run(env, api, [item], [_edited(item)], data=data)
+    assert "1 inconsistent" in r.out, r.out
+    assert "assets[data].file:checksum" in r.err, r.err
+    assert r.rc == 1
+
+
+def test_an_absolute_asset_href_that_agrees_with_its_part_reads_same(env, api):
+    """The control: the match must not make good items inconsistent."""
+    doc = _receipt_doc()
+    doc["result"]["parts"] = {"a0.tif": {"sha256": "c" * 64, "bytes": 12}}
+    data, digest, rid = _receipt_bytes(env, doc)
+    item = _item_with_receipt("a0", digest, rid, data_checksum=CK_A)
+    item["assets"]["data"]["href"] = (env / "bucket" / "a0.tif").as_uri()
+    item["assets"]["data"]["file:size"] = 12
+    r = _receipt_run(env, api, [item], [_edited(item)], data=data)
+    assert "1 same" in r.out, r.out
+
+
 def test_an_item_that_links_no_receipt_is_refused_when_the_catalogue_declares_them(env, api):
     published = [_item("a0")]
     r = _receipt_run(env, api, published, [_edited(published[0])])

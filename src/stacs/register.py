@@ -894,9 +894,13 @@ def _receipt_verdicts(target, ids, by_id, fetch_dir, work, log) -> dict:
                     raise RegisterError(f"{item_id!r} differs from the API but the API no "
                                         f"longer serves it; re-run")
                 try:
+                    # `item_url` as for the receipt href above: an asset names a part by its
+                    # href relative to the item, so an absolute href is resolved against the
+                    # item's own URL, never the collection's (#17).
                     out[item_id] = receipt.item_verdict(
                         published[item_id], served[item_id], doc,
-                        receipt_sha256=hashlib.sha256(data).hexdigest())
+                        receipt_sha256=hashlib.sha256(data).hexdigest(),
+                        item_url=by_id[item_id])
                 except receipt.ReceiptError as e:
                     # INSIDE the guard. `item_verdict` raises on input `read` accepts: a
                     # NaN in a mirrored property (json.load takes those). A receipt the

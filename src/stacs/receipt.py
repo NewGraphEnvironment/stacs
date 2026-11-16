@@ -30,10 +30,12 @@ import hashlib
 import io
 import json
 import os
+import posixpath
 import re
 import stat
 import struct
 import tempfile
+import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -1574,6 +1576,74 @@ class ItemVerdict:
         return self.verdict == "same"
 
 
+def _inside(path):
+    """`path`, normalised, when it names a file inside the item's directory; else None."""
+    path = posixpath.normpath(path)
+    if path in (".", "..") or path.startswith(("../", "/")):
+        return None
+    return path
+
+
+def _relative_href(href, item_url):
+    """`(path, absolute)`: an asset href as a path relative to the item's directory.
+
+    `path` is None when the href names nothing inside that directory, and `absolute` says
+    whether that was only for want of the item's URL. The contract keys a part by the href
+    relative to the item, and the same file is spelled many ways: `./x.tif`, `sub/../x.tif`,
+    `x.tif#band`, or absolute, which is how many catalogues publish (#17).
+
+    A fragment never names another file, so it is dropped. A query may select another
+    representation, so an href with one names no part. Dot segments are removed AFTER the
+    item's directory is stripped from a resolved URL, because `urljoin` leaves them in an
+    href that is already absolute. Scheme and host compare case-insensitively, as URLs do;
+    the path does not. Percent-encoding is not decoded: a part key is the path verbatim.
+    """
+    href = urllib.parse.urldefrag(href).url
+    split = urllib.parse.urlsplit(href)
+    # A relative href's query stays in its path, so it never equals a part key; a resolved
+    # URL's is split off, and is refused below.
+    absolute = bool(split.scheme or split.netloc or href.startswith("/"))
+    if not absolute:
+        path = _inside(href)
+        if path is not None:
+            return path, False
+        # A relative href that climbs may come back in (`../c/x.tif`), which only the item's
+        # URL can tell.
+    if item_url is None:
+        return None, absolute
+    base = urllib.parse.urlsplit(urllib.parse.urljoin(item_url, "."))
+    full = urllib.parse.urlsplit(urllib.parse.urljoin(item_url, href))
+    if (full.scheme.lower(), full.netloc.lower()) != (base.scheme.lower(),
+                                                      base.netloc.lower()) or full.query:
+        return None, False
+    # Normalised before the prefix test, so `/c/../c/x.tif` is under `/c/`; the base path
+    # ends in `/`, so `/cat/x.tif` is not under `/c/`.
+    path = posixpath.normpath(full.path)
+    if not path.startswith(base.path):
+        return None, False
+    return _inside(path[len(base.path):]), False
+
+
+def _part_key(href, parts, item_url):
+    """`(key, problem)`: the part of `parts` an asset href names.
+
+    The exact spelling first, which is unambiguous and is what the mapping itself looks up.
+    Otherwise the href and every part key are normalised the same way, and a match is taken
+    only if it is the only one: two part keys spelling one file (`./x.tif`, `sub/../x.tif`)
+    would otherwise be compared in whichever order the receipt listed them. `problem` is
+    "ambiguous", "absolute" (no item URL to resolve it against), or None.
+    """
+    if href in parts:
+        return href, None
+    path, absolute = _relative_href(href, item_url)
+    if path is None:
+        return None, "absolute" if absolute else None
+    hits = [k for k in parts if isinstance(k, str) and _inside(k) == path]
+    if len(hits) > 1:
+        return None, "ambiguous"
+    return (hits[0] if hits else None), None
+
+
 def _mirrored(item) -> dict:
     """The mirrored identity fields of an item, flattened to one comparable mapping."""
     out = {}
@@ -1590,7 +1660,8 @@ def _mirrored(item) -> dict:
     return out
 
 
-def item_verdict(published, served, receipt, receipt_sha256=None) -> ItemVerdict:
+def item_verdict(published, served, receipt, receipt_sha256=None,
+                 item_url=None) -> ItemVerdict:
     """Compare an item's published and served bodies through the receipt it links.
 
     `receipt_sha256` is the digest of the receipt bytes as fetched. Given, it is checked
@@ -1606,6 +1677,12 @@ def item_verdict(published, served, receipt, receipt_sha256=None) -> ItemVerdict
     is held to the receipt, because it is the published item's receipt; a served item that
     names another recipe reads `changed`.
 
+    `item_url` is the published item's own URL. An asset names a part by its href relative
+    to the item, so an absolute href is made relative against it; without it, an absolute
+    href is matched to no part and the notes say so. A relative href is normalised either way
+    (`./x.tif` names part `x.tif`). An asset that carries `file:checksum` or `file:size` and
+    no href claims a file it does not name, and is a disagreement.
+
     Examples:
         >>> item = {"properties": {"receipt:recipe_id": "a" * 64}}
         >>> r = {"output": {"receipt_version": "1.0.0"}, "recipe": {"recipe_id": "a" * 64},
@@ -1620,6 +1697,9 @@ def item_verdict(published, served, receipt, receipt_sha256=None) -> ItemVerdict
         if not isinstance(doc, dict):
             raise ReceiptError(f"the {name} item is not a JSON object, got "
                                f"{type(doc).__name__}")
+    if item_url is not None and not isinstance(item_url, str):
+        raise ReceiptError(f"item_url is the published item's URL, got "
+                           f"{type(item_url).__name__}")
     if not isinstance(receipt, dict):
         # The mapping refuses this as `block_not_object`, and so it is the same verdict as
         # every other receipt the mapping refuses. Without it, `receipt.get` below raised
@@ -1699,8 +1779,21 @@ def item_verdict(published, served, receipt, receipt_sha256=None) -> ItemVerdict
             # with no audit in front of it on the verify path, and one malformed item must
             # not end the run with a traceback (round 2b).
             disagree.append(f"assets[{key}].href")
-        elif href in parts:
-            named[key] = href
+            continue
+        if not href:
+            # No file named, so a digest or a size it carries is a claim about nothing that
+            # can be checked; it used to be skipped and read `same` (#17).
+            if any(f in asset for f in _RESULT_ASSET_FIELDS):
+                disagree.append(f"assets[{key}].href")
+            continue
+        part, problem = _part_key(href, parts, item_url)
+        if problem == "ambiguous":
+            disagree.append(f"assets[{key}].href")
+        elif problem == "absolute":
+            notes.append(f"asset {key!r} has an absolute href and no item URL was given, so "
+                         f"it could not be matched to a part and was not compared")
+        elif part is not None:
+            named[key] = part
         # Otherwise not an output this receipt describes: an overview, a thumbnail, or the
         # receipt itself, whose own digest is checked above. Nothing to compare it with.
     try:

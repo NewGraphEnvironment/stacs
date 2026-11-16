@@ -1192,12 +1192,10 @@ def test_an_asset_href_that_is_not_a_string_is_not_used_as_a_dict_key(href):
     item = {"properties": {"receipt:recipe_id": "a" * 64},
             "assets": {"data": {"href": href, "file:checksum": r.multihash("b" * 64)}}}
     got = r.item_verdict(item, item, rec)
-    if href is None:
-        # An asset with no href names no part; nothing to compare it with.
-        assert got.verdict == "same", got
-    else:
-        assert got.verdict == "inconsistent", got
-        assert "assets[data].href" in got.fields, got.fields
+    # A null href used to read `same` here ("names no part"). Since #17 an asset that carries
+    # a file field and names no file is a disagreement, so all four cases now agree.
+    assert got.verdict == "inconsistent", got
+    assert "assets[data].href" in got.fields, got.fields
 
 
 @pytest.mark.parametrize("href", [["x.tif"], {"a": 1}, 7])
@@ -1438,3 +1436,135 @@ def test_an_empty_software_map_over_a_receipt_with_none_is_inconsistent():
     got = r.item_verdict(item, item, _versionless())
     assert got.verdict == "inconsistent", got
     assert "properties.processing:software" in got.fields, got.fields
+
+
+# =============================================================================
+# Issue #17: an asset href is matched to a part however it is spelled
+# =============================================================================
+
+ITEM_URL = "https://example.invalid/catalogue/c/a0.json"
+
+
+def _parts_receipt(parts=None):
+    return {"output": _form(), "recipe": {"recipe_id": "a" * 64}, "context": _when(),
+            "result": {"parts": parts if parts is not None
+                       else {"x.tif": {"sha256": "b" * 64, "bytes": 12}}}}
+
+
+def _contradicting(**asset):
+    """An item whose `data` asset contradicts part `x.tif`'s digest, if it is matched."""
+    return {"properties": {"receipt:recipe_id": "a" * 64},
+            "assets": {"data": {"file:checksum": r.multihash("f" * 64), **asset}}}
+
+
+@pytest.mark.parametrize("href,item_url", [
+    ("x.tif", None),
+    ("./x.tif", None),
+    ("sub/../x.tif", None),
+    ("x.tif#band1", None),
+    ("https://example.invalid/catalogue/c/x.tif", ITEM_URL),
+    ("HTTPS://EXAMPLE.INVALID/catalogue/c/x.tif", ITEM_URL),
+    ("https://example.invalid/catalogue/c/sub/../x.tif", ITEM_URL),
+    ("//example.invalid/catalogue/c/x.tif", ITEM_URL),
+    ("/catalogue/c/x.tif", ITEM_URL),
+    ("../c/x.tif", ITEM_URL),
+    ("https://example.invalid/catalogue/c/../c/x.tif", ITEM_URL),
+], ids=["as the part key", "dot slash", "dot dot inside", "with a fragment", "absolute",
+        "absolute, upper-case scheme and host", "absolute with dot segments",
+        "network-path reference", "path-absolute", "climbs out and back in",
+        "absolute, out of the directory and back in"])
+def test_an_href_that_names_a_part_is_compared_however_it_is_spelled(href, item_url):
+    """The contract keys a part by the href relative to the item. Only that exact spelling
+    used to be looked up, so a contradicting `file:checksum` read `same` behind `./x.tif`,
+    and a catalogue publishing absolute hrefs compared nothing at all."""
+    item = _contradicting(href=href)
+    got = r.item_verdict(item, item, _parts_receipt(), item_url=item_url)
+    assert got.verdict == "inconsistent", got
+    assert "assets[data].file:checksum" in got.fields, got.fields
+
+
+@pytest.mark.parametrize("href,item_url", [
+    ("t.png", ITEM_URL),
+    ("x.tif?version=2", None),
+    ("x.tif?version=2", ITEM_URL),
+    ("https://example.invalid/catalogue/c/x.tif?version=2", ITEM_URL),
+    ("https://example.invalid/catalogue/cat/x.tif", ITEM_URL),
+    ("https://elsewhere.invalid/catalogue/c/x.tif", ITEM_URL),
+    ("http://example.invalid/catalogue/c/x.tif", ITEM_URL),
+    ("../x.tif", None),
+    ("../x.tif", ITEM_URL),
+    (".", None),
+], ids=["another file", "with a query", "with a query, item URL given",
+        "absolute with a query", "a sibling directory sharing a prefix",
+        "another host", "another scheme", "climbs, no item URL", "climbs out for good",
+        "the directory itself"])
+def test_an_href_that_names_no_part_is_not_compared(href, item_url):
+    """An overview, a thumbnail, or a file outside the item's directory: not a part, so there
+    is nothing to compare it with, as before. A query may select another representation, so
+    it is never read as the part."""
+    item = _contradicting(href=href)
+    got = r.item_verdict(item, item, _parts_receipt(), item_url=item_url)
+    assert got.verdict == "same", got
+
+
+@pytest.mark.parametrize("href", ["https://example.invalid/catalogue/c/x.tif",
+                                  "//example.invalid/catalogue/c/x.tif", "/catalogue/c/x.tif"])
+def test_an_absolute_href_with_no_item_url_says_it_compared_nothing(href):
+    """With no item URL an absolute href cannot be made relative, so the asset half compares
+    nothing for that asset -- said in the notes, never a silent `same`."""
+    item = _contradicting(href=href)
+    got = r.item_verdict(item, item, _parts_receipt())
+    assert got.verdict == "same", got
+    assert any("absolute" in n and "data" in n for n in got.notes), got.notes
+
+
+@pytest.mark.parametrize("asset", [{}, {"href": ""}, {"href": None}],
+                         ids=["no href", "empty href", "null href"])
+def test_an_asset_with_file_fields_and_no_href_is_a_disagreement(asset):
+    """It claims a file's digest and names no file, so the claim cannot be checked against
+    anything; it used to be skipped and read `same`."""
+    item = _contradicting(**asset)
+    got = r.item_verdict(item, item, _parts_receipt())
+    assert got.verdict == "inconsistent", got
+    assert "assets[data].href" in got.fields, got.fields
+
+
+def test_an_asset_with_no_href_and_no_file_fields_is_not_compared():
+    item = {"properties": {"receipt:recipe_id": "a" * 64}, "assets": {"data": {"roles": []}}}
+    assert r.item_verdict(item, item, _parts_receipt()).verdict == "same"
+
+
+def test_a_part_key_is_matched_by_the_same_normalisation():
+    """A builder that keyed a part `./x.tif` is matched by an item whose href is `x.tif`."""
+    rec = _parts_receipt({"./x.tif": {"sha256": "b" * 64, "bytes": 12}})
+    item = _contradicting(href="x.tif")
+    got = r.item_verdict(item, item, rec)
+    assert got.verdict == "inconsistent" and "assets[data].file:checksum" in got.fields, got
+
+
+def test_two_part_keys_for_one_file_make_the_asset_a_disagreement_not_a_guess():
+    """`./x.tif` and `sub/../x.tif` both name `x.tif`, with different digests. Taking the
+    first would compare the item with whichever the receipt happened to list first."""
+    rec = _parts_receipt({"./x.tif": {"sha256": "b" * 64, "bytes": 12},
+                          "sub/../x.tif": {"sha256": "c" * 64, "bytes": 13}})
+    item = {"properties": {"receipt:recipe_id": "a" * 64},
+            "assets": {"data": {"href": "https://example.invalid/catalogue/c/x.tif",
+                                "file:checksum": r.multihash("b" * 64)}}}
+    got = r.item_verdict(item, item, rec, item_url=ITEM_URL)
+    assert got.verdict == "inconsistent", got
+    assert "assets[data].href" in got.fields, got.fields
+
+
+def test_an_href_spelled_as_a_part_key_is_still_taken_exactly():
+    """The exact spelling is unambiguous, so it wins over any normalised match, as before."""
+    rec = _parts_receipt({"x.tif": {"sha256": "b" * 64, "bytes": 12},
+                          "./x.tif": {"sha256": "c" * 64, "bytes": 13}})
+    item = {"properties": {"receipt:recipe_id": "a" * 64},
+            "assets": {"data": {"href": "x.tif", "file:checksum": r.multihash("b" * 64)}}}
+    assert r.item_verdict(item, item, rec).verdict == "same"
+
+
+@pytest.mark.parametrize("bad", [7, b"https://example.invalid/", ["u"]])
+def test_an_item_url_that_is_not_a_string_is_refused(bad):
+    with pytest.raises(r.ReceiptError, match="item_url"):
+        r.item_verdict({}, {}, _parts_receipt(), item_url=bad)
