@@ -1,9 +1,11 @@
 # Matching an asset href to a receipt part
 
-**Verified:** 2026-11-16 on CPython 3.12.13 (`requires-python >= 3.11`) · **Issues:** #17
-(found), #19 (spawned) · **Produced by:** probes run during #17's code review, recorded in
+**Verified:** 2026-11-16 on CPython 3.12.13 (`requires-python >= 3.11`); the fetch section
+on 3.12.14 · **Issues:** #17 (found), #19 (spawned, then settled the fetch section) ·
+**Produced by:** probes run during #17's code review, recorded in
 `planning/archive/2026-11-issue-17-item-receipt-checks/`, and the RFC 3986 reference sweeps
-in `tests/test_receipt.py` (`_rfc3986_remove_dot_segments`).
+in `tests/test_receipt.py` (`_rfc3986_remove_dot_segments`); the fetch section from #19's
+probes and review rounds, in `planning/archive/2026-11-issue-19-href-scheme-family/`.
 
 crate's mapping keys a part by the asset's href **relative to the item**. Published items
 spell one file many ways, so `receipt.item_verdict` normalises the href and every part key
@@ -47,6 +49,30 @@ every rooted path of up to four segments, and the other every relative href of u
 segments resolved under an item URL. During review a third sweep ran outside the suite:
 7,774 absolute, network-path and path-absolute hrefs, with no disagreement.
 
+## Which hrefs `stacs` fetches (#19)
+
+Two hrefs a published body supplies are fetched: an item link, resolved against the
+collection's URL, and a receipt href, resolved against the item's. Both go through
+`catalogue.resolve_href`, which refuses a result outside the base's scheme family: http and
+https are one family, and `file` is read only from a `file` base. Hosts are not compared,
+by the owner's choice, so an https item may still link an internal http host. Asset hrefs
+are only compared, never fetched.
+
+| call | input | output | why it matters |
+|---|---|---|---|
+| `urljoin` | base `https://h/a.json`, href `FILE:///x`, `file:/x`, ` file:///x` | the href, as written | an absolute href with its own scheme is not lowercased or rewritten, so a guard comparing string prefixes sees what `urljoin` returned, not a canonical form |
+| `urlsplit(...).scheme` | each of the above, and `fi\tle:///x` | `file` | lowercased, with tabs deleted and a leading space stripped, so the guard reads the scheme here |
+| `urlsplit(...).scheme` | ` file:///x` on CPython 3.9.6 | `''` | before the CVE-2023-24329 fix a leading space was not stripped, and the href resolves as a relative https path: harmless, but the unit test's row assumes a fixed interpreter (CI runs the latest 3.11 and 3.12) |
+| `requests.Session().get_adapter` | `file:///x` | `InvalidSchema` | `_read_url` opens only a literal `file://` prefix with urllib, and everything else goes to requests, so a redirect or an unguarded http href cannot reach a local file while the session has no other adapter |
+
+Before #19, only a literal lowercase `file://` prefix was read (`file://localhost/` included).
+It was read in every mode that fetched the item, upserted by `all`, `drift` or an `ids` run
+naming it, and hashed and reported on by `verify` for a receipt.
+
 ## Not covered
 
-- A receipt href that reaches another scheme, `file://` included, is still fetched (#19).
+- `stacs validate` runs pystac's schema validation, which fetches each `stac_extensions`
+  URI in an item it is given, and opens a scheme-less one as a local path. It reads only
+  items the operator passes in, never a published body.
+- The API's own `/collections` `next` href is followed through requests, unguarded: it is
+  the configured API's answer, and requests has no `file:` adapter.
