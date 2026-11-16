@@ -54,4 +54,4 @@ is now RFC 3986 done by hand. The durable version is
 `planning/archive/2026-11-issue-17-item-receipt-checks/review-*.md`: the plan review and
 the four code-check rounds, each with its checklist record and findings.
 
-Closed by: PR (see `git log --grep "#17"`)
+Closed by: the PR for #17.
