@@ -2259,9 +2259,10 @@ def test_a_receipt_href_to_a_local_file_is_never_read_from_an_http_catalogue(
     assert r.rc == 1
 
 
-@pytest.mark.parametrize("mode", ["all", "drift", "verify"])
+@pytest.mark.parametrize("mode, dryrun", [("all", False), ("ids", False), ("drift", False),
+                                          ("verify", False), ("all", True)])
 def test_an_item_link_to_a_local_file_refuses_an_http_catalogue(
-        env, api, http_bucket, reads, mode):
+        env, api, http_bucket, reads, mode, dryrun):
     """Issue #19, the larger site: a collection served over http linking an item as
     `file:///...` had that file read in every mode, and in `all` upserted -- a local file
     served by the API. Refused before any item is fetched or anything is written."""
@@ -2278,19 +2279,27 @@ def test_an_item_link_to_a_local_file_refuses_an_http_catalogue(
                               "type": "application/json"})
         path.write_text(json.dumps(coll))
 
+    # `ids` names an item the link list holds legitimately: the whole run is refused all the
+    # same, since a link list carrying a local file is not one to read from. A dryrun is
+    # refused too, before it probes the host.
+    ids = None
+    if mode == "ids":
+        ids = env / "ids.txt"
+        ids.write_text("a0\n")
     _in_sync(api, items)
     r = _run(env, mode, api.url, items=items, before=before, bucket_url=http_bucket,
-             transport=None if mode == "verify" else True)
+             transport=None if mode == "verify" else True, ids_file=ids, dryrun=dryrun)
     assert r.rc != 0, r.all
     assert "Traceback" not in r.err, r.err
     assert "scheme" in r.err and local.as_uri() in r.err, r.err
-    assert r.writes == 0 and r.loads == [], (r.writes, r.loads)
+    assert r.writes == 0 and r.loads == [] and r.probes == 0, (r.writes, r.loads, r.probes)
     assert not [u for u in reads if u.startswith("file")], reads
 
 
-def test_an_http_catalogue_with_relative_links_still_registers(env, api, http_bucket):
-    """The guard's other side: a catalogue served over http, linking its items and receipts
-    relative to itself, is read exactly as before."""
+def test_an_http_catalogue_with_relative_item_links_still_verifies(env, api, http_bucket):
+    """The guard's other side: a catalogue served over http, linking its items relative to
+    itself, is read exactly as before. (A relative receipt over http is item `a1` in the
+    receipt test above.)"""
     items = _items(2)
     _in_sync(api, items)
     r = _run(env, "verify", api.url, items=items, transport=None,

@@ -13,4 +13,10 @@
 - Phase 3: NEWS `## Unreleased` Behaviour change entry; README's refusal list and
   "What it assumes" gain the rule (the README did describe item-link resolution).
   `mkdocs build --strict` clean, tests/test_docs.py green.
-- Next: Plan review findings, `/code-check branch`, archive, PR
+- Plan review (review-plan.md): no blocker; gaps folded in — `ids` and `dryrun` refusal
+  cases, README reflow, test renamed to what it checks, `_read_url` comment names the
+  requests-has-no-file-adapter assumption; plan's urljoin claim corrected.
+- Code-check round 1 (review-round1.md): no code defect; README/NEWS overclaimed the receipt
+  verdict (the axis runs only under `require_receipt`, on items in `changed`) — reworded.
+  Mutation: item-link site reverted fails all 5 refusal cases incl. `ids` and dryrun.
+- Next: code-check round 2

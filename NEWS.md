@@ -10,7 +10,8 @@ Versions track the package. A tag is a release consumers can pin with
   mix, and `file://` is read only from a `file://` base. An item link in `collection.json`
   that leaves the collection's scheme refuses `register` in every mode before anything is
   fetched or written. A receipt href that leaves its item's scheme makes the item
-  `inconsistent` in `verify`. Before, an absolute `file:///...` href in a catalogue served
+  `inconsistent` where `verify` reads receipts (under `require_receipt`, for an item whose
+  published and served bodies differ). Before, an absolute `file:///...` href in a catalogue served
   over https had a file on the machine running stacs read: a receipt was hashed and
   reported on, and in `all` or `ids` an item was upserted and served by the API (#19).
 

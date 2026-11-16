@@ -153,7 +153,9 @@ def _read_url(url: str, timeout: int) -> bytes:
     if url.startswith("file://"):
         # Tests publish a file:// bucket. urllib reads it without any network, so
         # there is one code path rather than a test branch. An href a published body
-        # supplies reaches here only from a file:// base (`resolve_href`, #19).
+        # supplies reaches here only from a file:// base (`resolve_href`, #19). Every
+        # other URL goes to requests, which has no file: adapter, so a redirect cannot
+        # reach a local file either; an adapter added to the session would change that.
         with urllib.request.urlopen(url, timeout=timeout) as fh:
             return fh.read()
     # One Session per worker thread: a shared one caps at 10 pooled connections per
