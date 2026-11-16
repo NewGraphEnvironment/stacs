@@ -3,7 +3,7 @@
 Versions track the package. A tag is a release consumers can pin with
 `tag = "vX.Y.Z"` in `[tool.uv.sources]`; `pyproject.toml` carries the same version.
 
-## Unreleased
+## 0.6.0
 
 - **Behaviour change:** an href a published body supplies is fetched only within the scheme
   of the URL it is resolved against, by the new `catalogue.resolve_href`: http and https
