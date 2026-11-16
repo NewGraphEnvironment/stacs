@@ -39,12 +39,12 @@ scheme with `urlsplit`, which lowercases it, and never compare string prefixes.
 
 ## Phase 1: Tests first (fail before the fix)
 
-- [ ] `tests/test_catalogue.py`: unit tests for a new `catalogue.resolve_href(base, href)`:
+- [x] `tests/test_catalogue.py`: unit tests for a new `catalogue.resolve_href(base, href)`:
   relative and absolute same-family hrefs resolve; http↔https mix allowed; `file:///x`,
   `FILE:///x`, `file:/x` from an https base refused; `ftp://`, `data:` refused; `file`
   from a `file` base allowed; an `https` href from a `file` base refused; an unparseable
   href still raises `ValueError`.
-- [ ] `tests/test_register.py`: run-level tests with the bucket served over loopback http
+- [x] `tests/test_register.py`: run-level tests with the bucket served over loopback http
   (reuse the shape of `test_catalogue.py`'s `http_bucket` fixture, adapted for `_run`):
   - an item whose receipt href is an absolute `file://` URL to a real local receipt file
     that would otherwise read `same` is `inconsistent`, its note says why, the run goes on

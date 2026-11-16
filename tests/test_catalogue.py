@@ -403,3 +403,54 @@ def test_an_interrupted_fetch_returns_without_waiting_for_fetches_in_flight(
         release.set()
         signal.signal(signal.SIGINT, previous)
     assert len(calls) < 20, f"{len(calls)} of {len(urls)} fetched after the interrupt"
+
+
+# =============================================================================
+# resolve_href -- an href a published body supplies stays in its base's scheme family
+# =============================================================================
+
+ITEM = f"{BASE}/items/a.json"
+FILE_ITEM = "file:///tmp/bucket.invalid/items/a.json"
+
+
+@pytest.mark.parametrize("base, href, want", [
+    (ITEM, "a_receipt.json", f"{BASE}/items/a_receipt.json"),
+    (ITEM, "../receipts/a.json", f"{BASE}/receipts/a.json"),
+    (ITEM, "https://other.example.invalid/a.json", "https://other.example.invalid/a.json"),
+    (ITEM, "http://other.example.invalid/a.json", "http://other.example.invalid/a.json"),
+    (ITEM, "HTTPS://other.example.invalid/a.json", "https://other.example.invalid/a.json"),
+    (ITEM, "//other.example.invalid/a.json", "https://other.example.invalid/a.json"),
+    ("http://bucket.example.invalid/a.json", "https://x.example.invalid/b.json",
+     "https://x.example.invalid/b.json"),
+    (FILE_ITEM, "a_receipt.json", "file:///tmp/bucket.invalid/items/a_receipt.json"),
+    (FILE_ITEM, "file:///tmp/other.invalid/a.json", "file:///tmp/other.invalid/a.json"),
+])
+def test_resolve_href_keeps_an_href_in_its_bases_scheme_family(base, href, want):
+    assert c.resolve_href(base, href) == want
+
+
+@pytest.mark.parametrize("base, href", [
+    # Issue #19: an item served over http(s) naming a local file.
+    (ITEM, "file:///etc/stacs.invalid.json"),
+    (ITEM, "FILE:///etc/stacs.invalid.json"),        # urljoin keeps an absolute href's case
+    (ITEM, "file:/etc/stacs.invalid.json"),
+    (ITEM, "file://localhost/etc/stacs.invalid.json"),
+    (ITEM, " file:///etc/stacs.invalid.json"),       # urlsplit strips what a parser would
+    (ITEM, "\tfile:///etc/stacs.invalid.json"),
+    (ITEM, "fi\tle:///etc/stacs.invalid.json"),
+    # Schemes no catalogue is served over.
+    (ITEM, "ftp://other.example.invalid/a.json"),
+    (ITEM, "data:application/json,{}"),
+    # The other direction: a local catalogue does not reach the network.
+    (FILE_ITEM, "https://other.example.invalid/a.json"),
+    # A base no fetch reads.
+    ("s3://bucket.invalid/a.json", "b.json"),
+])
+def test_resolve_href_refuses_an_href_that_leaves_its_bases_scheme_family(base, href):
+    with pytest.raises(ValueError, match="scheme"):
+        c.resolve_href(base, href)
+
+
+def test_resolve_href_still_refuses_an_href_no_parser_reads():
+    with pytest.raises(ValueError):
+        c.resolve_href(ITEM, "https://[bad/a.json")

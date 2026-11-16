@@ -21,8 +21,14 @@ Narrow, and it was there before #17: the content is not echoed, and only a JSON 
   `/collections` `next` href (`verify.py:532`) is the configured API's, through `requests`.
 - `_read_url` (`catalogue.py:112`) opens only a `file://` prefix with urllib; every other
   scheme goes to `requests`, which has no adapter for `ftp:`/`data:`/`file:`.
-- `urljoin` lowercases the scheme and adds `//` for `file:/x`, so the check reads
-  `urlsplit(...).scheme`, never a string prefix.
+- **Correction to the plan's Context (probed 2026-11-16):** `urljoin` does NOT lowercase or
+  rewrite an absolute href with its own scheme: `FILE:///x`, `file:/x`, ` file:///x` and
+  `fi\tle:///x` come back as written. `_read_url`'s `startswith("file://")` misses them and
+  sends them to `requests`, which has no adapter, so none is a bypass today. `urlsplit`
+  lowercases the scheme and strips leading whitespace and tabs, so a guard on
+  `urlsplit(...).scheme` refuses all of them, stricter than `_read_url` needs.
+- Reproduced red before the fix: the receipt case reads `2 rebuilt` (the local file was
+  read and agreed), and `all` with a `file://` item link upserted the local item `a9`.
 
 ## Errors Encountered
 
