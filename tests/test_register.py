@@ -2280,7 +2280,7 @@ def test_an_item_link_to_a_local_file_refuses_an_http_catalogue(
 
     _in_sync(api, items)
     r = _run(env, mode, api.url, items=items, before=before, bucket_url=http_bucket,
-             transport=True if mode == "all" else None)
+             transport=None if mode == "verify" else True)
     assert r.rc != 0, r.all
     assert "Traceback" not in r.err, r.err
     assert "scheme" in r.err and local.as_uri() in r.err, r.err

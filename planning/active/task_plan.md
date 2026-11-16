@@ -54,20 +54,20 @@ scheme with `urlsplit`, which lowercases it, and never compare string prefixes.
   - a collection link to a `file://` item in an http-served collection refuses the
     run in `all` (nothing upserted, `r.writes == 0`), `verify` and `drift`, naming the href
   - the existing file:// bucket tests stay green (file from file is allowed)
-- [ ] Mutation check: each test fails with the guard removed at its call site.
+- [x] Mutation check: each test fails with the guard removed at its call site.
 
 ## Phase 2: The guard
 
-- [ ] `src/stacs/catalogue.py`: add `resolve_href(base, href)`, which does `urljoin`
+- [x] `src/stacs/catalogue.py`: add `resolve_href(base, href)`, which does `urljoin`
   and raises `ValueError` when `urlsplit(result).scheme` is outside the base's family. Add a
   docstring with doctest examples (fake hosts, `example.invalid`).
-- [ ] `src/stacs/register.py:561`: resolve item links through it, and turn a
+- [x] `src/stacs/register.py:561`: resolve item links through it, and turn a
   `ValueError` into a `RegisterError` naming the item and href.
-- [ ] `src/stacs/register.py:860`: resolve the receipt href through it. The existing
+- [x] `src/stacs/register.py:860`: resolve the receipt href through it. The existing
   `except ValueError` stays, with its message reworded so it covers both "not a URL" and
   "leaves the scheme the item is served over". The existing non-URL test's `"not a URL"`
   assertion stays true.
-- [ ] Update the comment at `catalogue.py:113` to say a `file://` URL is reached only from
+- [x] Update the comment at `catalogue.py:113` to say a `file://` URL is reached only from
   a `file://` base.
 
 ## Phase 3: Docs and release notes

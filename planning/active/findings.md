@@ -34,3 +34,4 @@ Narrow, and it was there before #17: the content is not echoed, and only a JSON 
 
 | Error | Resolution |
 |-------|------------|
+| `drift` refusal test red with "no transport is configured" | `drift` writes; the test gives it a transport. Its pre-fix red had been the harness, so the mutation check re-proved it |

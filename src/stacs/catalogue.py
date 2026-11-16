@@ -11,6 +11,7 @@ import os
 import sys
 import threading
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -106,13 +107,53 @@ def fetch_key(url: str) -> str:
     return hashlib.md5(url.encode()).hexdigest()
 
 
+_SCHEME_FAMILY = {"http": "web", "https": "web", "file": "file"}
+
+
+def resolve_href(base: str, href: str) -> str:
+    """`href` resolved against `base`, refused when it leaves `base`'s scheme family.
+
+    For an href a published body supplies: an item link against its collection, a
+    receipt against its item. An absolute href replaces the base, so without this an item
+    served over https could name `file:///...` and have a file on the machine running
+    stacs read, hashed and reported on (#19). http and https are one family; `file` is
+    read only from a `file` base, which is how a catalogue on disk (the tests') is served.
+    Hosts are not compared: a catalogue may link items or receipts on another host.
+
+    The scheme is read with `urlsplit`, which lowercases it and strips what a parser would
+    (a leading space, a tab), so `FILE:///x` and ` file:///x` are refused like `file:///x`.
+    Raises ValueError, as `urljoin` already does on an href no parser reads.
+
+    Examples:
+        >>> item = "https://bucket.example.invalid/items/a.json"
+        >>> resolve_href(item, "a_receipt.json")
+        'https://bucket.example.invalid/items/a_receipt.json'
+        >>> resolve_href(item, "http://other.example.invalid/a_receipt.json")
+        'http://other.example.invalid/a_receipt.json'
+        >>> resolve_href(item, "file:///etc/a_receipt.json")
+        Traceback (most recent call last):
+        ...
+        ValueError: 'file:///etc/a_receipt.json' leaves the scheme of https://bucket.example.invalid/items/a.json: it resolves to file scheme, and an href is read only within http/https, or file from file
+    """
+    url = urllib.parse.urljoin(base, href)
+    base_scheme = urllib.parse.urlsplit(base).scheme
+    scheme = urllib.parse.urlsplit(url).scheme
+    family = _SCHEME_FAMILY.get(base_scheme)
+    if family is None or _SCHEME_FAMILY.get(scheme) != family:
+        raise ValueError(f"{href!r} leaves the scheme of {base}: it resolves to "
+                         f"{scheme or 'no'} scheme, and an href is read only within "
+                         f"http/https, or file from file")
+    return url
+
+
 _local = threading.local()
 
 
 def _read_url(url: str, timeout: int) -> bytes:
     if url.startswith("file://"):
         # Tests publish a file:// bucket. urllib reads it without any network, so
-        # there is one code path rather than a test branch.
+        # there is one code path rather than a test branch. An href a published body
+        # supplies reaches here only from a file:// base (`resolve_href`, #19).
         with urllib.request.urlopen(url, timeout=timeout) as fh:
             return fh.read()
     # One Session per worker thread: a shared one caps at 10 pooled connections per

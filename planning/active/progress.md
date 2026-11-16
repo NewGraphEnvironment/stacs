@@ -5,4 +5,9 @@
 - Plan-mode exploration — phases approved by user (rule: scheme family, owner's choice)
 - Created branch `19-verify-follows-a-published-item-s-receip` off origin/main
 - Scaffolded PWF baseline from issue #19 with approved phases
-- Next: start Phase 1
+- Phase 1: tests red for the defect (receipt read as `rebuilt`; `all` upserted a local item)
+- Phase 2: `catalogue.resolve_href`, used at both sites. Mutation check in a scratch copy:
+  item-link site reverted to `urljoin` fails 3 tests (all/drift/verify), receipt site fails 1;
+  restored, 5 pass. The `drift` case was red pre-fix for a harness reason (no transport),
+  fixed in the test, and re-proved by the mutation.
+- Next: Phase 3 (NEWS, README check)
