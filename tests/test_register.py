@@ -2030,6 +2030,24 @@ def test_an_absolute_asset_href_that_agrees_with_its_part_reads_same(env, api):
     assert "1 same" in r.out, r.out
 
 
+def test_an_item_from_a_migrated_receipt_is_inconsistent_as_the_audit_says(env, api):
+    """Issue #17, decided at the gate: `require_receipt` admits only items that carry a recipe
+    identity, and `verify` only runs this axis under it. The item agrees with its migrated
+    receipt, so `item_verdict` alone says `same`; the audit refuses it before a write, and
+    `verify` now says the same thing in the same words rather than passing it."""
+    doc = _receipt_doc()
+    doc["output"]["migrated_from"] = "manifest.json"
+    data, digest, rid = _receipt_bytes(env, doc)
+    assert rid is None, "a migrated receipt holds no recipe identity"
+    item = _item_with_receipt("a0", digest, None)
+    del item["properties"]["receipt:recipe_id"]
+    item["stac_extensions"].remove(receipt.EXTENSION_URL)
+    r = _receipt_run(env, api, [item], [_edited(item)], data=data)
+    assert "1 inconsistent" in r.out, r.out
+    assert receipt.NO_RECIPE_IDENTITY in r.err, r.err
+    assert r.rc == 1
+
+
 def test_an_item_that_links_no_receipt_is_refused_when_the_catalogue_declares_them(env, api):
     published = [_item("a0")]
     r = _receipt_run(env, api, published, [_edited(published[0])])

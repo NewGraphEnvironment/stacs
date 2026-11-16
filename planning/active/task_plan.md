@@ -117,15 +117,15 @@ run with a traceback.
 
 ## Phase 4: Migrated items under `require_receipt`
 
-- [ ] Failing test in `tests/test_validate.py`. Build an item from
+- [x] Failing test in `tests/test_validate.py`. Build an item from
       `stac_fields(migrated)` plus a receipt asset. It lands in `bad_receipt` with the
       migrated sentence, not in `missing_receipt`. An item with no receipt asset and no id
       still lands in `missing_receipt`.
-- [ ] Change `audit_items` (validate.py:215-221): no `receipt:recipe_id` together with
+- [x] Change `audit_items` (validate.py:215-221): no `receipt:recipe_id` together with
       `receipt.receipt_href(doc)` set means `bad_receipt` with that sentence.
 - [ ] Say in the `item_problems` docstring and the README that `require_receipt` admits
       only items that carry a recipe identity.
-- [ ] (review) `verify` agrees with the audit: `_receipt_verdicts` (which runs only under
+- [x] (review) `verify` agrees with the audit: `_receipt_verdicts` (which runs only under
       `require_receipt`) marks a published item with no `receipt:recipe_id` `inconsistent`
       with the same sentence. Test in `tests/test_register.py`.
 

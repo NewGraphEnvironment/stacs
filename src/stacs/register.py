@@ -842,6 +842,15 @@ def _receipt_verdicts(target, ids, by_id, fetch_dir, work, log) -> dict:
                     f"links no receipt (an asset with role {receipt.RECEIPT_ROLE!r} and type "
                     f"application/json), and this catalogue declares that it carries receipts")
                 continue
+            properties = doc.get("properties")
+            if not isinstance(properties, dict) or "receipt:recipe_id" not in properties:
+                # What the audit says of this item before a write, in the same words: this
+                # axis runs only under `require_receipt`, which admits only items that carry a
+                # recipe identity, and `item_verdict` alone would call one that agrees with a
+                # migrated receipt `same` (#17). Decided before the fetch, which it needs none
+                # of. A non-object `properties` is malformed; its sentence is the same answer.
+                unlinked[item_id] = receipt.NO_RECIPE_IDENTITY
+                continue
             published[item_id] = doc
             # Against the item's own URL: a receipt href is relative to the item, and
             # resolving it against the collection would read another directory's receipt.

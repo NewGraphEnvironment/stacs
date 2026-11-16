@@ -1172,6 +1172,14 @@ def _utc_instant(value) -> bool:
 # The asset that links the receipt: role `metadata`, as for every other output.
 RECEIPT_ROLE = "metadata"
 
+# What a catalogue that declares `require_receipt` says of an item that links a receipt and
+# carries no `receipt:recipe_id`. One sentence, used by the audit and by `verify`, so the two
+# cannot describe one item two ways (#17). The item may come from a migrated receipt, whose
+# mapping leaves the identity out, or from a build that dropped it: the item alone cannot tell
+# which, and neither lets `verify` tell a rebuilt item from a changed one.
+NO_RECIPE_IDENTITY = ("links a receipt but carries no recipe identity: a migrated receipt, "
+                      "which require_receipt does not admit, or a build that dropped it")
+
 
 def multihash(sha256_hex: str) -> str:
     """A sha256 hex digest as the multihash `file:checksum` publishes.
@@ -1449,6 +1457,10 @@ def item_problems(item) -> list:
       because the `file` and `processing` schemas are fetched by URL and the suite is offline;
     - the links the contract requires: each extension whose fields are present, and the asset
       that carries the receipt.
+
+    It is the check for a catalogue that declares `require_receipt`, which admits only items
+    that carry a recipe identity: an item built from a migrated receipt carries none, and is
+    reported here as having no `receipt:recipe_id`.
     """
     import jsonschema
 
