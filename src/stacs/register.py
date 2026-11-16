@@ -851,10 +851,18 @@ def _receipt_verdicts(target, ids, by_id, fetch_dir, work, log) -> dict:
                 # of. A non-object `properties` is malformed; its sentence is the same answer.
                 unlinked[item_id] = receipt.NO_RECIPE_IDENTITY
                 continue
-            published[item_id] = doc
             # Against the item's own URL: a receipt href is relative to the item, and
             # resolving it against the collection would read another directory's receipt.
-            urls[item_id] = urllib.parse.urljoin(by_id[item_id], href)
+            # `urljoin` raises ValueError on an href no parser reads, which got past `run`'s
+            # handler naming no item -- the shape round 1 fixed for asset hrefs in
+            # `item_verdict`, in its other caller (round 2).
+            try:
+                urls[item_id] = urllib.parse.urljoin(by_id[item_id], href)
+            except ValueError as e:
+                unlinked[item_id] = (f"links a receipt whose href {href!r} is not a URL "
+                                     f"({e}), so its provenance cannot be established")
+                continue
+            published[item_id] = doc
 
         for item_id, why in unlinked.items():
             out[item_id] = receipt.ItemVerdict("inconsistent", (), (why,))

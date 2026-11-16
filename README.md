@@ -235,8 +235,9 @@ A catalogue declares that it carries receipts with `require_receipt = true` unde
 `[catalogue]`, or `--require-receipt`. `audit` then refuses an item whose receipt fields are
 missing or do not hold up, and `verify` reports a verdict for each item whose published and
 served bodies differ, writing the lists to `--out-dir`. The rule admits only items that
-carry a recipe identity, since without one a rebuilt item cannot be told from a changed one,
-so an item built from a migrated receipt is refused by both.
+carry a recipe identity, since without one a rebuilt item cannot be told from a changed one:
+`audit` refuses an item built from a migrated receipt, and `verify` reports one
+`inconsistent` when its published and served bodies differ.
 <!-- --8<-- [end:receipts] -->
 
 ## Development

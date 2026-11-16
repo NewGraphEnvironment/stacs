@@ -30,7 +30,6 @@ import hashlib
 import io
 import json
 import os
-import posixpath
 import re
 import stat
 import struct
@@ -1588,12 +1587,41 @@ class ItemVerdict:
         return self.verdict == "same"
 
 
+def _remove_dots(path):
+    """`path` with its `.` and `..` segments removed, as RFC 3986 section 5.2.4 removes them.
+
+    A `..` at the root of an absolute path stays at the root, as the RFC has it
+    (`/../c/x.tif` is `/c/x.tif`). A relative path has no root, so a `..` that climbs past
+    its start leaves the item's directory, and the answer is None.
+
+    Only dot segments: `posixpath.normpath` also collapses `//` and drops a trailing `/`, and
+    on an object store `a//b.tif` and `x.tif/` are other keys than `a/b.tif` and `x.tif`,
+    so an asset was compared with a part it does not name (round 2).
+    """
+    segments = path.split("/")
+    out = []
+    for i, segment in enumerate(segments):
+        last = i == len(segments) - 1
+        if segment in (".", ".."):
+            if segment == "..":
+                if not out:
+                    return None
+                if out != [""]:
+                    out.pop()
+            if last:
+                out.append("")      # `a/.` and `a/b/..` name the directory, `a/`
+            continue
+        out.append(segment)
+    return "/".join(out)
+
+
 def _inside(path):
-    """`path`, normalised, when it names a file inside the item's directory; else None."""
-    path = posixpath.normpath(path)
-    if path in (".", "..") or path.startswith(("../", "/")):
+    """`path`, its dot segments removed, when it is relative and names something inside the
+    item's directory; else None."""
+    if path.startswith("/"):
         return None
-    return path
+    path = _remove_dots(path)
+    return path or None
 
 
 # The ports a URL leaves out, so `https://h:443/x` and `https://h/x` are one origin.
@@ -1621,7 +1649,8 @@ def _relative_href(href, item_url):
     `x.tif#band`, or absolute, which is how many catalogues publish (#17).
 
     A fragment never names another file, so it is dropped. A query may select another
-    representation, so an href with one names no part. Dot segments are removed AFTER the
+    representation, so an href with one names no part. Dot segments, and only those, are
+    removed (`_remove_dots`), AFTER the
     item's directory is stripped from a resolved URL, because `urljoin` leaves them in an
     href that is already absolute. Two URLs share an origin when scheme, host and port agree,
     case-insensitively and with the default port filled in; the path is compared as written.
@@ -1658,8 +1687,8 @@ def _relative_href(href, item_url):
         return None, None
     # Normalised before the prefix test, so `/c/../c/x.tif` is under `/c/`; the base path
     # ends in `/`, so `/cat/x.tif` is not under `/c/`.
-    path = posixpath.normpath(full.path)
-    if not path.startswith(base.path):
+    path = _remove_dots(full.path)
+    if path is None or not path.startswith(base.path):
         return None, None
     return _inside(path[len(base.path):]), None
 

@@ -1471,11 +1471,12 @@ def _contradicting(**asset):
     ("https://example.invalid/catalogue/c/../c/x.tif", ITEM_URL),
     ("https://example.invalid:443/catalogue/c/x.tif", ITEM_URL),
     ("https://someone@example.invalid/catalogue/c/x.tif", ITEM_URL),
+    ("https://example.invalid/../catalogue/c/x.tif", ITEM_URL),
 ], ids=["as the part key", "dot slash", "dot dot inside", "with a fragment", "absolute",
         "absolute, upper-case scheme and host", "absolute with dot segments",
         "network-path reference", "path-absolute", "climbs out and back in",
         "absolute, out of the directory and back in", "the scheme's default port",
-        "with userinfo"])
+        "with userinfo", "absolute, a dot-dot at the root"])
 def test_an_href_that_names_a_part_is_compared_however_it_is_spelled(href, item_url):
     """The contract keys a part by the href relative to the item. Only that exact spelling
     used to be looked up, so a contradicting `file:checksum` read `same` behind `./x.tif`,
@@ -1617,3 +1618,21 @@ def test_a_resolution_that_fails_is_a_disagreement_not_a_crash(monkeypatch):
     item = _contradicting(href="https://example.invalid/catalogue/c/x.tif")
     got = r.item_verdict(item, item, _parts_receipt(), item_url=ITEM_URL)
     assert got.verdict == "inconsistent" and "assets[data].href" in got.fields, got
+
+
+
+@pytest.mark.parametrize("href,part", [("a//b.tif", "a/b.tif"), ("x.tif/", "x.tif"),
+                                       ("./a//b.tif", "a/b.tif"), ("x.tif/.", "x.tif")],
+                         ids=["doubled slash", "trailing slash", "dot slash, doubled slash",
+                              "trailing dot"])
+def test_only_dot_segments_are_removed_so_another_key_is_not_matched(href, part):
+    """Round 2. `posixpath.normpath` also collapses `//` and drops a trailing `/`, so
+    `a//b.tif` was compared with part `a/b.tif` -- on an object store, another key. Only `.`
+    and `..` segments name the same file, as RFC 3986 removes them."""
+    rec = _parts_receipt({part: {"sha256": "b" * 64, "bytes": 12}})
+    item = _contradicting(href=href)
+    assert r.item_verdict(item, item, rec).verdict == "same"
+    assert r.item_verdict(item, item, rec, item_url=ITEM_URL).verdict == "same"
+    item = _contradicting(href="https://example.invalid/catalogue/c/"
+                          + (href[2:] if href.startswith("./") else href))
+    assert r.item_verdict(item, item, rec, item_url=ITEM_URL).verdict == "same", item
