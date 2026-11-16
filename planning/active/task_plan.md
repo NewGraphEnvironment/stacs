@@ -85,8 +85,8 @@ superset of what reaches `urlopen`.
 ## Validation
 
 - [x] Tests pass (`uv run pytest`)
-- [ ] `/code-check` clean (once over the branch with `/code-check branch`)
-- [ ] PWF checkboxes match landed work
+- [x] `/code-check` clean (once over the branch with `/code-check branch`)
+- [x] PWF checkboxes match landed work
 - [ ] `/planning-archive` on completion
 
 How each change is proved:

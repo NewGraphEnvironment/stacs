@@ -23,4 +23,13 @@
   original text, not inside a fix — `drift` loads `missing | changed`, so it upserted a local
   item too (measured by the reviewer under mutation). NEWS, the register.py comment and the
   test docstring now name `all`, `ids` or `drift`.
-- Next: code-check round 3
+- Code-check round 3 (review-round3.md): mechanism named — each scope sentence was written
+  from where the guard sits (before the mode branch) rather than from where the old harm
+  happened (after each mode picked its subset). Enumerated 33 scoped claims in the diff's
+  prose: 31 held; fixed the test docstring ("read in every mode", false for an `ids` not
+  naming it and for dryrun — the sentence round 2's fix edited, so counted inside a fix) and
+  the README refusal list (http/https count as one); tightened NEWS "before anything is
+  fetched" to "before any item is fetched". Measured the one new claim no round had: under
+  mutation an `ids` run naming the local item reaches the load (fails only at read-back).
+  Loop ended on the enumeration.
+- Next: archive, PR

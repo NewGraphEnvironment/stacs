@@ -152,8 +152,9 @@ already holds.
 `collection_state.txt` to `--out-dir`, and `queryables_missing.txt` and
 `queryables_changed.txt` when queryables are declared. `register` refuses before writing wherever it can:
 a collection id that does not match the published `collection.json`, an item link
-duplicated, outside the collection's URL scheme or pointing at a body that names another id,
-a body that could not be fetched, an item that fails the audit, an unreachable host.
+duplicated, outside the collection's scheme (http and https count as one) or pointing at a
+body that names another id, a body that could not be fetched, an item that fails the audit,
+an unreachable host.
 
 `ids` mode checks only the ids it registered. If `collection.json` changed, run `verify`
 after it: pgstac serves items hydrated against their collection, so a collection change can
