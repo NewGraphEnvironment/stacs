@@ -3,6 +3,59 @@
 Versions track the package. A tag is a release consumers can pin with
 `tag = "vX.Y.Z"` in `[tool.uv.sources]`; `pyproject.toml` carries the same version.
 
+## Unreleased
+
+- **Behaviour change:** `receipt.item_verdict` holds the published item to its receipt in
+  both directions. A `receipt:recipe_id`, `processing:datetime` or `processing:software` the
+  item publishes and the receipt's mapping does not produce is a disagreement, so the item
+  is `inconsistent`: a recipe identity over a migrated receipt, or software (an empty
+  `processing:software` included) over a receipt with no versioned code, was never held
+  against the receipt, and read `same`, `rebuilt` or `changed` by what the served body
+  carried. A field the item leaves out is still not a disagreement (#17).
+- **Behaviour change:** `item_verdict` matches an asset to the part it names through the
+  common spellings of one href. A relative href is normalised (`./x.tif` and `sub/../x.tif`
+  name part `x.tif`, and a fragment is dropped), and so is each part key. An absolute href
+  is made relative against the new `item_url` argument, the published item's own URL, which
+  `verify` passes; scheme and host compare case-insensitively, and a default port or
+  userinfo does not stop a match. Percent-encoding is not decoded. Before, only an href
+  spelled exactly as a part key was compared, so a contradicting `file:checksum` behind any
+  other spelling was never held against the receipt, and a catalogue that publishes absolute
+  hrefs compared no asset at all. Matching more hrefs can also reach a part the mapping
+  refuses, which makes the item `inconsistent`. Two part keys that spell the file an href
+  names, neither of them its exact spelling, and an asset carrying `file:checksum` or
+  `file:size` with no href, are disagreements, and so is an href no URL parser reads as
+  written (an unclosed IPv6 host, a port that is not one, a control character such as a tab
+  or a newline, a space at either end). Only `.` and `..` segments are removed, so
+  `a//b.tif` and `x.tif/` name no part `a/b.tif` or `x.tif`. An href with a query names no
+  part, and with no `item_url` an absolute href is matched to none and the notes say so.
+- **Behaviour change:** an asset entry that is not an object, `null` included, makes the
+  item `inconsistent` on either side, whether or not the receipt describes that asset. It
+  used to be skipped. `file:size` is compared as a whole number, so a size too large for a
+  double no longer raises `OverflowError` and two sizes beyond a double's precision no
+  longer compare equal.
+- **Behaviour change:** under `require_receipt`, an item that links a receipt and carries no
+  `receipt:recipe_id` (what `stac_fields` returns for a migrated receipt, or a build that
+  dropped the identity) is refused with its own sentence, `receipt.NO_RECIPE_IDENTITY`.
+  `audit` files it with items whose receipt fields do not hold up, no longer with items that
+  carry no receipt, and `verify` reports it `inconsistent` in the same words, where it used
+  to read `same`, `rebuilt` or `changed` by what the served body carried. A catalogue that
+  holds migrated items does not declare `require_receipt`.
+- **Behaviour change:** an asset's `roles` and an item's `stac_extensions` are read only as
+  lists. A non-zero number or `true` used to raise `TypeError`: as `roles`, out of `audit
+  --require-receipt` and `verify`; as `stac_extensions`, out of `audit --require-receipt`
+  for an item carrying `processing:` or `file:` fields. A string or an object was searched
+  with `in`, so `roles: "metadata"` linked the receipt and a `stac_extensions` string
+  holding the processing URL counted as listing it. `item_problems` now reports an asset
+  whose `roles` is present and not a list, `null` included.
+- `verify` stops paging with its own error when `/search` returns a link that is not an
+  object ahead of the next link, a next link whose body is not an object, or a token that is
+  an object or a list. Each of these, the body only when non-empty and the token only when
+  non-empty, used to raise `AttributeError` or `TypeError`. A link after the next link is
+  not read, as before. A numeric token is followed, as it was.
+- `verify` marks an item whose receipt href no URL parser reads `inconsistent`, saying so,
+  and goes on to the other items. It used to end the run with a `ValueError` that named no
+  item.
+
 ## 0.4.0
 
 - **crate's receipt contract, each part at its own version** (#15). crate versioned the

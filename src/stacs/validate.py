@@ -215,7 +215,12 @@ def audit_items(paths, collection_id: str, require_asset: str | None = None,
             properties = doc.get("properties")
             properties = properties if isinstance(properties, dict) else {}
             problems = receipt.item_problems(doc)
-            if "receipt:recipe_id" not in properties:
+            if "receipt:recipe_id" not in properties and receipt.receipt_href(doc) is not None:
+                # A third situation, told apart by the linked asset: a receipt with no
+                # identity, which this rule does not admit (#17). Filed under "carry no
+                # receipt" it named the wrong one.
+                r.bad_receipt.append(f"{path}: {receipt.NO_RECIPE_IDENTITY}")
+            elif "receipt:recipe_id" not in properties:
                 r.missing_receipt.append(path)
             elif problems:
                 r.bad_receipt.append(f"{path}: {problems[0]}")

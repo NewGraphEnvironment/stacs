@@ -34,6 +34,7 @@ import re
 import stat
 import struct
 import tempfile
+import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -91,6 +92,18 @@ def _mapping(node, key=None):
     if key is not None:
         node = node.get(key) if isinstance(node, dict) else None
     return node if isinstance(node, dict) else {}
+
+
+def _list(node, key):
+    """`node[key]` when `node` is a mapping and that member is a list -- otherwise `[]`.
+
+    The list sibling of `_mapping`, for the same reason: `node.get(key) or []` keeps a truthy
+    non-list, and `in` then raises on a number and matches a string by SUBSTRING and an object
+    by key, so `roles: "metadata"` was taken for the receipt's role (#17). A caller that must
+    say the member was malformed checks `isinstance` itself; this only stops it being read.
+    """
+    node = node.get(key) if isinstance(node, dict) else None
+    return node if isinstance(node, list) else []
 
 
 class ReceiptError(ValueError):
@@ -1158,6 +1171,14 @@ def _utc_instant(value) -> bool:
 # The asset that links the receipt: role `metadata`, as for every other output.
 RECEIPT_ROLE = "metadata"
 
+# What a catalogue that declares `require_receipt` says of an item that links a receipt and
+# carries no `receipt:recipe_id`. One sentence, used by the audit and by `verify`, so the two
+# cannot describe one item two ways (#17). The item may come from a migrated receipt, whose
+# mapping leaves the identity out, or from a build that dropped it: the item alone cannot tell
+# which, and neither lets `verify` tell a rebuilt item from a changed one.
+NO_RECIPE_IDENTITY = ("links a receipt but carries no recipe identity: a migrated receipt, "
+                      "which require_receipt does not admit, or a build that dropped it")
+
 
 def multihash(sha256_hex: str) -> str:
     """A sha256 hex digest as the multihash `file:checksum` publishes.
@@ -1408,7 +1429,7 @@ def receipt_asset(item):
         if not isinstance(asset, dict):
             continue
         href = asset.get("href")
-        if RECEIPT_ROLE in (asset.get("roles") or []) \
+        if RECEIPT_ROLE in _list(asset, "roles") \
                 and asset.get("type") == "application/json" \
                 and isinstance(href, str) and href:
             return asset
@@ -1435,6 +1456,10 @@ def item_problems(item) -> list:
       because the `file` and `processing` schemas are fetched by URL and the suite is offline;
     - the links the contract requires: each extension whose fields are present, and the asset
       that carries the receipt.
+
+    It is the check for a catalogue that declares `require_receipt`, which admits only items
+    that carry a recipe identity: an item built from a migrated receipt carries none, and is
+    reported here as having no `receipt:recipe_id`.
     """
     import jsonschema
 
@@ -1442,7 +1467,9 @@ def item_problems(item) -> list:
         return [f"not a JSON object: {type(item).__name__}"]
     problems = []
     properties = _mapping(item, "properties")
-    extensions = item.get("stac_extensions") or []
+    # A non-list is reported by the field schema ("is not of type 'array'"), so it is only
+    # read as empty here, never reported twice.
+    extensions = _list(item, "stac_extensions")
     assets = _mapping(item, "assets")
 
     identity = properties.get("receipt:recipe_id")
@@ -1478,6 +1505,10 @@ def item_problems(item) -> list:
         if not isinstance(asset, dict):
             problems.append(f"asset {key!r} is not an object")
             continue
+        if "roles" in asset and not isinstance(asset["roles"], list):
+            # The field schema does not constrain `roles`, so nothing else would say so, and
+            # `receipt_asset` reads such an asset as linking nothing.
+            problems.append(f"asset {key!r} roles is not a list")
         if "file:checksum" in asset or "file:size" in asset:
             file_fields = True
         checksum = asset.get("file:checksum")
@@ -1515,6 +1546,9 @@ ITEM_VERDICTS = ("same", "rebuilt", "changed", "inconsistent")
 # Every node `item_verdict` consults. Named here so the post-condition over it can enumerate
 # the code's own list instead of restating it: a second list would be the "two lists that
 # happen to agree" shape, which is how three of this branch's defects reached review.
+#
+# Fixed nodes only. Each ENTRY of `published.assets` and `served.assets` is consulted too, and
+# has its own check in `item_verdict` and its own test, because its key is the item's (#17).
 VERDICT_NODES = ("receipt.recipe", "receipt.context", "receipt.result",
                  "receipt.result.parts", "published.assets", "served.assets",
                  "published.properties", "served.properties")
@@ -1522,6 +1556,7 @@ VERDICT_NODES = ("receipt.recipe", "receipt.context", "receipt.result",
 # The mirrored fields, and whether a difference in one means the recipe moved or only the
 # bytes. `receipt:recipe_id` is the recipe; the rest are what the recipe produced.
 _IDENTITY_PROPERTY = "receipt:recipe_id"
+_MIRRORED_PROPERTIES = (_IDENTITY_PROPERTY, "processing:datetime", "processing:software")
 _RESULT_ASSET_FIELDS = ("file:checksum", "file:size")
 
 
@@ -1535,8 +1570,10 @@ class ItemVerdict:
       was built again from the same inputs.
     - `changed`: the recipe itself differs between the two sides.
     - `inconsistent`: the item's provenance could not be established -- it disagrees with
-      the receipt it links, that receipt could not be read or maps to no item fields
-      (`stac_fields` refuses it), or it links none at all. One
+      the receipt it links (in either direction: a mirrored field that differs, or one the
+      item publishes and the receipt does not produce), an asset entry on either side is not
+      an object, that receipt could not be read or maps to no item fields (`stac_fields`
+      refuses it), or it links none at all. One
       category because they have one consequence; the notes say which it was. Never reported
       as agreement.
     """
@@ -1550,11 +1587,163 @@ class ItemVerdict:
         return self.verdict == "same"
 
 
+def _remove_dots(path):
+    """`path` with its `.` and `..` segments removed, as RFC 3986 section 5.2.4 removes them.
+
+    A path that starts with `/` is rooted: a `..` at its root stays there, as the RFC has it
+    (`/../c/x.tif` is `/c/x.tif`). A relative path has no root, so a `..` that climbs past its
+    start leaves the item's directory, and the answer is None. Whether the path is rooted is
+    read once, from its first character: an emptied `//` part way through (`a/..//`) is not a
+    root, and reading it as one swallowed the `..` after it (round 4).
+
+    Only dot segments: `posixpath.normpath` also collapses `//` and drops a trailing `/`, and
+    on an object store `a//b.tif` and `x.tif/` are other keys than `a/b.tif` and `x.tif`,
+    so an asset was compared with a part it does not name (round 2). A relative result may
+    start with `/`: `.//x.tif` is the file `//x.tif` under the directory, `/x.tif` relative.
+    """
+    rooted = path.startswith("/")
+    segments = path.split("/")[1:] if rooted else path.split("/")
+    out = []
+    for i, segment in enumerate(segments):
+        if segment in (".", ".."):
+            if segment == "..":
+                if out:
+                    out.pop()
+                elif not rooted:
+                    return None
+            if i == len(segments) - 1:
+                out.append("")      # `a/.` and `a/b/..` name the directory, `a/`
+            continue
+        out.append(segment)
+    return ("/" if rooted else "") + "/".join(out)
+
+
+def _inside(path):
+    """A RELATIVE `path`, its dot segments removed, when it names something inside the item's
+    directory; else None.
+
+    The caller decides it is relative -- a raw href or part key that starts with `/` is not,
+    and is never passed -- because the remainder of a merged path after the item's directory
+    is relative and may start with `/` (round 4).
+    """
+    path = _remove_dots(path)
+    return path or None
+
+
+# The ports a URL leaves out, so `https://h:443/x` and `https://h/x` are one origin.
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def _origin(split, scheme=None):
+    """`(scheme, host, port)` of a split URL, the scheme's default port filled in.
+
+    `scheme` stands in for a network-path reference's (`//host/x`), which takes the item's.
+    Raises ValueError on a port that is out of range or not a number, which `urlsplit` itself
+    accepts. Userinfo is not part of it: it names who asks, not what is fetched.
+    """
+    scheme = (scheme or split.scheme).lower()
+    port = split.port
+    return scheme, split.hostname or "", _DEFAULT_PORTS.get(scheme) if port is None else port
+
+
+def _rewritten_by_a_parser(href):
+    """Whether a URL parser would change `href` before reading it.
+
+    `urlsplit` deletes tab, CR and LF anywhere and strips control characters and spaces at
+    the ends, and `urldefrag` re-serialised an href only when it held a `#`, so `x\t.tif`
+    named no part and `x\t.tif#b` named `x.tif` (round 3). No URL reference holds these, or
+    DEL, which `urlsplit` reads through as part of a name; such an href is malformed rather
+    than read as some other spelling.
+    """
+    return any(ord(c) < 0x20 or c == "\x7f" for c in href) or href != href.strip(" ")
+
+
+def _relative_href(href, item_url):
+    """`(path, problem)`: an asset href as a path relative to the item's directory.
+
+    `path` is None when the href names nothing inside that directory. `problem` is
+    "malformed" for an href no URL parser reads as written (an unclosed IPv6 host, a port
+    that is not one, a tab or a newline), "absolute" when it was only for want of the item's
+    URL, and None otherwise. The contract keys a part by the href relative to the item, and
+    the same file is spelled many ways: `./x.tif`, `sub/../x.tif`, `x.tif#band`, or absolute,
+    which is how many catalogues publish (#17).
+
+    A fragment never names another file, so it is cut off. A query may select another
+    representation, so an href with one names no part. Dot segments, and only those, are
+    removed (`_remove_dots`) on every route: the RFC 3986 merge of a reference with the item's
+    URL is done here rather than by `urljoin`, which collapses `//` in the path it merges and
+    in the base, so a climbing href and a plain one named different parts (round 3). Two
+    URLs share an origin when scheme, host and port agree, case-insensitively and with the
+    default port filled in. Percent-encoding is not decoded: a part key is the path verbatim.
+
+    Never raises on a string: `urlsplit` raises ValueError on what it cannot read, and
+    `verify` reads published bodies with no audit in front of it, so one such href would end
+    the run naming no item (round 1).
+    """
+    if _rewritten_by_a_parser(href):
+        return None, "malformed"
+    href = href.partition("#")[0]
+    if "?" in href:
+        return None, None
+    try:
+        split = urllib.parse.urlsplit(href)
+        _origin(split)          # a port that is not one fails here, with or without item_url
+    except ValueError:
+        return None, "malformed"
+    absolute = bool(split.scheme or split.netloc or href.startswith("/"))
+    if not absolute:
+        path = _inside(href)
+        if path is not None:
+            return path, None
+        # A relative href that climbs may come back in (`../c/x.tif`), which only the item's
+        # URL can tell.
+    if item_url is None:
+        return None, "absolute" if absolute else None
+    base = urllib.parse.urlsplit(item_url)      # `item_verdict` has refused one that fails
+    directory = base.path[:base.path.rfind("/") + 1] or "/"
+    if split.scheme or split.netloc:
+        # The port was read above, so this cannot raise.
+        if _origin(split, None if split.scheme else base.scheme) != _origin(base):
+            return None, None
+        path = split.path
+    elif href.startswith("/"):
+        path = href
+    else:
+        path = directory + href                 # RFC 3986 section 5.2.3, the merge
+    # Dot segments removed from both before the prefix test, so `/c/../c/x.tif` is under
+    # `/c/`; the directory ends in `/`, so `/cat/x.tif` is not under `/c/`.
+    path, directory = _remove_dots(path), _remove_dots(directory)
+    if path is None or directory is None or not path.startswith(directory):
+        return None, None
+    return _inside(path[len(directory):]), None
+
+
+def _part_key(href, parts, item_url):
+    """`(key, problem)`: the part of `parts` an asset href names.
+
+    The exact spelling first, which is unambiguous and is what the mapping itself looks up.
+    Otherwise the href and every part key are normalised the same way, and a match is taken
+    only if it is the only one: two part keys spelling one file (`./x.tif`, `sub/../x.tif`)
+    would otherwise be compared in whichever order the receipt listed them. `problem` is
+    "ambiguous", "malformed", "absolute" (no item URL to resolve it against), or None.
+    """
+    if href in parts:
+        return href, None
+    path, problem = _relative_href(href, item_url)
+    if path is None:
+        return None, problem
+    hits = [k for k in parts
+            if isinstance(k, str) and not k.startswith("/") and _inside(k) == path]
+    if len(hits) > 1:
+        return None, "ambiguous"
+    return (hits[0] if hits else None), None
+
+
 def _mirrored(item) -> dict:
     """The mirrored identity fields of an item, flattened to one comparable mapping."""
     out = {}
     properties = _mapping(item, "properties")
-    for key in (_IDENTITY_PROPERTY, "processing:datetime", "processing:software"):
+    for key in _MIRRORED_PROPERTIES:
         if key in properties:
             out[f"properties.{key}"] = properties[key]
     for key, asset in _mapping(item, "assets").items():
@@ -1566,7 +1755,8 @@ def _mirrored(item) -> dict:
     return out
 
 
-def item_verdict(published, served, receipt, receipt_sha256=None) -> ItemVerdict:
+def item_verdict(published, served, receipt, receipt_sha256=None,
+                 item_url=None) -> ItemVerdict:
     """Compare an item's published and served bodies through the receipt it links.
 
     `receipt_sha256` is the digest of the receipt bytes as fetched. Given, it is checked
@@ -1575,7 +1765,18 @@ def item_verdict(published, served, receipt, receipt_sha256=None) -> ItemVerdict
     to anything.
 
     The receipt is what makes this more than a field diff: an item whose mirrored fields do not
-    match the receipt beside it is `inconsistent` whatever the two sides agree on.
+    match the receipt beside it is `inconsistent` whatever the two sides agree on. It is held
+    to the receipt in both directions: a mirrored field the published item carries must be one
+    the receipt's mapping produces, with the same value. A field it leaves out is not a
+    disagreement, because the field schema makes each one optional. Only the published item
+    is held to the receipt, because it is the published item's receipt; a served item that
+    names another recipe reads `changed`.
+
+    `item_url` is the published item's own URL. An asset names a part by its href relative
+    to the item, so an absolute href is made relative against it; without it, an absolute
+    href is matched to no part and the notes say so. A relative href is normalised either way
+    (`./x.tif` names part `x.tif`). An asset that carries `file:checksum` or `file:size` and
+    no href claims a file it does not name, and is a disagreement.
 
     Examples:
         >>> item = {"properties": {"receipt:recipe_id": "a" * 64}}
@@ -1591,6 +1792,16 @@ def item_verdict(published, served, receipt, receipt_sha256=None) -> ItemVerdict
         if not isinstance(doc, dict):
             raise ReceiptError(f"the {name} item is not a JSON object, got "
                                f"{type(doc).__name__}")
+    if item_url is not None and not isinstance(item_url, str):
+        raise ReceiptError(f"item_url is the published item's URL, got "
+                           f"{type(item_url).__name__}")
+    if item_url is not None:
+        try:
+            _origin(urllib.parse.urlsplit(item_url))
+        except ValueError as e:
+            # A ReceiptError, which `verify` turns into this item's `inconsistent`; a
+            # ValueError would end the run (round 1).
+            raise ReceiptError(f"item_url {item_url!r} is not a URL: {e}") from None
     if not isinstance(receipt, dict):
         # The mapping refuses this as `block_not_object`, and so it is the same verdict as
         # every other receipt the mapping refuses. Without it, `receipt.get` below raised
@@ -1622,6 +1833,13 @@ def item_verdict(published, served, receipt, receipt_sha256=None) -> ItemVerdict
     )
     malformed = [where for where, node in nodes
                  if node is not None and not isinstance(node, dict)]
+    # Each asset ENTRY, on both sides, and `null` with the rest: an entry is the item's own
+    # object, never an optional node, and skipping one compared nothing and read `same` (#17).
+    # An entry the receipt does not describe -- a thumbnail -- included: its provenance
+    # cannot be established either, and the verdict is about the item.
+    for side, doc in (("published", published), ("served", served)):
+        malformed += [f"{side}.assets[{key}]" for key, asset in _mapping(doc, "assets").items()
+                      if not isinstance(asset, dict)]
     if malformed:
         return ItemVerdict("inconsistent", tuple(malformed),
                            (f"{len(malformed)} node(s) the comparison needs are present but "
@@ -1656,8 +1874,6 @@ def item_verdict(published, served, receipt, receipt_sha256=None) -> ItemVerdict
     named = {}
     parts = _mapping(_mapping(receipt, "result"), "parts")
     for key, asset in _mapping(published, "assets").items():
-        if not isinstance(asset, dict):
-            continue
         href = asset.get("href")
         if href is not None and not isinstance(href, str):
             # Unhashable as a dict key, and the item is malformed either way. Recorded as a
@@ -1665,8 +1881,21 @@ def item_verdict(published, served, receipt, receipt_sha256=None) -> ItemVerdict
             # with no audit in front of it on the verify path, and one malformed item must
             # not end the run with a traceback (round 2b).
             disagree.append(f"assets[{key}].href")
-        elif href in parts:
-            named[key] = href
+            continue
+        if not href:
+            # No file named, so a digest or a size it carries is a claim about nothing that
+            # can be checked; it used to be skipped and read `same` (#17).
+            if any(f in asset for f in _RESULT_ASSET_FIELDS):
+                disagree.append(f"assets[{key}].href")
+            continue
+        part, problem = _part_key(href, parts, item_url)
+        if problem in ("ambiguous", "malformed"):
+            disagree.append(f"assets[{key}].href")
+        elif problem == "absolute":
+            notes.append(f"asset {key!r} has an absolute href and no item URL was given, so "
+                         f"it could not be matched to a part and was not compared")
+        elif part is not None:
+            named[key] = part
         # Otherwise not an output this receipt describes: an overview, a thumbnail, or the
         # receipt itself, whose own digest is checked above. Nothing to compare it with.
     try:
@@ -1683,17 +1912,30 @@ def item_verdict(published, served, receipt, receipt_sha256=None) -> ItemVerdict
                             f"({e.code or 'refused'}): {e}",))
 
     properties = _mapping(published, "properties")
-    for key, value in claimed["properties"].items():
-        if key in properties and canonical(properties[key]) != canonical(value):
+    # Both directions. A field the item publishes and the mapping does not produce is a claim
+    # the receipt does not make -- a recipe identity over a migrated receipt, software over a
+    # receipt with no versioned code -- and was read as agreement (#17). A field the item
+    # leaves out is not: the field schema makes each one optional.
+    for key in _MIRRORED_PROPERTIES:
+        if key not in properties:
+            continue
+        if key not in claimed["properties"] \
+                or canonical(properties[key]) != canonical(claimed["properties"][key]):
             disagree.append(f"properties.{key}")
     for key, want in claimed["assets"].items():
         asset = published["assets"][key]
         if "file:checksum" in asset and asset["file:checksum"] != want["file:checksum"]:
             disagree.append(f"assets[{key}].file:checksum")
         if "file:size" in asset:
-            size = asset["file:size"]
-            if isinstance(size, bool) or not isinstance(size, (int, float)) \
-                    or float(size) != want["file:size"]:
+            # As a whole number, never a double: `float(size)` raised OverflowError on an int
+            # too large for one, and read 2**60 + 1 as 2**60 (#17). A receipt's `bytes` is
+            # read by `load_json` as a double, so a true size above 2**53 that the receipt could
+            # not spell exactly disagrees here -- the receipt does not hold that size.
+            try:
+                size_agrees = _whole(asset["file:size"], "file:size") == want["file:size"]
+            except ReceiptError:
+                size_agrees = False
+            if not size_agrees:
                 disagree.append(f"assets[{key}].file:size")
 
     if disagree:

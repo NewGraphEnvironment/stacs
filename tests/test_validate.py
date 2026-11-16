@@ -328,13 +328,53 @@ def test_an_item_with_receipt_fields_passes_when_receipts_are_required(tmp_path)
     assert audit.ok, audit.failures
 
 
+def _no_receipt_item():
+    """An item published before the catalogue carried receipts: no recipe identity, and no
+    asset linking a receipt."""
+    item = _receipt_item(**{"receipt:recipe_id": None})
+    del item["assets"]["receipt"]
+    return item
+
+
 def test_an_item_with_no_receipt_fields_is_refused_when_receipts_are_required(tmp_path):
-    """The case a migration is for: an item published before the catalogue carried receipts."""
-    path = _write(tmp_path, _receipt_item(**{"receipt:recipe_id": None}))
+    """The case a migration is for: an item published before the catalogue carried receipts.
+
+    Its fixture linked a receipt asset until #17, which is the migrated case below, not this
+    one; it now links none."""
+    path = _write(tmp_path, _no_receipt_item())
     audit = val.audit_items([path], NEW, require_receipt=True)
     assert not audit.ok
     assert audit.missing_receipt == [path]
+    assert audit.bad_receipt == []
     assert any("carry no receipt:recipe_id" in f for f in audit.failures), audit.failures
+
+
+def test_an_item_built_from_a_migrated_receipt_is_refused_and_says_why(tmp_path):
+    """Issue #17, decided at the gate: `require_receipt` admits only items that carry a recipe
+    identity, because without one `verify` cannot tell a rebuilt item from a changed one. An
+    item built from what `stac_fields` returns for a migrated receipt links a receipt and
+    carries no `receipt:recipe_id`; it was filed with items that carry no receipt at all,
+    which named the wrong situation. It is now refused with its own sentence."""
+    from stacs import receipt
+    migrated = {"output": {"receipt_version": receipt.RECEIPT_VERSION,
+                           "migrated_from": "manifest.json"},
+                "recipe": {"recipe_id": None}, "result": {},
+                "context": {"time": "2026-11-08T00:00:00Z"}}
+    fields = receipt.stac_fields(migrated, receipt_asset="receipt",
+                                 receipt_sha256="b" * 64)
+    item = _item("migrated", assets=())
+    item["stac_extensions"] = fields["stac_extensions"]
+    item["properties"] = fields["properties"]
+    item["assets"] = {"receipt": {"href": "migrated_receipt.json", "type": "application/json",
+                                  "roles": ["metadata"], **fields["assets"]["receipt"]}}
+    path = _write(tmp_path, item)
+    audit = val.audit_items([path], NEW, require_receipt=True)
+    assert not audit.ok
+    assert audit.missing_receipt == []
+    assert len(audit.bad_receipt) == 1, audit.bad_receipt
+    assert path in audit.bad_receipt[0]
+    assert "links a receipt but carries no recipe identity" in audit.bad_receipt[0]
+    assert "migrated" in audit.bad_receipt[0]
 
 
 def test_an_item_whose_receipt_fields_are_wrong_is_refused_separately(tmp_path):

@@ -78,12 +78,29 @@ def _search_pages(session, api: str, body: dict):
             # a page that has links. A STAC API always sends some (self, root).
             raise RuntimeError(f"/search returned no links after {n} items, so "
                                f"whether there are more pages cannot be told")
-        nxt = next((l for l in links if l.get("rel") == "next"), None)
+        nxt = None
+        for l in links:
+            if not isinstance(l, dict):
+                # Unreadable, so whether it was the next link cannot be told -- the same
+                # reason a page with no links refuses rather than ending. Only a link the
+                # search reaches: one after the next link was never read, and a page that
+                # carried one was followed, as it was (round 3).
+                raise RuntimeError(f"/search returned a link that is not an object after "
+                                   f"{n} items, so whether there are more pages cannot be "
+                                   f"told")
+            if l.get("rel") == "next":
+                nxt = l
+                break
         if not nxt:
             # The only NORMAL way out: the server says there is no more.
             return
-        token = (nxt.get("body") or {}).get("token")
-        if not token:
+        # Read through `isinstance`, not `or {}`: a truthy body that is not an object
+        # reached `.get`, and an object or list token reached the set below unhashable, and
+        # both raised something other than this function's RuntimeError (#17's sweep). A
+        # number is still a token, as it was.
+        next_body = nxt.get("body")
+        token = next_body.get("token") if isinstance(next_body, dict) else None
+        if isinstance(token, (dict, list)) or not token:
             raise RuntimeError(
                 f"paging stopped early: 'next' link with no token after {n} items"
             )

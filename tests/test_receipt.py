@@ -9,6 +9,7 @@ contract is refused by name rather than hashed into something plausible.
 import copy
 import datetime
 import hashlib
+import itertools
 import json
 import os
 import stat
@@ -1192,12 +1193,10 @@ def test_an_asset_href_that_is_not_a_string_is_not_used_as_a_dict_key(href):
     item = {"properties": {"receipt:recipe_id": "a" * 64},
             "assets": {"data": {"href": href, "file:checksum": r.multihash("b" * 64)}}}
     got = r.item_verdict(item, item, rec)
-    if href is None:
-        # An asset with no href names no part; nothing to compare it with.
-        assert got.verdict == "same", got
-    else:
-        assert got.verdict == "inconsistent", got
-        assert "assets[data].href" in got.fields, got.fields
+    # A null href used to read `same` here ("names no part"). Since #17 an asset that carries
+    # a file field and names no file is a disagreement, so all four cases now agree.
+    assert got.verdict == "inconsistent", got
+    assert "assets[data].href" in got.fields, got.fields
 
 
 @pytest.mark.parametrize("href", [["x.tif"], {"a": 1}, 7])
@@ -1266,3 +1265,537 @@ def test_stac_fields_refuses_a_block_that_is_present_but_not_an_object(block, va
     doc[block] = value
     with pytest.raises(r.ReceiptError, match=f"receipt.{block} is present but not an object"):
         r.stac_fields(doc)
+
+
+# =============================================================================
+# Issue #17: a member that must be a list is read as one
+# =============================================================================
+
+@pytest.mark.parametrize("roles", [7, True, 1.5, {}, {"metadata": 1}, "metadata",
+                                   "metadata,data"],
+                         ids=["number", "bool", "float", "empty object", "object keyed by role",
+                              "the role as a string", "a string containing the role"])
+def test_roles_that_are_not_a_list_never_raise_and_never_link_the_receipt(roles):
+    """`asset.get("roles") or []` kept a truthy non-list, so `in` raised on a number or a bool
+    and matched a string by SUBSTRING and an object by key: `"metadata"` and
+    `{"metadata": 1}` were each taken for the receipt's role. `validate.audit_items` and
+    `register._receipt_verdicts` read this outside any handler, so one such item ended the
+    run with a traceback."""
+    item = {"assets": {"receipt": {"href": "r.json", "type": "application/json",
+                                   "roles": roles}}}
+    assert r.receipt_asset(item) is None
+    assert r.receipt_href(item) is None
+    problems = r.item_problems(item)
+    assert "asset 'receipt' roles is not a list" in problems, problems
+    assert any("no asset links the receipt" in p for p in problems), problems
+
+
+def test_roles_as_a_list_still_link_the_receipt():
+    """The control for the cases above: a check that refused every `roles` would pass them."""
+    item = {"assets": {"receipt": {"href": "r.json", "type": "application/json",
+                                   "roles": ["metadata"]}}}
+    assert r.receipt_href(item) == "r.json"
+    assert not any("roles" in p for p in r.item_problems(item))
+
+
+def test_a_data_assets_roles_that_are_not_a_list_are_a_problem():
+    """Every asset's `roles`, not only the receipt's: the field schema does not constrain it,
+    so nothing else would say so."""
+    problems = r.item_problems(_example_item(**{"assets.floodplain.roles": "data"}))
+    assert "asset 'floodplain' roles is not a list" in problems, problems
+
+
+@pytest.mark.parametrize("extensions", [7, True, {"x": 1}, r.PROCESSING_EXTENSION_URL],
+                         ids=["number", "bool", "object", "the URL as a string"])
+def test_stac_extensions_that_are_not_a_list_are_a_problem_not_a_crash(extensions):
+    """`item.get("stac_extensions") or []` kept a truthy non-list: `in` raised on a number,
+    and found the processing URL inside a string that IS that URL, so the missing-extension
+    problem was never reported for it."""
+    problems = r.item_problems(_example_item(stac_extensions=extensions))
+    assert any(p.startswith("stac_extensions:") for p in problems), problems
+    assert any("does not list" in p and r.PROCESSING_EXTENSION_URL in p
+               for p in problems), problems
+
+
+def test_item_verdict_does_not_raise_on_roles_that_are_not_a_list():
+    """`item_verdict` finds the receipt asset through the same producer when it is given the
+    digest of the receipt it read."""
+    rec = {"output": _form(), "recipe": {"recipe_id": "a" * 64}, "result": {},
+           "context": _when()}
+    item = {"properties": {"receipt:recipe_id": "a" * 64},
+            "assets": {"receipt": {"href": "r.json", "type": "application/json",
+                                   "roles": 7, "file:checksum": r.multihash("b" * 64)}}}
+    got = r.item_verdict(item, item, rec, receipt_sha256="b" * 64)
+    assert got.verdict in r.ITEM_VERDICTS
+
+
+# =============================================================================
+# Issue #17: the item against its receipt, in both directions
+# =============================================================================
+
+def _migrated():
+    return {"output": _form(migrated_from="manifest.json"), "recipe": {"recipe_id": None},
+            "result": {}, "context": _when()}
+
+
+def _versionless():
+    return {"output": _form(), "recipe": {"recipe_id": "a" * 64, "code": {}}, "result": {},
+            "context": _when()}
+
+
+@pytest.mark.parametrize("receipt_doc,item,field", [
+    (_migrated(), {"properties": {"receipt:recipe_id": "a" * 64}},
+     "properties.receipt:recipe_id"),
+    (_versionless(), {"properties": {"receipt:recipe_id": "a" * 64,
+                                     "processing:software": {"stacs": "0.4.0"}}},
+     "properties.processing:software"),
+], ids=["a recipe identity over a migrated receipt", "software over a receipt with none"])
+def test_a_field_the_item_publishes_and_its_receipt_does_not_produce_is_inconsistent(
+        receipt_doc, item, field):
+    """`item_verdict` walked the fields the receipt maps to and checked the item's copy of
+    each, and never asked the other question. An item claiming a recipe identity over a
+    migrated receipt read `same`, `ok` true -- provenance the receipt does not hold."""
+    got = r.item_verdict(item, item, receipt_doc)
+    assert got.verdict == "inconsistent" and not got.ok, got
+    assert field in got.fields, got.fields
+
+
+def test_a_field_the_receipt_does_not_produce_on_the_served_side_alone_is_still_drift():
+    """The receipt is the published item's; the served one may have been built from another,
+    which is what `changed` says. So the served side is not held to the published receipt,
+    but a served item naming a recipe the published one does not is never `same`."""
+    published = {"properties": {}}
+    served = {"properties": {"receipt:recipe_id": "a" * 64}}
+    got = r.item_verdict(published, served, _migrated())
+    assert got.verdict == "changed" and not got.ok, got
+
+
+def test_a_field_the_item_leaves_out_is_not_a_disagreement():
+    """The other direction stays as it was: the field schema says each field is optional, so
+    an item that mirrors less than its receipt could is not contradicting it."""
+    got = r.item_verdict({"properties": {}}, {"properties": {}}, _versionless())
+    assert got.verdict == "same", got
+    software = {**_versionless(), "recipe": {"recipe_id": "a" * 64,
+                                             "code": {"stacs": {"version": "0.4.0"}}}}
+    item = {"properties": {"receipt:recipe_id": "a" * 64,
+                           "processing:software": {"stacs": "0.4.0"}}}
+    assert r.item_verdict(item, item, software).verdict == "same", "control"
+
+
+@pytest.mark.parametrize("side", ["published", "served"])
+@pytest.mark.parametrize("entry", [5, "x.tif", None, ["x.tif"], True])
+def test_an_asset_entry_that_is_not_an_object_is_inconsistent_on_either_side(side, entry):
+    """It was skipped on both sides, so it compared nothing and read `same`. Its provenance
+    cannot be established, which is what `inconsistent` says."""
+    rec = {"output": _form(), "recipe": {"recipe_id": "a" * 64}, "context": _when(),
+           "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 12}}}}
+    good = {"properties": {"receipt:recipe_id": "a" * 64},
+            "assets": {"data": {"href": "x.tif", "file:checksum": r.multihash("b" * 64)}}}
+    bad = {**good, "assets": {**good["assets"], "d": entry}}
+    published, served = (bad, good) if side == "published" else (good, bad)
+    got = r.item_verdict(published, served, rec)
+    assert got.verdict == "inconsistent" and not got.ok, got
+    assert f"{side}.assets[d]" in got.fields, got.fields
+
+
+@pytest.mark.parametrize("size,agrees", [
+    (12, True), (12.0, True), (10**400, False), (12.5, False),
+    ("12", False), (True, False), (-12, False), (float("inf"), False),
+], ids=["int", "whole float", "beyond a double", "fraction", "string", "bool", "negative",
+        "infinity"])
+def test_a_size_is_compared_as_a_whole_number_never_as_a_double(size, agrees):
+    """`float(size)` raised `OverflowError` out of `item_verdict` on an integer too large for
+    a double, and would have read 12 + 2**60 as equal to a part of that size rounded."""
+    rec = {"output": _form(), "recipe": {"recipe_id": "a" * 64}, "context": _when(),
+           "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 12}}}}
+    item = {"properties": {"receipt:recipe_id": "a" * 64},
+            "assets": {"data": {"href": "x.tif", "file:size": size}}}
+    got = r.item_verdict(item, item, rec)
+    if agrees:
+        assert got.verdict == "same", got
+    else:
+        assert got.verdict == "inconsistent", got
+        assert "assets[data].file:size" in got.fields, got.fields
+
+
+def test_two_sizes_one_apart_beyond_a_doubles_precision_disagree():
+    """As doubles, 2**60 and 2**60 + 1 are one number, so `float(size) != bytes` called them
+    equal."""
+    rec = {"output": _form(), "recipe": {"recipe_id": "a" * 64}, "context": _when(),
+           "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 2**60}}}}
+    item = {"properties": {"receipt:recipe_id": "a" * 64},
+            "assets": {"data": {"href": "x.tif", "file:size": 2**60 + 1}}}
+    got = r.item_verdict(item, item, rec)
+    assert got.verdict == "inconsistent" and "assets[data].file:size" in got.fields, got
+
+
+def test_an_empty_software_map_over_a_receipt_with_none_is_inconsistent():
+    """The mapping leaves `processing:software` out when no repository is versioned, so an
+    item publishing `{}` publishes a field the receipt does not produce -- the review's edge
+    of the reverse check, pinned so the choice is visible."""
+    item = {"properties": {"receipt:recipe_id": "a" * 64, "processing:software": {}}}
+    got = r.item_verdict(item, item, _versionless())
+    assert got.verdict == "inconsistent", got
+    assert "properties.processing:software" in got.fields, got.fields
+
+
+# =============================================================================
+# Issue #17: an asset href is matched to a part however it is spelled
+# =============================================================================
+
+ITEM_URL = "https://example.invalid/catalogue/c/a0.json"
+
+
+def _parts_receipt(parts=None):
+    return {"output": _form(), "recipe": {"recipe_id": "a" * 64}, "context": _when(),
+            "result": {"parts": parts if parts is not None
+                       else {"x.tif": {"sha256": "b" * 64, "bytes": 12}}}}
+
+
+def _contradicting(**asset):
+    """An item whose `data` asset contradicts part `x.tif`'s digest, if it is matched."""
+    return {"properties": {"receipt:recipe_id": "a" * 64},
+            "assets": {"data": {"file:checksum": r.multihash("f" * 64), **asset}}}
+
+
+@pytest.mark.parametrize("href,item_url", [
+    ("x.tif", None),
+    ("./x.tif", None),
+    ("sub/../x.tif", None),
+    ("x.tif#band1", None),
+    ("https://example.invalid/catalogue/c/x.tif", ITEM_URL),
+    ("HTTPS://EXAMPLE.INVALID/catalogue/c/x.tif", ITEM_URL),
+    ("https://example.invalid/catalogue/c/sub/../x.tif", ITEM_URL),
+    ("//example.invalid/catalogue/c/x.tif", ITEM_URL),
+    ("/catalogue/c/x.tif", ITEM_URL),
+    ("../c/x.tif", ITEM_URL),
+    ("https://example.invalid/catalogue/c/../c/x.tif", ITEM_URL),
+    ("https://example.invalid:443/catalogue/c/x.tif", ITEM_URL),
+    ("https://someone@example.invalid/catalogue/c/x.tif", ITEM_URL),
+    ("https://example.invalid/../catalogue/c/x.tif", ITEM_URL),
+], ids=["as the part key", "dot slash", "dot dot inside", "with a fragment", "absolute",
+        "absolute, upper-case scheme and host", "absolute with dot segments",
+        "network-path reference", "path-absolute", "climbs out and back in",
+        "absolute, out of the directory and back in", "the scheme's default port",
+        "with userinfo", "absolute, a dot-dot at the root"])
+def test_an_href_that_names_a_part_is_compared_however_it_is_spelled(href, item_url):
+    """The contract keys a part by the href relative to the item. Only that exact spelling
+    used to be looked up, so a contradicting `file:checksum` read `same` behind `./x.tif`,
+    and a catalogue publishing absolute hrefs compared nothing at all."""
+    item = _contradicting(href=href)
+    got = r.item_verdict(item, item, _parts_receipt(), item_url=item_url)
+    assert got.verdict == "inconsistent", got
+    assert "assets[data].file:checksum" in got.fields, got.fields
+
+
+@pytest.mark.parametrize("href,item_url", [
+    ("t.png", ITEM_URL),
+    ("x.tif?version=2", None),
+    ("x.tif?version=2", ITEM_URL),
+    ("https://example.invalid/catalogue/c/x.tif?version=2", ITEM_URL),
+    ("https://example.invalid/catalogue/cat/x.tif", ITEM_URL),
+    ("https://example.invalid/catalogue/d/x.tif", ITEM_URL),
+    ("https://example.invalid:8443/catalogue/c/x.tif", ITEM_URL),
+    ("https://elsewhere.invalid/catalogue/c/x.tif", ITEM_URL),
+    ("http://example.invalid/catalogue/c/x.tif", ITEM_URL),
+    ("../x.tif", None),
+    ("../x.tif", ITEM_URL),
+    (".", None),
+], ids=["another file", "with a query", "with a query, item URL given",
+        "absolute with a query", "a sibling directory sharing a prefix",
+        "a sibling directory of the same length", "another port",
+        "another host", "another scheme", "climbs, no item URL", "climbs out for good",
+        "the directory itself"])
+def test_an_href_that_names_no_part_is_not_compared(href, item_url):
+    """An overview, a thumbnail, or a file outside the item's directory: not a part, so there
+    is nothing to compare it with, as before. A query may select another representation, so
+    it is never read as the part."""
+    item = _contradicting(href=href)
+    got = r.item_verdict(item, item, _parts_receipt(), item_url=item_url)
+    assert got.verdict == "same", got
+
+
+@pytest.mark.parametrize("href", ["https://example.invalid/catalogue/c/x.tif",
+                                  "//example.invalid/catalogue/c/x.tif", "/catalogue/c/x.tif"])
+def test_an_absolute_href_with_no_item_url_says_it_compared_nothing(href):
+    """With no item URL an absolute href cannot be made relative, so the asset half compares
+    nothing for that asset -- said in the notes, never a silent `same`."""
+    item = _contradicting(href=href)
+    got = r.item_verdict(item, item, _parts_receipt())
+    assert got.verdict == "same", got
+    assert any("absolute" in n and "data" in n for n in got.notes), got.notes
+
+
+@pytest.mark.parametrize("asset", [{}, {"href": ""}, {"href": None}],
+                         ids=["no href", "empty href", "null href"])
+def test_an_asset_with_file_fields_and_no_href_is_a_disagreement(asset):
+    """It claims a file's digest and names no file, so the claim cannot be checked against
+    anything; it used to be skipped and read `same`."""
+    item = _contradicting(**asset)
+    got = r.item_verdict(item, item, _parts_receipt())
+    assert got.verdict == "inconsistent", got
+    assert "assets[data].href" in got.fields, got.fields
+
+
+def test_an_asset_with_no_href_and_no_file_fields_is_not_compared():
+    item = {"properties": {"receipt:recipe_id": "a" * 64}, "assets": {"data": {"roles": []}}}
+    assert r.item_verdict(item, item, _parts_receipt()).verdict == "same"
+
+
+def test_a_part_key_is_matched_by_the_same_normalisation():
+    """A builder that keyed a part `./x.tif` is matched by an item whose href is `x.tif`."""
+    rec = _parts_receipt({"./x.tif": {"sha256": "b" * 64, "bytes": 12}})
+    item = _contradicting(href="x.tif")
+    got = r.item_verdict(item, item, rec)
+    assert got.verdict == "inconsistent" and "assets[data].file:checksum" in got.fields, got
+
+
+def test_two_part_keys_for_one_file_make_the_asset_a_disagreement_not_a_guess():
+    """`./x.tif` and `sub/../x.tif` both name `x.tif`, with different digests. Taking the
+    first would compare the item with whichever the receipt happened to list first."""
+    rec = _parts_receipt({"./x.tif": {"sha256": "b" * 64, "bytes": 12},
+                          "sub/../x.tif": {"sha256": "c" * 64, "bytes": 13}})
+    item = {"properties": {"receipt:recipe_id": "a" * 64},
+            "assets": {"data": {"href": "https://example.invalid/catalogue/c/x.tif",
+                                "file:checksum": r.multihash("b" * 64)}}}
+    got = r.item_verdict(item, item, rec, item_url=ITEM_URL)
+    assert got.verdict == "inconsistent", got
+    assert "assets[data].href" in got.fields, got.fields
+
+
+def test_an_href_spelled_as_a_part_key_is_still_taken_exactly():
+    """The exact spelling is unambiguous, so it wins over any normalised match, as before."""
+    rec = _parts_receipt({"x.tif": {"sha256": "b" * 64, "bytes": 12},
+                          "./x.tif": {"sha256": "c" * 64, "bytes": 13}})
+    item = {"properties": {"receipt:recipe_id": "a" * 64},
+            "assets": {"data": {"href": "x.tif", "file:checksum": r.multihash("b" * 64)}}}
+    assert r.item_verdict(item, item, rec).verdict == "same"
+
+
+@pytest.mark.parametrize("bad", [7, b"https://example.invalid/", ["u"]])
+def test_an_item_url_that_is_not_a_string_is_refused(bad):
+    with pytest.raises(r.ReceiptError, match="item_url"):
+        r.item_verdict({}, {}, _parts_receipt(), item_url=bad)
+
+
+@pytest.mark.parametrize("href", ["http://[::1/x.tif", "https://[nothex]/x.tif",
+                                  "https://example.invalid:99999/catalogue/c/x.tif",
+                                  "https://example.invalid:port/catalogue/c/x.tif"],
+                         ids=["unclosed IPv6", "bad IPv6", "port out of range",
+                              "port not a number"])
+@pytest.mark.parametrize("item_url", [None, ITEM_URL])
+def test_an_href_that_is_not_a_url_is_a_disagreement_not_a_crash(href, item_url):
+    """Round 1. `urlsplit` raises `ValueError` on these, and `_receipt_verdicts` catches only
+    `ReceiptError`, so one such published item ended `verify` with "ERROR: Invalid IPv6 URL",
+    naming no item, losing every other item's verdict. An href nothing can parse names no
+    file the item can be checked against, like an href that is not a string."""
+    item = _contradicting(href=href)
+    got = r.item_verdict(item, item, _parts_receipt(), item_url=item_url)
+    assert got.verdict == "inconsistent", got
+    assert "assets[data].href" in got.fields, got.fields
+
+
+def test_an_item_url_that_is_not_a_url_is_refused_as_a_receipt_error():
+    """`verify` turns a `ReceiptError` into that item's `inconsistent`; a `ValueError` would end
+    the run."""
+    item = _contradicting(href="https://example.invalid/catalogue/c/x.tif")
+    with pytest.raises(r.ReceiptError, match="item_url"):
+        r.item_verdict(item, item, _parts_receipt(), item_url="http://[::1/a0.json")
+
+
+@pytest.mark.parametrize("href,part", [("a//b.tif", "a/b.tif"), ("x.tif/", "x.tif"),
+                                       ("./a//b.tif", "a/b.tif"), ("x.tif/.", "x.tif")],
+                         ids=["doubled slash", "trailing slash", "dot slash, doubled slash",
+                              "trailing dot"])
+def test_only_dot_segments_are_removed_so_another_key_is_not_matched(href, part):
+    """Round 2. `posixpath.normpath` also collapses `//` and drops a trailing `/`, so
+    `a//b.tif` was compared with part `a/b.tif` -- on an object store, another key. Only `.`
+    and `..` segments name the same file, as RFC 3986 removes them."""
+    rec = _parts_receipt({part: {"sha256": "b" * 64, "bytes": 12}})
+    item = _contradicting(href=href)
+    assert r.item_verdict(item, item, rec).verdict == "same"
+    assert r.item_verdict(item, item, rec, item_url=ITEM_URL).verdict == "same"
+    item = _contradicting(href="https://example.invalid/catalogue/c/"
+                          + (href[2:] if href.startswith("./") else href))
+    assert r.item_verdict(item, item, rec, item_url=ITEM_URL).verdict == "same", item
+
+
+
+@pytest.mark.parametrize("href", ["a//b.tif", "/catalogue/c/a//b.tif", "../c/a//b.tif",
+                                  "https://example.invalid/catalogue/c/a//b.tif",
+                                  "//example.invalid/catalogue/c/a//b.tif"],
+                         ids=["relative", "path-absolute", "climbing", "absolute",
+                              "network-path"])
+def test_a_doubled_slash_names_no_other_part_on_any_route(href):
+    """Round 3. Round 2 removed the `//` collapse from `_inside`, and `urljoin` put it back
+    for a climbing or path-absolute href: one object spelled three ways got two answers.
+    The merge is now done by hand, so every route removes dot segments and nothing else."""
+    rec = _parts_receipt({"a/b.tif": {"sha256": "b" * 64, "bytes": 12}})
+    item = _contradicting(href=href)
+    assert r.item_verdict(item, item, rec, item_url=ITEM_URL).verdict == "same", href
+
+
+@pytest.mark.parametrize("href", ["x\t.tif", "x\t.tif#b", "x.tif\n", "x.tif\n#b",
+                                  " x.tif", "x.tif ", "x.tif\r", "\x00x.tif",
+                                  "https://example.invalid/catalogue/c/x.tif\n"],
+                         ids=["tab", "tab, fragment", "newline", "newline, fragment",
+                              "leading space", "trailing space", "carriage return",
+                              "NUL", "absolute with a newline"])
+@pytest.mark.parametrize("item_url", [None, ITEM_URL])
+def test_an_href_a_parser_would_rewrite_is_malformed_on_every_route(href, item_url):
+    """Round 3. `urlsplit` strips tabs and newlines and edge whitespace, and `urldefrag`
+    rebuilt the href only when it held a `#`, so `x\t.tif` named no part and `x\t.tif#b`
+    named `x.tif`. No URL reference holds these characters, so the href is malformed on every
+    route, like one no parser reads."""
+    item = _contradicting(href=href)
+    got = r.item_verdict(item, item, _parts_receipt(), item_url=item_url)
+    assert got.verdict == "inconsistent" and "assets[data].href" in got.fields, got
+
+
+@pytest.mark.parametrize("href", ["https://example.invalid/catalogue//c/x.tif", "x.tif",
+                                  "../c/x.tif", "/catalogue//c/x.tif"],
+                         ids=["absolute", "relative", "climbing back in", "path-absolute"])
+def test_an_item_url_whose_path_holds_a_doubled_slash_still_compares_its_assets(href):
+    """Round 3's reverse case: `urljoin(item_url, ".")` collapsed the base's `//`, so no
+    absolute href under such an item was ever compared, with no note -- #17's own symptom."""
+    item = _contradicting(href=href)
+    got = r.item_verdict(item, item, _parts_receipt(),
+                         item_url="https://example.invalid/catalogue//c/a0.json")
+    assert got.verdict == "inconsistent" and "assets[data].file:checksum" in got.fields, got
+
+
+def _rfc3986_remove_dot_segments(path):
+    """RFC 3986 section 5.2.4, step by step as the RFC writes it: an input buffer and an
+    output buffer of strings. Kept in this shape on purpose, apart from `_remove_dots`'s stack
+    of segments, so the two are independent statements of one rule."""
+    out = ""
+    while path:
+        if path.startswith("../"):
+            path = path[3:]
+        elif path.startswith("./"):
+            path = path[2:]
+        elif path.startswith("/./"):
+            path = "/" + path[3:]
+        elif path == "/.":
+            path = "/"
+        elif path.startswith("/../") or path == "/..":
+            path = "/" + path[4:] if path.startswith("/../") else "/"
+            out = out[:out.rfind("/")] if "/" in out else ""
+        elif path in (".", ".."):
+            path = ""
+        else:
+            start = 1 if path.startswith("/") else 0
+            end = path.find("/", start)
+            end = len(path) if end == -1 else end
+            out, path = out + path[:end], path[end:]
+    return out
+
+
+def test_dot_segment_removal_agrees_with_the_rfc_on_every_short_rooted_path():
+    """Round 4. `_remove_dots` read `out == [""]` as "at the root", which a relative path also
+    reaches after `a/..//`, so a `..` after it was swallowed. For a rooted path the RFC's own
+    algorithm is the reference, over every path of up to four segments from the alphabet that
+    finds this class."""
+    alphabet = ["", ".", "..", "a", "x.tif"]
+    checked = 0
+    for n in range(1, 5):
+        for segs in itertools.product(alphabet, repeat=n):
+            path = "/" + "/".join(segs)
+            assert r._remove_dots(path) == _rfc3986_remove_dot_segments(path), path
+            checked += 1
+    assert checked == 5 + 25 + 125 + 625
+
+
+@pytest.mark.parametrize("href,item_url", [
+    ("a/..//../x.tif", None), ("a/..//../x.tif", ITEM_URL),
+    ("https://example.invalid/catalogue/c/a/..//../x.tif", ITEM_URL),
+], ids=["relative", "relative, item URL given", "absolute"])
+def test_a_dot_dot_after_an_emptied_doubled_slash_still_climbs(href, item_url):
+    """Round 4: `a/..//../x.tif` names `x.tif`, and read `same` against a contradicting part."""
+    item = _contradicting(href=href)
+    got = r.item_verdict(item, item, _parts_receipt(), item_url=item_url)
+    assert got.verdict == "inconsistent" and "assets[data].file:checksum" in got.fields, got
+
+
+@pytest.mark.parametrize("href", [".//x.tif", "././/x.tif",
+                                  "https://example.invalid/catalogue/c//x.tif",
+                                  "/catalogue/c//x.tif"],
+                         ids=["dot slash", "dot dot slash", "absolute", "path-absolute"])
+def test_a_part_keyed_with_an_empty_first_segment_is_matched_on_every_route(href):
+    """Round 4: part `.//x.tif` is the file `//x.tif` under the item's directory. Matched by
+    the relative spellings, it was missed by the absolute ones, whose remainder `/x.tif` was
+    refused as though it were absolute -- and never compared with part `x.tif`, which it
+    does not name."""
+    rec = _parts_receipt({".//x.tif": {"sha256": "b" * 64, "bytes": 12},
+                          "x.tif": {"sha256": "f" * 64, "bytes": 12}})
+    item = _contradicting(href=href)       # contradicts `.//x.tif`, agrees with `x.tif`
+    got = r.item_verdict(item, item, rec, item_url=ITEM_URL)
+    assert got.verdict == "inconsistent" and "assets[data].file:checksum" in got.fields, got
+
+
+@pytest.mark.parametrize("item_url", ["https://example.invalid/catalogue/c/./a0.json",
+                                      "https://example.invalid/catalogue/d/../c/a0.json"],
+                         ids=["dot", "dot dot"])
+def test_an_item_url_with_dot_segments_still_compares_its_assets(item_url):
+    """Round 4 (a guard no test reached): `verify` builds item URLs with `urljoin`, which keeps
+    `/c/./a0.json` from an absolute collection link, so the item's directory has its dot
+    segments removed too."""
+    item = _contradicting(href="https://example.invalid/catalogue/c/x.tif")
+    got = r.item_verdict(item, item, _parts_receipt(), item_url=item_url)
+    assert got.verdict == "inconsistent" and "assets[data].file:checksum" in got.fields, got
+
+
+def test_an_item_at_a_hosts_root_with_no_path_still_compares_its_assets():
+    """Round 4 (a guard no test reached): an item URL with an empty path has the root as its
+    directory."""
+    item = _contradicting(href="https://example.invalid/x.tif")
+    got = r.item_verdict(item, item, _parts_receipt(), item_url="https://example.invalid")
+    assert got.verdict == "inconsistent" and "assets[data].file:checksum" in got.fields, got
+
+
+def test_a_del_character_makes_an_href_malformed():
+    """No URL reference holds DEL; `urlsplit` would read it through as part of a name."""
+    item = _contradicting(href="x.tif\x7f")
+    got = r.item_verdict(item, item, _parts_receipt())
+    assert got.verdict == "inconsistent" and "assets[data].href" in got.fields, got
+
+
+@pytest.mark.parametrize("item_url,href", [("s3:bucket/a0.json", "../../x.tif"),
+                                           ("s3:../a0.json", "s3:x.tif")],
+                         ids=["the href climbs past the start", "the directory does"])
+def test_an_item_url_with_a_relative_path_never_raises(item_url, href):
+    """Round 4 (guards no test reached): a URL whose path is not rooted gives a merge whose
+    `..` climbs past its start; that names no part, never an AttributeError."""
+    item = _contradicting(href=href)
+    assert r.item_verdict(item, item, _parts_receipt(), item_url=item_url).verdict == "same"
+
+
+def test_a_relative_href_resolves_as_the_rfc_merges_it_on_every_short_path():
+    """Round 4, the relative half of the reference check: an href under item URL
+    `https://h/r/a0.json` names what the RFC's merge (`/r/` + href) and dot-segment removal
+    name, read back relative to `/r/`, or nothing when that lands outside `/r/`."""
+    alphabet = ["", ".", "..", "a", "r", "x.tif"]
+    checked = 0
+    for n in range(1, 5):
+        for segs in itertools.product(alphabet, repeat=n):
+            href = "/".join(segs)
+            if href.startswith("/") or not href:
+                continue            # path-absolute, or empty: not a relative reference here
+            resolved = _rfc3986_remove_dot_segments("/r/" + href)
+            want = resolved[3:] if resolved.startswith("/r/") else None
+            got, _ = r._relative_href(href, "https://h.invalid/r/a0.json")
+            assert got == (want or None), (href, resolved)
+            checked += 1
+    assert checked > 1000, checked
+
+
+
+def test_a_part_keyed_by_a_rooted_path_is_matched_only_exactly():
+    """A part key is the href relative to the item, so one that starts with `/` names no
+    relative file: `.//x.tif` (the file `//x.tif` under the directory) is not part `/x.tif`,
+    although both read `/x.tif` once their dot segments are gone."""
+    rec = _parts_receipt({"/x.tif": {"sha256": "b" * 64, "bytes": 12}})
+    item = _contradicting(href=".//x.tif")
+    assert r.item_verdict(item, item, rec).verdict == "same"
+    item = _contradicting(href="/x.tif")
+    assert r.item_verdict(item, item, rec).verdict == "inconsistent", "exact spelling"

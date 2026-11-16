@@ -1986,6 +1986,85 @@ def test_one_unreadable_receipt_does_not_cost_the_other_items_verdicts(env, api)
     assert r.rc == 1
 
 
+def test_an_item_whose_roles_are_not_a_list_gets_a_verdict_and_the_run_goes_on(env, api):
+    """Issue #17. `receipt_href` read `roles` with `or []`, so `roles: 7` raised `TypeError`
+    out of `_receipt_verdicts`, which catches only `ReceiptError`: one malformed item ended
+    `verify` with a traceback and no drift answer. It now links no receipt, which this
+    catalogue declares it carries, and a1 still gets its verdict."""
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    bad = _item_with_receipt("a0", digest, rid)
+    bad["assets"]["receipt"]["roles"] = 7
+    published = [bad, _item_with_receipt("a1", digest, rid, data_checksum=CK_A)]
+    served = [_edited(bad), _item_with_receipt("a1", digest, rid, data_checksum=CK_B)]
+    r = _receipt_run(env, api, published, served, data=data)
+    assert "Traceback" not in r.err, r.err
+    assert "1 rebuilt" in r.out and "1 inconsistent" in r.out, r.out
+    assert "links no receipt" in r.err, r.err
+    assert r.rc == 1
+
+
+def test_an_absolute_asset_href_is_matched_to_its_part_against_the_items_own_url(env, api):
+    """Issue #17. A catalogue that publishes absolute hrefs had no asset naming a part, so the
+    asset half of the check compared nothing and a contradicting `file:checksum` read `same`.
+    `verify` passes each item's own URL, the one it resolves the receipt href against."""
+    doc = _receipt_doc()
+    doc["result"]["parts"] = {"a0.tif": {"sha256": "c" * 64, "bytes": 12}}
+    data, digest, rid = _receipt_bytes(env, doc)
+    item = _item_with_receipt("a0", digest, rid, data_checksum=CK_B)   # the part says CK_A
+    item["assets"]["data"]["href"] = (env / "bucket" / "a0.tif").as_uri()
+    r = _receipt_run(env, api, [item], [_edited(item)], data=data)
+    assert "1 inconsistent" in r.out, r.out
+    assert "assets[data].file:checksum" in r.err, r.err
+    assert r.rc == 1
+
+
+def test_an_absolute_asset_href_that_agrees_with_its_part_reads_same(env, api):
+    """The control: the match must not make good items inconsistent."""
+    doc = _receipt_doc()
+    doc["result"]["parts"] = {"a0.tif": {"sha256": "c" * 64, "bytes": 12}}
+    data, digest, rid = _receipt_bytes(env, doc)
+    item = _item_with_receipt("a0", digest, rid, data_checksum=CK_A)
+    item["assets"]["data"]["href"] = (env / "bucket" / "a0.tif").as_uri()
+    item["assets"]["data"]["file:size"] = 12
+    r = _receipt_run(env, api, [item], [_edited(item)], data=data)
+    assert "1 same" in r.out, r.out
+
+
+def test_an_item_from_a_migrated_receipt_is_inconsistent_as_the_audit_says(env, api):
+    """Issue #17, decided at the gate: `require_receipt` admits only items that carry a recipe
+    identity, and `verify` only runs this axis under it. The item agrees with its migrated
+    receipt, so `item_verdict` alone says `same`; the audit refuses it before a write, and
+    `verify` now says the same thing in the same words rather than passing it."""
+    doc = _receipt_doc()
+    doc["output"]["migrated_from"] = "manifest.json"
+    data, digest, rid = _receipt_bytes(env, doc)
+    assert rid is None, "a migrated receipt holds no recipe identity"
+    item = _item_with_receipt("a0", digest, None)
+    del item["properties"]["receipt:recipe_id"]
+    item["stac_extensions"].remove(receipt.EXTENSION_URL)
+    r = _receipt_run(env, api, [item], [_edited(item)], data=data)
+    assert "1 inconsistent" in r.out, r.out
+    assert receipt.NO_RECIPE_IDENTITY in r.err, r.err
+    assert r.rc == 1
+
+
+def test_a_receipt_href_that_is_not_a_url_marks_its_item_and_the_run_goes_on(env, api):
+    """Round 2. `receipt_asset` takes any non-empty string as the href, and the `urljoin`
+    against the item's URL raised `ValueError` on one no parser reads, past `run`'s
+    `except RegisterError`: the run ended naming no item. Round 1 had fixed this shape for
+    asset hrefs in `item_verdict` and not here, the other caller of the same parse."""
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    bad = _item_with_receipt("a0", digest, rid)
+    bad["assets"]["receipt"]["href"] = "https://[bad/a0_receipt.json"
+    published = [bad, _item_with_receipt("a1", digest, rid, data_checksum=CK_A)]
+    served = [_edited(bad), _item_with_receipt("a1", digest, rid, data_checksum=CK_B)]
+    r = _receipt_run(env, api, published, served, data=data)
+    assert "Traceback" not in r.err, r.err
+    assert "1 rebuilt" in r.out and "1 inconsistent" in r.out, r.out
+    assert "not a URL" in r.err, r.err
+    assert r.rc == 1
+
+
 def test_an_item_that_links_no_receipt_is_refused_when_the_catalogue_declares_them(env, api):
     published = [_item("a0")]
     r = _receipt_run(env, api, published, [_edited(published[0])])

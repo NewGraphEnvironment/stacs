@@ -842,10 +842,27 @@ def _receipt_verdicts(target, ids, by_id, fetch_dir, work, log) -> dict:
                     f"links no receipt (an asset with role {receipt.RECEIPT_ROLE!r} and type "
                     f"application/json), and this catalogue declares that it carries receipts")
                 continue
-            published[item_id] = doc
+            properties = doc.get("properties")
+            if not isinstance(properties, dict) or "receipt:recipe_id" not in properties:
+                # What the audit says of this item before a write, in the same words: this
+                # axis runs only under `require_receipt`, which admits only items that carry a
+                # recipe identity, and `item_verdict` alone would call one that agrees with a
+                # migrated receipt `same` (#17). Decided before the fetch, which it needs none
+                # of. A non-object `properties` is malformed; its sentence is the same answer.
+                unlinked[item_id] = receipt.NO_RECIPE_IDENTITY
+                continue
             # Against the item's own URL: a receipt href is relative to the item, and
             # resolving it against the collection would read another directory's receipt.
-            urls[item_id] = urllib.parse.urljoin(by_id[item_id], href)
+            # `urljoin` raises ValueError on an href no parser reads, which got past `run`'s
+            # handler naming no item -- the shape round 1 fixed for asset hrefs in
+            # `item_verdict`, in its other caller (round 2).
+            try:
+                urls[item_id] = urllib.parse.urljoin(by_id[item_id], href)
+            except ValueError as e:
+                unlinked[item_id] = (f"links a receipt whose href {href!r} is not a URL "
+                                     f"({e}), so its provenance cannot be established")
+                continue
+            published[item_id] = doc
 
         for item_id, why in unlinked.items():
             out[item_id] = receipt.ItemVerdict("inconsistent", (), (why,))
@@ -894,9 +911,13 @@ def _receipt_verdicts(target, ids, by_id, fetch_dir, work, log) -> dict:
                     raise RegisterError(f"{item_id!r} differs from the API but the API no "
                                         f"longer serves it; re-run")
                 try:
+                    # `item_url` as for the receipt href above: an asset names a part by its
+                    # href relative to the item, so an absolute href is resolved against the
+                    # item's own URL, never the collection's (#17).
                     out[item_id] = receipt.item_verdict(
                         published[item_id], served[item_id], doc,
-                        receipt_sha256=hashlib.sha256(data).hexdigest())
+                        receipt_sha256=hashlib.sha256(data).hexdigest(),
+                        item_url=by_id[item_id])
                 except receipt.ReceiptError as e:
                     # INSIDE the guard. `item_verdict` raises on input `read` accepts: a
                     # NaN in a mirrored property (json.load takes those). A receipt the
