@@ -1628,46 +1628,61 @@ def _inside(path):
 _DEFAULT_PORTS = {"http": 80, "https": 443}
 
 
-def _origin(split):
+def _origin(split, scheme=None):
     """`(scheme, host, port)` of a split URL, the scheme's default port filled in.
 
-    Raises ValueError on a port that is out of range or not a number, which `urlsplit`
-    itself accepts. Userinfo is not part of it: it names who asks, not what is fetched.
+    `scheme` stands in for a network-path reference's (`//host/x`), which takes the item's.
+    Raises ValueError on a port that is out of range or not a number, which `urlsplit` itself
+    accepts. Userinfo is not part of it: it names who asks, not what is fetched.
     """
-    scheme = split.scheme.lower()
+    scheme = (scheme or split.scheme).lower()
     port = split.port
     return scheme, split.hostname or "", _DEFAULT_PORTS.get(scheme) if port is None else port
+
+
+def _rewritten_by_a_parser(href):
+    """Whether a URL parser would change `href` before reading it.
+
+    `urlsplit` deletes tab, CR and LF anywhere and strips control characters and spaces at
+    the ends, and `urldefrag` re-serialised an href only when it held a `#`, so `x\t.tif`
+    named no part and `x\t.tif#b` named `x.tif` (round 3). No URL reference holds these, so
+    such an href is malformed rather than read as some other spelling.
+    """
+    return any(ord(c) < 0x20 or c == "\x7f" for c in href) or href != href.strip(" ")
 
 
 def _relative_href(href, item_url):
     """`(path, problem)`: an asset href as a path relative to the item's directory.
 
     `path` is None when the href names nothing inside that directory. `problem` is
-    "malformed" for an href no URL parser reads (an unclosed IPv6 host, a port that is not
-    one), "absolute" when it was only for want of the item's URL, and None otherwise. The contract keys a part by the href
-    relative to the item, and the same file is spelled many ways: `./x.tif`, `sub/../x.tif`,
-    `x.tif#band`, or absolute, which is how many catalogues publish (#17).
+    "malformed" for an href no URL parser reads as written (an unclosed IPv6 host, a port
+    that is not one, a tab or a newline), "absolute" when it was only for want of the item's
+    URL, and None otherwise. The contract keys a part by the href relative to the item, and
+    the same file is spelled many ways: `./x.tif`, `sub/../x.tif`, `x.tif#band`, or absolute,
+    which is how many catalogues publish (#17).
 
-    A fragment never names another file, so it is dropped. A query may select another
+    A fragment never names another file, so it is cut off. A query may select another
     representation, so an href with one names no part. Dot segments, and only those, are
-    removed (`_remove_dots`), AFTER the
-    item's directory is stripped from a resolved URL, because `urljoin` leaves them in an
-    href that is already absolute. Two URLs share an origin when scheme, host and port agree,
-    case-insensitively and with the default port filled in; the path is compared as written.
-    Percent-encoding is not decoded: a part key is the path verbatim.
+    removed (`_remove_dots`) on every route: the RFC 3986 merge of a reference with the item's
+    URL is done here rather than by `urljoin`, which collapses `//` in the path it merges and
+    in the base, so a climbing href and a plain one named different parts (round 3). Two
+    URLs share an origin when scheme, host and port agree, case-insensitively and with the
+    default port filled in. Percent-encoding is not decoded: a part key is the path verbatim.
 
     Never raises on a string: `urlsplit` raises ValueError on what it cannot read, and
     `verify` reads published bodies with no audit in front of it, so one such href would end
     the run naming no item (round 1).
     """
+    if _rewritten_by_a_parser(href):
+        return None, "malformed"
+    href = href.partition("#")[0]
+    if "?" in href:
+        return None, None
     try:
-        href = urllib.parse.urldefrag(href).url
         split = urllib.parse.urlsplit(href)
         _origin(split)          # a port that is not one fails here, with or without item_url
     except ValueError:
         return None, "malformed"
-    # A relative href's query stays in its path, so it never equals a part key; a resolved
-    # URL's is split off, and is refused below.
     absolute = bool(split.scheme or split.netloc or href.startswith("/"))
     if not absolute:
         path = _inside(href)
@@ -1677,20 +1692,23 @@ def _relative_href(href, item_url):
         # URL can tell.
     if item_url is None:
         return None, "absolute" if absolute else None
-    try:
-        base = urllib.parse.urlsplit(urllib.parse.urljoin(item_url, "."))
-        full = urllib.parse.urlsplit(urllib.parse.urljoin(item_url, href))
-        same_origin = _origin(full) == _origin(base)
-    except ValueError:
-        return None, "malformed"
-    if not same_origin or full.query:
+    base = urllib.parse.urlsplit(item_url)      # `item_verdict` has refused one that fails
+    directory = base.path[:base.path.rfind("/") + 1] or "/"
+    if split.scheme or split.netloc:
+        # The port was read above, so this cannot raise.
+        if _origin(split, None if split.scheme else base.scheme) != _origin(base):
+            return None, None
+        path = split.path
+    elif href.startswith("/"):
+        path = href
+    else:
+        path = directory + href                 # RFC 3986 section 5.2.3, the merge
+    # Dot segments removed from both before the prefix test, so `/c/../c/x.tif` is under
+    # `/c/`; the directory ends in `/`, so `/cat/x.tif` is not under `/c/`.
+    path, directory = _remove_dots(path), _remove_dots(directory)
+    if path is None or directory is None or not path.startswith(directory):
         return None, None
-    # Normalised before the prefix test, so `/c/../c/x.tif` is under `/c/`; the base path
-    # ends in `/`, so `/cat/x.tif` is not under `/c/`.
-    path = _remove_dots(full.path)
-    if path is None or not path.startswith(base.path):
-        return None, None
-    return _inside(path[len(base.path):]), None
+    return _inside(path[len(directory):]), None
 
 
 def _part_key(href, parts, item_url):

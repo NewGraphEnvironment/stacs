@@ -375,6 +375,18 @@ def test_paging_refuses_every_early_exit(payloads, match):
                          session=_ScriptedSession(*payloads))
 
 
+def test_a_malformed_link_after_the_next_link_is_not_read_as_it_was_not_before():
+    """Round 3. 0.4.0 stopped at the first next link, so a junk entry after it was never read
+    and the page was followed. Refusing it would be a new refusal filed as a crash fix; only
+    a malformed link the search reaches is refused."""
+    session = _ScriptedSession(
+        {"features": [{"id": "a"}],
+         "links": [{"rel": "next", "body": {"token": "t"}}, "junk"]},
+        {"features": [{"id": "b"}], "links": []})
+    assert v.ids_registered("c", api="http://api.example.invalid", session=session) == \
+        ["a", "b"]
+
+
 def test_a_numeric_paging_token_is_still_followed():
     """Round 1. The sweep refused only to stop a token reaching the set unhashable; a number
     was followed before and is followed now, so the fix changed nothing that worked."""

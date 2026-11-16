@@ -1602,25 +1602,6 @@ def test_an_item_url_that_is_not_a_url_is_refused_as_a_receipt_error():
         r.item_verdict(item, item, _parts_receipt(), item_url="http://[::1/a0.json")
 
 
-def test_a_resolution_that_fails_is_a_disagreement_not_a_crash(monkeypatch):
-    """The second parse in `_relative_href`, after `urljoin`. No input found reaches it once
-    the href and `item_url` have each parsed (about 9,000 fuzzed hrefs did not), so this pins
-    the catch itself: whatever `urljoin` raises as ValueError becomes "malformed", never an
-    exception out of `verify`."""
-    real = r.urllib.parse.urljoin
-
-    def failing(base, url, *a, **k):
-        if url != ".":
-            raise ValueError("unreadable once joined")
-        return real(base, url, *a, **k)
-
-    monkeypatch.setattr(r.urllib.parse, "urljoin", failing)
-    item = _contradicting(href="https://example.invalid/catalogue/c/x.tif")
-    got = r.item_verdict(item, item, _parts_receipt(), item_url=ITEM_URL)
-    assert got.verdict == "inconsistent" and "assets[data].href" in got.fields, got
-
-
-
 @pytest.mark.parametrize("href,part", [("a//b.tif", "a/b.tif"), ("x.tif/", "x.tif"),
                                        ("./a//b.tif", "a/b.tif"), ("x.tif/.", "x.tif")],
                          ids=["doubled slash", "trailing slash", "dot slash, doubled slash",
@@ -1636,3 +1617,47 @@ def test_only_dot_segments_are_removed_so_another_key_is_not_matched(href, part)
     item = _contradicting(href="https://example.invalid/catalogue/c/"
                           + (href[2:] if href.startswith("./") else href))
     assert r.item_verdict(item, item, rec, item_url=ITEM_URL).verdict == "same", item
+
+
+
+@pytest.mark.parametrize("href", ["a//b.tif", "/catalogue/c/a//b.tif", "../c/a//b.tif",
+                                  "https://example.invalid/catalogue/c/a//b.tif",
+                                  "//example.invalid/catalogue/c/a//b.tif"],
+                         ids=["relative", "path-absolute", "climbing", "absolute",
+                              "network-path"])
+def test_a_doubled_slash_names_no_other_part_on_any_route(href):
+    """Round 3. Round 2 removed the `//` collapse from `_inside`, and `urljoin` put it back
+    for a climbing or path-absolute href: one object spelled three ways got two answers.
+    The merge is now done by hand, so every route removes dot segments and nothing else."""
+    rec = _parts_receipt({"a/b.tif": {"sha256": "b" * 64, "bytes": 12}})
+    item = _contradicting(href=href)
+    assert r.item_verdict(item, item, rec, item_url=ITEM_URL).verdict == "same", href
+
+
+@pytest.mark.parametrize("href", ["x\t.tif", "x\t.tif#b", "x.tif\n", "x.tif\n#b",
+                                  " x.tif", "x.tif ", "x.tif\r", "\x00x.tif",
+                                  "https://example.invalid/catalogue/c/x.tif\n"],
+                         ids=["tab", "tab, fragment", "newline", "newline, fragment",
+                              "leading space", "trailing space", "carriage return",
+                              "NUL", "absolute with a newline"])
+@pytest.mark.parametrize("item_url", [None, ITEM_URL])
+def test_an_href_a_parser_would_rewrite_is_malformed_on_every_route(href, item_url):
+    """Round 3. `urlsplit` strips tabs and newlines and edge whitespace, and `urldefrag`
+    rebuilt the href only when it held a `#`, so `x\t.tif` named no part and `x\t.tif#b`
+    named `x.tif`. No URL reference holds these characters, so the href is malformed on every
+    route, like one no parser reads."""
+    item = _contradicting(href=href)
+    got = r.item_verdict(item, item, _parts_receipt(), item_url=item_url)
+    assert got.verdict == "inconsistent" and "assets[data].href" in got.fields, got
+
+
+@pytest.mark.parametrize("href", ["https://example.invalid/catalogue//c/x.tif", "x.tif",
+                                  "../c/x.tif", "/catalogue//c/x.tif"],
+                         ids=["absolute", "relative", "climbing back in", "path-absolute"])
+def test_an_item_url_whose_path_holds_a_doubled_slash_still_compares_its_assets(href):
+    """Round 3's reverse case: `urljoin(item_url, ".")` collapsed the base's `//`, so no
+    absolute href under such an item was ever compared, with no note -- #17's own symptom."""
+    item = _contradicting(href=href)
+    got = r.item_verdict(item, item, _parts_receipt(),
+                         item_url="https://example.invalid/catalogue//c/a0.json")
+    assert got.verdict == "inconsistent" and "assets[data].file:checksum" in got.fields, got
