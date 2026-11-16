@@ -7,3 +7,5 @@
 - Scaffolded PWF baseline from issue #17 with approved phases
 - Next: start Phase 1
 - Phase 1: `_list` helper; `roles` and `stac_extensions` read through it; `item_problems` reports a non-list `roles` on any asset; `verify._search_pages` refuses a non-object link, a non-object next body and a non-string token. Mutation-checked: each of the six guards reverted makes its test fail. Suite 920 passed.
+- Plan review (Plan agent) returned during Phase 2: written to `review-plan.md`, folded into Phases 2-5 as `(review)` checkboxes. One plan correction: `verify` will also mark a published item with no recipe identity `inconsistent` under require_receipt, so it agrees with the audit and the gate decision (Phase 4).
+- Phase 2: reverse property check over `_MIRRORED_PROPERTIES`; every non-object asset entry (null included) on either side is malformed; sizes compared through `_whole`. Mutation-checked: three guards each fail their tests when reverted. Suite 943 passed before the last test was added; test_receipt.py 300 passed.

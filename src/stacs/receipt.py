@@ -1533,6 +1533,9 @@ ITEM_VERDICTS = ("same", "rebuilt", "changed", "inconsistent")
 # Every node `item_verdict` consults. Named here so the post-condition over it can enumerate
 # the code's own list instead of restating it: a second list would be the "two lists that
 # happen to agree" shape, which is how three of this branch's defects reached review.
+#
+# Fixed nodes only. Each ENTRY of `published.assets` and `served.assets` is consulted too, and
+# has its own check in `item_verdict` and its own test, because its key is the item's (#17).
 VERDICT_NODES = ("receipt.recipe", "receipt.context", "receipt.result",
                  "receipt.result.parts", "published.assets", "served.assets",
                  "published.properties", "served.properties")
@@ -1540,6 +1543,7 @@ VERDICT_NODES = ("receipt.recipe", "receipt.context", "receipt.result",
 # The mirrored fields, and whether a difference in one means the recipe moved or only the
 # bytes. `receipt:recipe_id` is the recipe; the rest are what the recipe produced.
 _IDENTITY_PROPERTY = "receipt:recipe_id"
+_MIRRORED_PROPERTIES = (_IDENTITY_PROPERTY, "processing:datetime", "processing:software")
 _RESULT_ASSET_FIELDS = ("file:checksum", "file:size")
 
 
@@ -1553,8 +1557,10 @@ class ItemVerdict:
       was built again from the same inputs.
     - `changed`: the recipe itself differs between the two sides.
     - `inconsistent`: the item's provenance could not be established -- it disagrees with
-      the receipt it links, that receipt could not be read or maps to no item fields
-      (`stac_fields` refuses it), or it links none at all. One
+      the receipt it links (in either direction: a mirrored field that differs, or one the
+      item publishes and the receipt does not produce), an asset entry on either side is not
+      an object, that receipt could not be read or maps to no item fields (`stac_fields`
+      refuses it), or it links none at all. One
       category because they have one consequence; the notes say which it was. Never reported
       as agreement.
     """
@@ -1572,7 +1578,7 @@ def _mirrored(item) -> dict:
     """The mirrored identity fields of an item, flattened to one comparable mapping."""
     out = {}
     properties = _mapping(item, "properties")
-    for key in (_IDENTITY_PROPERTY, "processing:datetime", "processing:software"):
+    for key in _MIRRORED_PROPERTIES:
         if key in properties:
             out[f"properties.{key}"] = properties[key]
     for key, asset in _mapping(item, "assets").items():
@@ -1593,7 +1599,12 @@ def item_verdict(published, served, receipt, receipt_sha256=None) -> ItemVerdict
     to anything.
 
     The receipt is what makes this more than a field diff: an item whose mirrored fields do not
-    match the receipt beside it is `inconsistent` whatever the two sides agree on.
+    match the receipt beside it is `inconsistent` whatever the two sides agree on. It is held
+    to the receipt in both directions: a mirrored field the published item carries must be one
+    the receipt's mapping produces, with the same value. A field it leaves out is not a
+    disagreement, because the field schema makes each one optional. Only the published item
+    is held to the receipt, because it is the published item's receipt; a served item that
+    names another recipe reads `changed`.
 
     Examples:
         >>> item = {"properties": {"receipt:recipe_id": "a" * 64}}
@@ -1640,6 +1651,13 @@ def item_verdict(published, served, receipt, receipt_sha256=None) -> ItemVerdict
     )
     malformed = [where for where, node in nodes
                  if node is not None and not isinstance(node, dict)]
+    # Each asset ENTRY, on both sides, and `null` with the rest: an entry is the item's own
+    # object, never an optional node, and skipping one compared nothing and read `same` (#17).
+    # An entry the receipt does not describe -- a thumbnail -- included: its provenance
+    # cannot be established either, and the verdict is about the item.
+    for side, doc in (("published", published), ("served", served)):
+        malformed += [f"{side}.assets[{key}]" for key, asset in _mapping(doc, "assets").items()
+                      if not isinstance(asset, dict)]
     if malformed:
         return ItemVerdict("inconsistent", tuple(malformed),
                            (f"{len(malformed)} node(s) the comparison needs are present but "
@@ -1674,8 +1692,6 @@ def item_verdict(published, served, receipt, receipt_sha256=None) -> ItemVerdict
     named = {}
     parts = _mapping(_mapping(receipt, "result"), "parts")
     for key, asset in _mapping(published, "assets").items():
-        if not isinstance(asset, dict):
-            continue
         href = asset.get("href")
         if href is not None and not isinstance(href, str):
             # Unhashable as a dict key, and the item is malformed either way. Recorded as a
@@ -1701,17 +1717,30 @@ def item_verdict(published, served, receipt, receipt_sha256=None) -> ItemVerdict
                             f"({e.code or 'refused'}): {e}",))
 
     properties = _mapping(published, "properties")
-    for key, value in claimed["properties"].items():
-        if key in properties and canonical(properties[key]) != canonical(value):
+    # Both directions. A field the item publishes and the mapping does not produce is a claim
+    # the receipt does not make -- a recipe identity over a migrated receipt, software over a
+    # receipt with no versioned code -- and was read as agreement (#17). A field the item
+    # leaves out is not: the field schema makes each one optional.
+    for key in _MIRRORED_PROPERTIES:
+        if key not in properties:
+            continue
+        if key not in claimed["properties"] \
+                or canonical(properties[key]) != canonical(claimed["properties"][key]):
             disagree.append(f"properties.{key}")
     for key, want in claimed["assets"].items():
         asset = published["assets"][key]
         if "file:checksum" in asset and asset["file:checksum"] != want["file:checksum"]:
             disagree.append(f"assets[{key}].file:checksum")
         if "file:size" in asset:
-            size = asset["file:size"]
-            if isinstance(size, bool) or not isinstance(size, (int, float)) \
-                    or float(size) != want["file:size"]:
+            # As a whole number, never a double: `float(size)` raised OverflowError on an int
+            # too large for one, and read 2**60 + 1 as 2**60 (#17). A receipt's `bytes` is
+            # read by `load_json` as a double, so a true size above 2**53 that the receipt could
+            # not spell exactly disagrees here -- the receipt does not hold that size.
+            try:
+                size_agrees = _whole(asset["file:size"], "file:size") == want["file:size"]
+            except ReceiptError:
+                size_agrees = False
+            if not size_agrees:
                 disagree.append(f"assets[{key}].file:size")
 
     if disagree:

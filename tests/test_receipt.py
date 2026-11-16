@@ -1328,3 +1328,113 @@ def test_item_verdict_does_not_raise_on_roles_that_are_not_a_list():
                                    "roles": 7, "file:checksum": r.multihash("b" * 64)}}}
     got = r.item_verdict(item, item, rec, receipt_sha256="b" * 64)
     assert got.verdict in r.ITEM_VERDICTS
+
+
+# =============================================================================
+# Issue #17: the item against its receipt, in both directions
+# =============================================================================
+
+def _migrated():
+    return {"output": _form(migrated_from="manifest.json"), "recipe": {"recipe_id": None},
+            "result": {}, "context": _when()}
+
+
+def _versionless():
+    return {"output": _form(), "recipe": {"recipe_id": "a" * 64, "code": {}}, "result": {},
+            "context": _when()}
+
+
+@pytest.mark.parametrize("receipt_doc,item,field", [
+    (_migrated(), {"properties": {"receipt:recipe_id": "a" * 64}},
+     "properties.receipt:recipe_id"),
+    (_versionless(), {"properties": {"receipt:recipe_id": "a" * 64,
+                                     "processing:software": {"stacs": "0.4.0"}}},
+     "properties.processing:software"),
+], ids=["a recipe identity over a migrated receipt", "software over a receipt with none"])
+def test_a_field_the_item_publishes_and_its_receipt_does_not_produce_is_inconsistent(
+        receipt_doc, item, field):
+    """`item_verdict` walked the fields the receipt maps to and checked the item's copy of
+    each, and never asked the other question. An item claiming a recipe identity over a
+    migrated receipt read `same`, `ok` true -- provenance the receipt does not hold."""
+    got = r.item_verdict(item, item, receipt_doc)
+    assert got.verdict == "inconsistent" and not got.ok, got
+    assert field in got.fields, got.fields
+
+
+def test_a_field_the_receipt_does_not_produce_on_the_served_side_alone_is_still_drift():
+    """The receipt is the published item's; the served one may have been built from another,
+    which is what `changed` says. So the served side is not held to the published receipt,
+    but a served item naming a recipe the published one does not is never `same`."""
+    published = {"properties": {}}
+    served = {"properties": {"receipt:recipe_id": "a" * 64}}
+    got = r.item_verdict(published, served, _migrated())
+    assert got.verdict == "changed" and not got.ok, got
+
+
+def test_a_field_the_item_leaves_out_is_not_a_disagreement():
+    """The other direction stays as it was: the field schema says each field is optional, so
+    an item that mirrors less than its receipt could is not contradicting it."""
+    got = r.item_verdict({"properties": {}}, {"properties": {}}, _versionless())
+    assert got.verdict == "same", got
+    software = {**_versionless(), "recipe": {"recipe_id": "a" * 64,
+                                             "code": {"stacs": {"version": "0.4.0"}}}}
+    item = {"properties": {"receipt:recipe_id": "a" * 64,
+                           "processing:software": {"stacs": "0.4.0"}}}
+    assert r.item_verdict(item, item, software).verdict == "same", "control"
+
+
+@pytest.mark.parametrize("side", ["published", "served"])
+@pytest.mark.parametrize("entry", [5, "x.tif", None, ["x.tif"], True])
+def test_an_asset_entry_that_is_not_an_object_is_inconsistent_on_either_side(side, entry):
+    """It was skipped on both sides, so it compared nothing and read `same`. Its provenance
+    cannot be established, which is what `inconsistent` says."""
+    rec = {"output": _form(), "recipe": {"recipe_id": "a" * 64}, "context": _when(),
+           "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 12}}}}
+    good = {"properties": {"receipt:recipe_id": "a" * 64},
+            "assets": {"data": {"href": "x.tif", "file:checksum": r.multihash("b" * 64)}}}
+    bad = {**good, "assets": {**good["assets"], "d": entry}}
+    published, served = (bad, good) if side == "published" else (good, bad)
+    got = r.item_verdict(published, served, rec)
+    assert got.verdict == "inconsistent" and not got.ok, got
+    assert f"{side}.assets[d]" in got.fields, got.fields
+
+
+@pytest.mark.parametrize("size,agrees", [
+    (12, True), (12.0, True), (10**400, False), (12.5, False),
+    ("12", False), (True, False), (-12, False), (float("inf"), False),
+], ids=["int", "whole float", "beyond a double", "fraction", "string", "bool", "negative",
+        "infinity"])
+def test_a_size_is_compared_as_a_whole_number_never_as_a_double(size, agrees):
+    """`float(size)` raised `OverflowError` out of `item_verdict` on an integer too large for
+    a double, and would have read 12 + 2**60 as equal to a part of that size rounded."""
+    rec = {"output": _form(), "recipe": {"recipe_id": "a" * 64}, "context": _when(),
+           "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 12}}}}
+    item = {"properties": {"receipt:recipe_id": "a" * 64},
+            "assets": {"data": {"href": "x.tif", "file:size": size}}}
+    got = r.item_verdict(item, item, rec)
+    if agrees:
+        assert got.verdict == "same", got
+    else:
+        assert got.verdict == "inconsistent", got
+        assert "assets[data].file:size" in got.fields, got.fields
+
+
+def test_two_sizes_one_apart_beyond_a_doubles_precision_disagree():
+    """As doubles, 2**60 and 2**60 + 1 are one number, so `float(size) != bytes` called them
+    equal."""
+    rec = {"output": _form(), "recipe": {"recipe_id": "a" * 64}, "context": _when(),
+           "result": {"parts": {"x.tif": {"sha256": "b" * 64, "bytes": 2**60}}}}
+    item = {"properties": {"receipt:recipe_id": "a" * 64},
+            "assets": {"data": {"href": "x.tif", "file:size": 2**60 + 1}}}
+    got = r.item_verdict(item, item, rec)
+    assert got.verdict == "inconsistent" and "assets[data].file:size" in got.fields, got
+
+
+def test_an_empty_software_map_over_a_receipt_with_none_is_inconsistent():
+    """The mapping leaves `processing:software` out when no repository is versioned, so an
+    item publishing `{}` publishes a field the receipt does not produce -- the review's edge
+    of the reverse check, pinned so the choice is visible."""
+    item = {"properties": {"receipt:recipe_id": "a" * 64, "processing:software": {}}}
+    got = r.item_verdict(item, item, _versionless())
+    assert got.verdict == "inconsistent", got
+    assert "properties.processing:software" in got.fields, got.fields

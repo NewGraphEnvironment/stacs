@@ -74,21 +74,24 @@ run with a traceback.
 
 ## Phase 2: `item_verdict` checks both directions (tests first)
 
-- [ ] Failing tests. A migrated receipt with an item that publishes `receipt:recipe_id`
+- [x] Failing tests. A migrated receipt with an item that publishes `receipt:recipe_id`
       gives `inconsistent`. A receipt with no versioned code and an item that publishes
       `processing:software` gives `inconsistent`. Run each through both `published` and
       `served`.
-- [ ] For `receipt:recipe_id`, `processing:datetime` and `processing:software`, a field the
+- [x] For `receipt:recipe_id`, `processing:datetime` and `processing:software`, a field the
       published item carries that `claimed["properties"]` lacks is a disagreement
       (receipt.py:1685).
-- [ ] An asset entry that is not an object is malformed on both sides. Add each such entry
+- [x] An asset entry that is not an object is malformed on both sides. Add each such entry
       to the existing `malformed` node check (receipt.py:1623) as `published.assets[k]` or
       `served.assets[k]`. Today the code skips it at receipt.py:1659 and in `_mirrored`.
-- [ ] Compare sizes without converting to a double. Read the size through `_whole` and
+- [x] Compare sizes without converting to a double. Read the size through `_whole` and
       compare it as an int, with a fractional or non-number size counting as a
       disagreement. Add a test with `file:size` set to `10**400`.
-- [ ] Update the `item_verdict` docstring and the `ItemVerdict` docstring to describe the
+- [x] Update the `item_verdict` docstring and the `ItemVerdict` docstring to describe the
       check in both directions.
+- [x] (review) A `processing:software: {}` over unversioned code is `inconsistent`: test it.
+      Served-side expectations stated (`changed`). Size above 2^53 commented: receipt bytes
+      are doubles. `VERDICT_NODES` docstring says asset entries have their own check.
 
 ## Phase 3: Match an asset href to a part (tests first)
 
@@ -101,6 +104,13 @@ run with a traceback.
       `posixpath.normpath` and refuses a path that climbs above the item's directory. Then,
       when `item_url` is given, it uses `urljoin` and strips the item's directory prefix.
       The matched key goes into `named`, so `stac_fields` stays the only producer.
+- [ ] (review) In the helper: drop a fragment; an href with a query names no part; strip the
+      prefix of `urljoin(item_url, ".")` and normpath and climb-check AFTER stripping; compare
+      scheme and host case-insensitively; a climbing relative href falls through to item_url;
+      "absolute" for the note covers a scheme, `//host` and `/path`; part keys are matched by
+      the same normalisation, and two part keys that normalise to one make the asset a
+      disagreement. An asset with `file:*` and no href, or href `""`, is a disagreement in
+      the asset loop itself.
 - [ ] Add `item_verdict(..., item_url=None)`. `register._receipt_verdicts` passes
       `by_id[item_id]`, the URL it already resolves the receipt href against
       (register.py:848). Add a test there with absolute hrefs.
@@ -115,13 +125,18 @@ run with a traceback.
       `receipt.receipt_href(doc)` set means `bad_receipt` with that sentence.
 - [ ] Say in the `item_problems` docstring and the README that `require_receipt` admits
       only items that carry a recipe identity.
+- [ ] (review) `verify` agrees with the audit: `_receipt_verdicts` (which runs only under
+      `require_receipt`) marks a published item with no `receipt:recipe_id` `inconsistent`
+      with the same sentence. Test in `tests/test_register.py`.
 
 ## Phase 5: Documentation
 
 - [ ] Add `## Unreleased` to `NEWS.md` with **Behaviour change** entries for: the reverse
-      check, non-object asset entries, href resolution and `item_url`, the non-list reads
-      (a string `roles` is no longer accepted as the receipt role), and the migrated-item
-      sentence in the audit. Derive every number in the entries from the code.
+      check (including `processing:software: {}`), non-object asset entries (any asset, one
+      the receipt does not describe included), href resolution and `item_url` (a resolved href
+      can now name a part the mapping refuses), the non-list reads (a string `roles` is no
+      longer accepted as the receipt role; a null `roles` is reported), the paging refusals,
+      and the migrated-item sentence in the audit and in verify. Derive every number in the entries from the code.
 - [ ] README receipts section (inside the markers, absolute links only): how hrefs are
       matched to parts, and what `require_receipt` admits.
 - [ ] Run `uv run mkdocs build --strict` without `-q`, and `tests/test_docs.py`.
@@ -136,7 +151,6 @@ run with a traceback.
 How each change is proved: every defect in the issue, plus the string-`roles` case, gets a
 test that fails on 8390c5d and passes after the change. Each new guard gets a mutation
 check: remove it and watch its test fail. The verify path is tested through
-`tests/test_register.py`'s ssh/HTTP stubs, so a non-`ReceiptError` cannot end a run. Re-run
-the reproduction script from the exploration and confirm each line now gives the decided
-answer.
+`tests/test_register.py`'s ssh/HTTP stubs, so a non-`ReceiptError` cannot end a run. The exploration's reproduction
+script was not committed, so the tests are the proof (review).
 
