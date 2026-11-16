@@ -19,4 +19,8 @@
 - Code-check round 1 (review-round1.md): no code defect; README/NEWS overclaimed the receipt
   verdict (the axis runs only under `require_receipt`, on items in `changed`) — reworded.
   Mutation: item-link site reverted fails all 5 refusal cases incl. `ids` and dryrun.
-- Next: code-check round 2
+- Code-check round 2 (review-round2.md): round 1's fix confirmed true; one finding in the
+  original text, not inside a fix — `drift` loads `missing | changed`, so it upserted a local
+  item too (measured by the reviewer under mutation). NEWS, the register.py comment and the
+  test docstring now name `all`, `ids` or `drift`.
+- Next: code-check round 3

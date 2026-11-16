@@ -2264,8 +2264,9 @@ def test_a_receipt_href_to_a_local_file_is_never_read_from_an_http_catalogue(
 def test_an_item_link_to_a_local_file_refuses_an_http_catalogue(
         env, api, http_bucket, reads, mode, dryrun):
     """Issue #19, the larger site: a collection served over http linking an item as
-    `file:///...` had that file read in every mode, and in `all` upserted -- a local file
-    served by the API. Refused before any item is fetched or anything is written."""
+    `file:///...` had that file read in every mode, and in `all`, `ids` or `drift` upserted
+    -- a local file served by the API. Refused before any item is fetched or anything is
+    written."""
     local = env / "elsewhere" / "a9.json"
     local.parent.mkdir()
     local.write_text(json.dumps(_item("a9")))

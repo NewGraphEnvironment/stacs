@@ -558,8 +558,8 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
         # Relative hrefs (normal in a self-contained catalogue) resolve against the
         # collection's own URL. The id is still the basename. Within the collection's
         # scheme family: a file:// link in a collection served over https would have a
-        # local file read, and in `all` upserted and served by the API (#19). Refused
-        # before anything is fetched, as a malformed link list is.
+        # local file read, and in `all`, `ids` or `drift` upserted and served by the API
+        # (#19). Refused before anything is fetched, as a malformed link list is.
         resolved = []
         for i, h in links:
             try:

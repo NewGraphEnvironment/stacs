@@ -13,7 +13,7 @@ Versions track the package. A tag is a release consumers can pin with
   `inconsistent` where `verify` reads receipts (under `require_receipt`, for an item whose
   published and served bodies differ). Before, an absolute `file:///...` href in a catalogue served
   over https had a file on the machine running stacs read: a receipt was hashed and
-  reported on, and in `all` or `ids` an item was upserted and served by the API (#19).
+  reported on, and in `all`, `ids` or `drift` an item was upserted and served by the API (#19).
 
 ## 0.5.0
 
