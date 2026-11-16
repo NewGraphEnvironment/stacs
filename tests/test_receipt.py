@@ -1266,3 +1266,65 @@ def test_stac_fields_refuses_a_block_that_is_present_but_not_an_object(block, va
     doc[block] = value
     with pytest.raises(r.ReceiptError, match=f"receipt.{block} is present but not an object"):
         r.stac_fields(doc)
+
+
+# =============================================================================
+# Issue #17: a member that must be a list is read as one
+# =============================================================================
+
+@pytest.mark.parametrize("roles", [7, True, 1.5, {}, {"metadata": 1}, "metadata",
+                                   "metadata,data"],
+                         ids=["number", "bool", "float", "empty object", "object keyed by role",
+                              "the role as a string", "a string containing the role"])
+def test_roles_that_are_not_a_list_never_raise_and_never_link_the_receipt(roles):
+    """`asset.get("roles") or []` kept a truthy non-list, so `in` raised on a number or a bool
+    and matched a string by SUBSTRING and an object by key: `"metadata"` and
+    `{"metadata": 1}` were each taken for the receipt's role. `validate.audit_items` and
+    `register._receipt_verdicts` read this outside any handler, so one such item ended the
+    run with a traceback."""
+    item = {"assets": {"receipt": {"href": "r.json", "type": "application/json",
+                                   "roles": roles}}}
+    assert r.receipt_asset(item) is None
+    assert r.receipt_href(item) is None
+    problems = r.item_problems(item)
+    assert "asset 'receipt' roles is not a list" in problems, problems
+    assert any("no asset links the receipt" in p for p in problems), problems
+
+
+def test_roles_as_a_list_still_link_the_receipt():
+    """The control for the cases above: a check that refused every `roles` would pass them."""
+    item = {"assets": {"receipt": {"href": "r.json", "type": "application/json",
+                                   "roles": ["metadata"]}}}
+    assert r.receipt_href(item) == "r.json"
+    assert not any("roles" in p for p in r.item_problems(item))
+
+
+def test_a_data_assets_roles_that_are_not_a_list_are_a_problem():
+    """Every asset's `roles`, not only the receipt's: the field schema does not constrain it,
+    so nothing else would say so."""
+    problems = r.item_problems(_example_item(**{"assets.floodplain.roles": "data"}))
+    assert "asset 'floodplain' roles is not a list" in problems, problems
+
+
+@pytest.mark.parametrize("extensions", [7, True, {"x": 1}, r.PROCESSING_EXTENSION_URL],
+                         ids=["number", "bool", "object", "the URL as a string"])
+def test_stac_extensions_that_are_not_a_list_are_a_problem_not_a_crash(extensions):
+    """`item.get("stac_extensions") or []` kept a truthy non-list: `in` raised on a number,
+    and found the processing URL inside a string that IS that URL, so the missing-extension
+    problem was never reported for it."""
+    problems = r.item_problems(_example_item(stac_extensions=extensions))
+    assert any(p.startswith("stac_extensions:") for p in problems), problems
+    assert any("does not list" in p and r.PROCESSING_EXTENSION_URL in p
+               for p in problems), problems
+
+
+def test_item_verdict_does_not_raise_on_roles_that_are_not_a_list():
+    """`item_verdict` finds the receipt asset through the same producer when it is given the
+    digest of the receipt it read."""
+    rec = {"output": _form(), "recipe": {"recipe_id": "a" * 64}, "result": {},
+           "context": _when()}
+    item = {"properties": {"receipt:recipe_id": "a" * 64},
+            "assets": {"receipt": {"href": "r.json", "type": "application/json",
+                                   "roles": 7, "file:checksum": r.multihash("b" * 64)}}}
+    got = r.item_verdict(item, item, rec, receipt_sha256="b" * 64)
+    assert got.verdict in r.ITEM_VERDICTS

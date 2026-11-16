@@ -55,22 +55,22 @@ run with a traceback.
 
 ## Phase 1: Non-list reads (tests first)
 
-- [ ] Failing tests in `tests/test_receipt.py`: `roles` set to `7`, `True`, `"metadata"` or
+- [x] Failing tests in `tests/test_receipt.py`: `roles` set to `7`, `True`, `"metadata"` or
       `{}`, and `stac_extensions` set to `7` or a string. `receipt_href` returns None or the
       right asset, and `item_problems` returns problems instead of raising.
-- [ ] Add a `_list(node, key)` helper beside `_mapping` (receipt.py:81) that returns `[]`
+- [x] Add a `_list(node, key)` helper beside `_mapping` (receipt.py:81) that returns `[]`
       for anything that is not a list. Read `roles` (receipt.py:1411) and `stac_extensions`
       (receipt.py:1445) through it.
-- [ ] `item_problems` reports "asset {key!r} roles is not a list". The field schema already
+- [x] `item_problems` reports "asset {key!r} roles is not a list". The field schema already
       reports a non-list `stac_extensions`, so that message is not repeated.
-- [ ] A verify-path test in `tests/test_register.py`: an item with `roles: 7` gets a
+- [x] A verify-path test in `tests/test_register.py`: an item with `roles: 7` gets a
       verdict, and the run continues.
-- [ ] Sweep `src/stacs/` for the same shape. The one hit outside receipt.py is
+- [x] Sweep `src/stacs/` for the same shape. The one hit outside receipt.py is
       `verify.py:81,85`, where a `next` link that is not an object, or a truthy `body` that
       is not an object, raises `AttributeError` while paging. Raise `RuntimeError` there
       instead, matching the surrounding paging checks, and add a test in
       `tests/test_verify.py`.
-- [ ] Mutation-check each guard: remove it and watch its test fail.
+- [x] Mutation-check each guard: remove it and watch its test fail.
 
 ## Phase 2: `item_verdict` checks both directions (tests first)
 

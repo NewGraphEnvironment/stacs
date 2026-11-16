@@ -359,6 +359,13 @@ class _ScriptedSession:
     ([{"features": [{"id": "a"}]}], "no links"),
     ([{"features": [{"id": "a"}], "links": [{"rel": "next", "body": {"token": "t"}}]},
       {"type": "error"}], "no feature list"),
+    # Issue #17's sweep: `or {}` and `.get` on members a server may send as anything.
+    ([{"features": [{"id": "a"}], "links": ["self", {"rel": "next", "body": {"token": "t"}}]}],
+     "not an object"),
+    ([{"features": [{"id": "a"}], "links": [{"rel": "next", "body": "token=t"}]}],
+     "no token"),
+    ([{"features": [{"id": "a"}], "links": [{"rel": "next", "body": {"token": ["t"]}}]}],
+     "no token"),
 ])
 def test_paging_refuses_every_early_exit(payloads, match):
     """Every way out other than "no next link" raises: a short enumeration reads as

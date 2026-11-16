@@ -1986,6 +1986,23 @@ def test_one_unreadable_receipt_does_not_cost_the_other_items_verdicts(env, api)
     assert r.rc == 1
 
 
+def test_an_item_whose_roles_are_not_a_list_gets_a_verdict_and_the_run_goes_on(env, api):
+    """Issue #17. `receipt_href` read `roles` with `or []`, so `roles: 7` raised `TypeError`
+    out of `_receipt_verdicts`, which catches only `ReceiptError`: one malformed item ended
+    `verify` with a traceback and no drift answer. It now links no receipt, which this
+    catalogue declares it carries, and a1 still gets its verdict."""
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    bad = _item_with_receipt("a0", digest, rid)
+    bad["assets"]["receipt"]["roles"] = 7
+    published = [bad, _item_with_receipt("a1", digest, rid, data_checksum=CK_A)]
+    served = [_edited(bad), _item_with_receipt("a1", digest, rid, data_checksum=CK_B)]
+    r = _receipt_run(env, api, published, served, data=data)
+    assert "Traceback" not in r.err, r.err
+    assert "1 rebuilt" in r.out and "1 inconsistent" in r.out, r.out
+    assert "links no receipt" in r.err, r.err
+    assert r.rc == 1
+
+
 def test_an_item_that_links_no_receipt_is_refused_when_the_catalogue_declares_them(env, api):
     published = [_item("a0")]
     r = _receipt_run(env, api, published, [_edited(published[0])])

@@ -93,6 +93,18 @@ def _mapping(node, key=None):
     return node if isinstance(node, dict) else {}
 
 
+def _list(node, key):
+    """`node[key]` when `node` is a mapping and that member is a list -- otherwise `[]`.
+
+    The list sibling of `_mapping`, for the same reason: `node.get(key) or []` keeps a truthy
+    non-list, and `in` then raises on a number and matches a string by SUBSTRING and an object
+    by key, so `roles: "metadata"` was taken for the receipt's role (#17). A caller that must
+    say the member was malformed checks `isinstance` itself; this only stops it being read.
+    """
+    node = node.get(key) if isinstance(node, dict) else None
+    return node if isinstance(node, list) else []
+
+
 class ReceiptError(ValueError):
     """A receipt, recipe or table that has no canonical form, or does not meet the contract.
 
@@ -1408,7 +1420,7 @@ def receipt_asset(item):
         if not isinstance(asset, dict):
             continue
         href = asset.get("href")
-        if RECEIPT_ROLE in (asset.get("roles") or []) \
+        if RECEIPT_ROLE in _list(asset, "roles") \
                 and asset.get("type") == "application/json" \
                 and isinstance(href, str) and href:
             return asset
@@ -1442,7 +1454,9 @@ def item_problems(item) -> list:
         return [f"not a JSON object: {type(item).__name__}"]
     problems = []
     properties = _mapping(item, "properties")
-    extensions = item.get("stac_extensions") or []
+    # A non-list is reported by the field schema ("is not of type 'array'"), so it is only
+    # read as empty here, never reported twice.
+    extensions = _list(item, "stac_extensions")
     assets = _mapping(item, "assets")
 
     identity = properties.get("receipt:recipe_id")
@@ -1478,6 +1492,10 @@ def item_problems(item) -> list:
         if not isinstance(asset, dict):
             problems.append(f"asset {key!r} is not an object")
             continue
+        if "roles" in asset and not isinstance(asset["roles"], list):
+            # The field schema does not constrain `roles`, so nothing else would say so, and
+            # `receipt_asset` reads such an asset as linking nothing.
+            problems.append(f"asset {key!r} roles is not a list")
         if "file:checksum" in asset or "file:size" in asset:
             file_fields = True
         checksum = asset.get("file:checksum")
