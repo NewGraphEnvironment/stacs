@@ -1590,36 +1590,42 @@ class ItemVerdict:
 def _remove_dots(path):
     """`path` with its `.` and `..` segments removed, as RFC 3986 section 5.2.4 removes them.
 
-    A `..` at the root of an absolute path stays at the root, as the RFC has it
-    (`/../c/x.tif` is `/c/x.tif`). A relative path has no root, so a `..` that climbs past
-    its start leaves the item's directory, and the answer is None.
+    A path that starts with `/` is rooted: a `..` at its root stays there, as the RFC has it
+    (`/../c/x.tif` is `/c/x.tif`). A relative path has no root, so a `..` that climbs past its
+    start leaves the item's directory, and the answer is None. Whether the path is rooted is
+    read once, from its first character: an emptied `//` part way through (`a/..//`) is not a
+    root, and reading it as one swallowed the `..` after it (round 4).
 
     Only dot segments: `posixpath.normpath` also collapses `//` and drops a trailing `/`, and
     on an object store `a//b.tif` and `x.tif/` are other keys than `a/b.tif` and `x.tif`,
-    so an asset was compared with a part it does not name (round 2).
+    so an asset was compared with a part it does not name (round 2). A relative result may
+    start with `/`: `.//x.tif` is the file `//x.tif` under the directory, `/x.tif` relative.
     """
-    segments = path.split("/")
+    rooted = path.startswith("/")
+    segments = path.split("/")[1:] if rooted else path.split("/")
     out = []
     for i, segment in enumerate(segments):
-        last = i == len(segments) - 1
         if segment in (".", ".."):
             if segment == "..":
-                if not out:
-                    return None
-                if out != [""]:
+                if out:
                     out.pop()
-            if last:
+                elif not rooted:
+                    return None
+            if i == len(segments) - 1:
                 out.append("")      # `a/.` and `a/b/..` name the directory, `a/`
             continue
         out.append(segment)
-    return "/".join(out)
+    return ("/" if rooted else "") + "/".join(out)
 
 
 def _inside(path):
-    """`path`, its dot segments removed, when it is relative and names something inside the
-    item's directory; else None."""
-    if path.startswith("/"):
-        return None
+    """A RELATIVE `path`, its dot segments removed, when it names something inside the item's
+    directory; else None.
+
+    The caller decides it is relative -- a raw href or part key that starts with `/` is not,
+    and is never passed -- because the remainder of a merged path after the item's directory
+    is relative and may start with `/` (round 4).
+    """
     path = _remove_dots(path)
     return path or None
 
@@ -1645,8 +1651,9 @@ def _rewritten_by_a_parser(href):
 
     `urlsplit` deletes tab, CR and LF anywhere and strips control characters and spaces at
     the ends, and `urldefrag` re-serialised an href only when it held a `#`, so `x\t.tif`
-    named no part and `x\t.tif#b` named `x.tif` (round 3). No URL reference holds these, so
-    such an href is malformed rather than read as some other spelling.
+    named no part and `x\t.tif#b` named `x.tif` (round 3). No URL reference holds these, or
+    DEL, which `urlsplit` reads through as part of a name; such an href is malformed rather
+    than read as some other spelling.
     """
     return any(ord(c) < 0x20 or c == "\x7f" for c in href) or href != href.strip(" ")
 
@@ -1725,7 +1732,8 @@ def _part_key(href, parts, item_url):
     path, problem = _relative_href(href, item_url)
     if path is None:
         return None, problem
-    hits = [k for k in parts if isinstance(k, str) and _inside(k) == path]
+    hits = [k for k in parts
+            if isinstance(k, str) and not k.startswith("/") and _inside(k) == path]
     if len(hits) > 1:
         return None, "ambiguous"
     return (hits[0] if hits else None), None

@@ -9,6 +9,7 @@ contract is refused by name rather than hashed into something plausible.
 import copy
 import datetime
 import hashlib
+import itertools
 import json
 import os
 import stat
@@ -1661,3 +1662,140 @@ def test_an_item_url_whose_path_holds_a_doubled_slash_still_compares_its_assets(
     got = r.item_verdict(item, item, _parts_receipt(),
                          item_url="https://example.invalid/catalogue//c/a0.json")
     assert got.verdict == "inconsistent" and "assets[data].file:checksum" in got.fields, got
+
+
+def _rfc3986_remove_dot_segments(path):
+    """RFC 3986 section 5.2.4, step by step as the RFC writes it: an input buffer and an
+    output buffer of strings. Kept in this shape on purpose, apart from `_remove_dots`'s stack
+    of segments, so the two are independent statements of one rule."""
+    out = ""
+    while path:
+        if path.startswith("../"):
+            path = path[3:]
+        elif path.startswith("./"):
+            path = path[2:]
+        elif path.startswith("/./"):
+            path = "/" + path[3:]
+        elif path == "/.":
+            path = "/"
+        elif path.startswith("/../") or path == "/..":
+            path = "/" + path[4:] if path.startswith("/../") else "/"
+            out = out[:out.rfind("/")] if "/" in out else ""
+        elif path in (".", ".."):
+            path = ""
+        else:
+            start = 1 if path.startswith("/") else 0
+            end = path.find("/", start)
+            end = len(path) if end == -1 else end
+            out, path = out + path[:end], path[end:]
+    return out
+
+
+def test_dot_segment_removal_agrees_with_the_rfc_on_every_short_rooted_path():
+    """Round 4. `_remove_dots` read `out == [""]` as "at the root", which a relative path also
+    reaches after `a/..//`, so a `..` after it was swallowed. For a rooted path the RFC's own
+    algorithm is the reference, over every path of up to four segments from the alphabet that
+    finds this class."""
+    alphabet = ["", ".", "..", "a", "x.tif"]
+    checked = 0
+    for n in range(1, 5):
+        for segs in itertools.product(alphabet, repeat=n):
+            path = "/" + "/".join(segs)
+            assert r._remove_dots(path) == _rfc3986_remove_dot_segments(path), path
+            checked += 1
+    assert checked == 5 + 25 + 125 + 625
+
+
+@pytest.mark.parametrize("href,item_url", [
+    ("a/..//../x.tif", None), ("a/..//../x.tif", ITEM_URL),
+    ("https://example.invalid/catalogue/c/a/..//../x.tif", ITEM_URL),
+], ids=["relative", "relative, item URL given", "absolute"])
+def test_a_dot_dot_after_an_emptied_doubled_slash_still_climbs(href, item_url):
+    """Round 4: `a/..//../x.tif` names `x.tif`, and read `same` against a contradicting part."""
+    item = _contradicting(href=href)
+    got = r.item_verdict(item, item, _parts_receipt(), item_url=item_url)
+    assert got.verdict == "inconsistent" and "assets[data].file:checksum" in got.fields, got
+
+
+@pytest.mark.parametrize("href", [".//x.tif", "././/x.tif",
+                                  "https://example.invalid/catalogue/c//x.tif",
+                                  "/catalogue/c//x.tif"],
+                         ids=["dot slash", "dot dot slash", "absolute", "path-absolute"])
+def test_a_part_keyed_with_an_empty_first_segment_is_matched_on_every_route(href):
+    """Round 4: part `.//x.tif` is the file `//x.tif` under the item's directory. Matched by
+    the relative spellings, it was missed by the absolute ones, whose remainder `/x.tif` was
+    refused as though it were absolute -- and never compared with part `x.tif`, which it
+    does not name."""
+    rec = _parts_receipt({".//x.tif": {"sha256": "b" * 64, "bytes": 12},
+                          "x.tif": {"sha256": "f" * 64, "bytes": 12}})
+    item = _contradicting(href=href)       # contradicts `.//x.tif`, agrees with `x.tif`
+    got = r.item_verdict(item, item, rec, item_url=ITEM_URL)
+    assert got.verdict == "inconsistent" and "assets[data].file:checksum" in got.fields, got
+
+
+@pytest.mark.parametrize("item_url", ["https://example.invalid/catalogue/c/./a0.json",
+                                      "https://example.invalid/catalogue/d/../c/a0.json"],
+                         ids=["dot", "dot dot"])
+def test_an_item_url_with_dot_segments_still_compares_its_assets(item_url):
+    """Round 4 (a guard no test reached): `verify` builds item URLs with `urljoin`, which keeps
+    `/c/./a0.json` from an absolute collection link, so the item's directory has its dot
+    segments removed too."""
+    item = _contradicting(href="https://example.invalid/catalogue/c/x.tif")
+    got = r.item_verdict(item, item, _parts_receipt(), item_url=item_url)
+    assert got.verdict == "inconsistent" and "assets[data].file:checksum" in got.fields, got
+
+
+def test_an_item_at_a_hosts_root_with_no_path_still_compares_its_assets():
+    """Round 4 (a guard no test reached): an item URL with an empty path has the root as its
+    directory."""
+    item = _contradicting(href="https://example.invalid/x.tif")
+    got = r.item_verdict(item, item, _parts_receipt(), item_url="https://example.invalid")
+    assert got.verdict == "inconsistent" and "assets[data].file:checksum" in got.fields, got
+
+
+def test_a_del_character_makes_an_href_malformed():
+    """No URL reference holds DEL; `urlsplit` would read it through as part of a name."""
+    item = _contradicting(href="x.tif\x7f")
+    got = r.item_verdict(item, item, _parts_receipt())
+    assert got.verdict == "inconsistent" and "assets[data].href" in got.fields, got
+
+
+@pytest.mark.parametrize("item_url,href", [("s3:bucket/a0.json", "../../x.tif"),
+                                           ("s3:../a0.json", "s3:x.tif")],
+                         ids=["the href climbs past the start", "the directory does"])
+def test_an_item_url_with_a_relative_path_never_raises(item_url, href):
+    """Round 4 (guards no test reached): a URL whose path is not rooted gives a merge whose
+    `..` climbs past its start; that names no part, never an AttributeError."""
+    item = _contradicting(href=href)
+    assert r.item_verdict(item, item, _parts_receipt(), item_url=item_url).verdict == "same"
+
+
+def test_a_relative_href_resolves_as_the_rfc_merges_it_on_every_short_path():
+    """Round 4, the relative half of the reference check: an href under item URL
+    `https://h/r/a0.json` names what the RFC's merge (`/r/` + href) and dot-segment removal
+    name, read back relative to `/r/`, or nothing when that lands outside `/r/`."""
+    alphabet = ["", ".", "..", "a", "r", "x.tif"]
+    checked = 0
+    for n in range(1, 5):
+        for segs in itertools.product(alphabet, repeat=n):
+            href = "/".join(segs)
+            if href.startswith("/") or not href:
+                continue            # path-absolute, or empty: not a relative reference here
+            resolved = _rfc3986_remove_dot_segments("/r/" + href)
+            want = resolved[3:] if resolved.startswith("/r/") else None
+            got, _ = r._relative_href(href, "https://h.invalid/r/a0.json")
+            assert got == (want or None), (href, resolved)
+            checked += 1
+    assert checked > 1000, checked
+
+
+
+def test_a_part_keyed_by_a_rooted_path_is_matched_only_exactly():
+    """A part key is the href relative to the item, so one that starts with `/` names no
+    relative file: `.//x.tif` (the file `//x.tif` under the directory) is not part `/x.tif`,
+    although both read `/x.tif` once their dot segments are gone."""
+    rec = _parts_receipt({"/x.tif": {"sha256": "b" * 64, "bytes": 12}})
+    item = _contradicting(href=".//x.tif")
+    assert r.item_verdict(item, item, rec).verdict == "same"
+    item = _contradicting(href="/x.tif")
+    assert r.item_verdict(item, item, rec).verdict == "inconsistent", "exact spelling"
