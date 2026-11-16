@@ -225,10 +225,18 @@ has one receipt and the identity fields an item mirrors on each side:
 | `changed` | the published and served items name different recipes |
 | `inconsistent` | the item's provenance could not be established: it disagrees with the receipt it links, that receipt could not be read or maps to no item fields, or it links none |
 
+An item disagrees with its receipt when a mirrored field it publishes differs from the one
+the receipt maps to, or is one the receipt does not produce. A field it leaves out is not a
+disagreement. An asset is compared with the part its href names, relative to the item:
+`./x.tif` names part `x.tif`, and `verify` resolves an absolute href against the item's own
+URL.
+
 A catalogue declares that it carries receipts with `require_receipt = true` under
 `[catalogue]`, or `--require-receipt`. `audit` then refuses an item whose receipt fields are
 missing or do not hold up, and `verify` reports a verdict for each item whose published and
-served bodies differ, writing the lists to `--out-dir`.
+served bodies differ, writing the lists to `--out-dir`. The rule admits only items that
+carry a recipe identity, since without one a rebuilt item cannot be told from a changed one,
+so an item built from a migrated receipt is refused by both.
 <!-- --8<-- [end:receipts] -->
 
 ## Development

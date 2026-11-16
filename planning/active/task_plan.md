@@ -123,7 +123,7 @@ run with a traceback.
       still lands in `missing_receipt`.
 - [x] Change `audit_items` (validate.py:215-221): no `receipt:recipe_id` together with
       `receipt.receipt_href(doc)` set means `bad_receipt` with that sentence.
-- [ ] Say in the `item_problems` docstring and the README that `require_receipt` admits
+- [x] Say in the `item_problems` docstring and the README that `require_receipt` admits
       only items that carry a recipe identity.
 - [x] (review) `verify` agrees with the audit: `_receipt_verdicts` (which runs only under
       `require_receipt`) marks a published item with no `receipt:recipe_id` `inconsistent`
@@ -131,15 +131,15 @@ run with a traceback.
 
 ## Phase 5: Documentation
 
-- [ ] Add `## Unreleased` to `NEWS.md` with **Behaviour change** entries for: the reverse
+- [x] Add `## Unreleased` to `NEWS.md` with **Behaviour change** entries for: the reverse
       check (including `processing:software: {}`), non-object asset entries (any asset, one
       the receipt does not describe included), href resolution and `item_url` (a resolved href
       can now name a part the mapping refuses), the non-list reads (a string `roles` is no
       longer accepted as the receipt role; a null `roles` is reported), the paging refusals,
       and the migrated-item sentence in the audit and in verify. Derive every number in the entries from the code.
-- [ ] README receipts section (inside the markers, absolute links only): how hrefs are
+- [x] README receipts section (inside the markers, absolute links only): how hrefs are
       matched to parts, and what `require_receipt` admits.
-- [ ] Run `uv run mkdocs build --strict` without `-q`, and `tests/test_docs.py`.
+- [x] Run `uv run mkdocs build --strict` without `-q`, and `tests/test_docs.py`.
 
 ## Validation
 

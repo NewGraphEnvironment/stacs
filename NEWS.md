@@ -3,6 +3,46 @@
 Versions track the package. A tag is a release consumers can pin with
 `tag = "vX.Y.Z"` in `[tool.uv.sources]`; `pyproject.toml` carries the same version.
 
+## Unreleased
+
+- **Behaviour change:** `receipt.item_verdict` holds the published item to its receipt in
+  both directions. A `receipt:recipe_id`, `processing:datetime` or `processing:software` the
+  item publishes and the receipt's mapping does not produce is a disagreement, so the item is
+  `inconsistent`: a recipe identity over a migrated receipt, or software (an empty
+  `processing:software` included) over a receipt with no versioned code, used to read
+  `same`. A field the item leaves out is still not a disagreement (#17).
+- **Behaviour change:** `item_verdict` matches an asset to the part it names however its
+  href is spelled. A relative href is normalised (`./x.tif` and `sub/../x.tif` name part
+  `x.tif`, and a fragment is dropped), and so is each part key. An absolute href is made
+  relative against the new `item_url` argument, the published item's own URL, which
+  `verify` passes. Before, only an href spelled exactly as a part key was compared, so a
+  contradicting `file:checksum` read `same` behind any other spelling and a catalogue that
+  publishes absolute hrefs compared no asset at all. Matching more hrefs can also reach a
+  part the mapping refuses, which makes the item `inconsistent`. Two part keys that spell the
+  file an href names, neither of them its exact spelling, and an asset carrying
+  `file:checksum` or `file:size` with no href, are disagreements. An href with a query names no part, and with no `item_url` an absolute
+  href is matched to none and the notes say so.
+- **Behaviour change:** an asset entry that is not an object, `null` included, makes the
+  item `inconsistent` on either side, whether or not the receipt describes that asset. It
+  used to be skipped. `file:size` is compared as a whole number, so a size too large for a
+  double no longer raises `OverflowError` and two sizes beyond a double's precision no
+  longer compare equal.
+- **Behaviour change:** under `require_receipt`, an item that links a receipt and carries no
+  `receipt:recipe_id` (what `stac_fields` returns for a migrated receipt, or a build that
+  dropped the identity) is refused with its own sentence, `receipt.NO_RECIPE_IDENTITY`.
+  `audit` files it with items whose receipt fields do not hold up, no longer with items that
+  carry no receipt, and `verify` reports it `inconsistent` in the same words where it used
+  to read `same`. A catalogue that holds migrated items does not declare `require_receipt`.
+- **Behaviour change:** an asset's `roles` and an item's `stac_extensions` are read only as
+  lists. A number or a bool used to raise `TypeError` out of `audit --require-receipt` and
+  `verify`. A string or an object was searched with `in`, so `roles: "metadata"` linked the
+  receipt and a `stac_extensions` string holding the processing URL counted as listing it.
+  `item_problems` now reports an asset whose `roles` is present and not a list, `null`
+  included.
+- `verify` stops paging with its own error when `/search` returns a link that is not an
+  object, a next link whose body is not an object, or a token that is not a string. Each
+  used to raise `AttributeError` or `TypeError`.
+
 ## 0.4.0
 
 - **crate's receipt contract, each part at its own version** (#15). crate versioned the
