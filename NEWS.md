@@ -3,7 +3,7 @@
 Versions track the package. A tag is a release consumers can pin with
 `tag = "vX.Y.Z"` in `[tool.uv.sources]`; `pyproject.toml` carries the same version.
 
-## Unreleased
+## 0.5.0
 
 - **Behaviour change:** `receipt.item_verdict` holds the published item to its receipt in
   both directions. A `receipt:recipe_id`, `processing:datetime` or `processing:software` the
