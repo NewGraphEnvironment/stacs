@@ -34,13 +34,12 @@ import shlex
 import subprocess
 import sys
 import tempfile
-import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from stacs import receipt
 from stacs.catalogue import (_read_url, collection_item_links, fetch_bodies, fetch_key,
-                             published_digests)
+                             published_digests, resolve_href)
 from stacs.queryables import (QueryablesError, fragment_digest, parse_queryables,
                               queryables_diff, queryables_document)
 from stacs.validate import audit_items, parse_asset_keys
@@ -557,8 +556,17 @@ def _run(target, mode, ids_file, dryrun, out_dir, log, warn) -> int:
         except ValueError as e:
             raise RegisterError(str(e)) from e
         # Relative hrefs (normal in a self-contained catalogue) resolve against the
-        # collection's own URL. The id is still the basename.
-        links = [(i, urllib.parse.urljoin(coll_url, h)) for i, h in links]
+        # collection's own URL. The id is still the basename. Within the collection's
+        # scheme family: a file:// link in a collection served over https would have a
+        # local file read, and in `all`, `ids` or `drift` upserted and served by the API
+        # (#19). Refused before anything is fetched, as a malformed link list is.
+        resolved = []
+        for i, h in links:
+            try:
+                resolved.append((i, resolve_href(coll_url, h)))
+            except ValueError as e:
+                raise RegisterError(f"item link of {i!r} cannot be read: {e}") from e
+        links = resolved
         log(f"published  : {len(links)}")
 
         # --- what to fetch ----------------------------------------------------
@@ -855,12 +863,15 @@ def _receipt_verdicts(target, ids, by_id, fetch_dir, work, log) -> dict:
             # resolving it against the collection would read another directory's receipt.
             # `urljoin` raises ValueError on an href no parser reads, which got past `run`'s
             # handler naming no item -- the shape round 1 fixed for asset hrefs in
-            # `item_verdict`, in its other caller (round 2).
+            # `item_verdict`, in its other caller (round 2). Within the item's scheme
+            # family: a file:// receipt for an item served over https would have a local
+            # file read, hashed and reported on (#19).
             try:
-                urls[item_id] = urllib.parse.urljoin(by_id[item_id], href)
+                urls[item_id] = resolve_href(by_id[item_id], href)
             except ValueError as e:
                 unlinked[item_id] = (f"links a receipt whose href {href!r} is not a URL "
-                                     f"({e}), so its provenance cannot be established")
+                                     f"it may be read from ({e}), so its provenance "
+                                     f"cannot be established")
                 continue
             published[item_id] = doc
 

@@ -313,7 +313,7 @@ def _run(tmp_path, mode, api_url="http://127.0.0.1:9", items=(), collection_id=C
     out, err = [], []
     target.setdefault("fetch_workers", 4)
     t = reg.Target(api=api_url, collection_id=target.pop("expect_id", collection_id),
-                   bucket_url=bucket.as_uri(),
+                   bucket_url=target.pop("bucket_url", None) or bucket.as_uri(),
                    transport=_transport() if transport is True else transport,
                    **target)
     rc = reg.run(t, mode, ids_file=ids_file, dryrun=dryrun, out_dir=out_dir,
@@ -2181,3 +2181,129 @@ def test_every_changed_id_gets_a_verdict_across_batches(env, api, monkeypatch):
     assert "0 inconsistent" in r.out, r.out
     # Three batches, each fetching its own receipts.
     assert r.out.count("receipt(s) for") == 3, r.out
+
+
+# =============================================================================
+# An href a published body supplies stays in its base's scheme family (#19)
+# =============================================================================
+
+@pytest.fixture
+def http_bucket(env):
+    """`env/bucket`, which `_publish` writes, served over loopback http: the shape of a real
+    catalogue, where every other test here serves it as file://."""
+    import functools
+    from http.server import SimpleHTTPRequestHandler
+
+    class Quiet(SimpleHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0),
+                                 functools.partial(Quiet, directory=str(env / "bucket")))
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05},
+                     daemon=True).start()
+    yield f"http://127.0.0.1:{server.server_address[1]}"
+    server.shutdown()
+    server.server_close()
+
+
+@pytest.fixture
+def reads(monkeypatch):
+    """Every URL `fetch_bodies` reads, so a test can say a local file was never opened
+    rather than infer it from a verdict."""
+    from stacs import catalogue
+    seen, real = [], catalogue._read_url
+
+    def recording(url, timeout):
+        seen.append(url)
+        return real(url, timeout)
+
+    monkeypatch.setattr(catalogue, "_read_url", recording)
+    return seen
+
+
+def _relative_links(bucket):
+    """Item links relative to the collection, as a self-contained catalogue writes them."""
+    path = bucket / "collection.json"
+    coll = json.loads(path.read_text())
+    for link in coll["links"]:
+        if link.get("rel") == "item":
+            link["href"] = link["href"].rsplit("/", 1)[-1]
+    path.write_text(json.dumps(coll))
+
+
+def test_a_receipt_href_to_a_local_file_is_never_read_from_an_http_catalogue(
+        env, api, http_bucket, reads):
+    """Issue #19. An item served over http linking `file:///...` as its receipt had that
+    file read, hashed and reported on. The local file here is a valid receipt the item's
+    checksum agrees with, so reading it would give `rebuilt`."""
+    data, digest, rid = _receipt_bytes(env, _receipt_doc())
+    local = env / "local_receipt.json"
+    local.write_bytes(data)
+    bad = _item_with_receipt("a0", digest, rid, data_checksum=CK_A)
+    bad["assets"]["receipt"]["href"] = local.as_uri()
+    good = _item_with_receipt("a1", digest, rid, data_checksum=CK_A)
+    served = [_item_with_receipt(i, digest, rid, data_checksum=CK_B) for i in ("a0", "a1")]
+
+    def before(bucket):
+        _relative_links(bucket)
+        (bucket / "a1_receipt.json").write_bytes(data)
+
+    _in_sync(api, served)
+    r = _run(env, "verify", api.url, items=[bad, good], transport=None, before=before,
+             require_receipt=True, bucket_url=http_bucket)
+    assert "Traceback" not in r.err, r.err
+    assert "1 rebuilt" in r.out and "1 inconsistent" in r.out, r.out
+    assert "scheme" in r.err and local.as_uri() in r.err, r.err
+    assert reads and not [u for u in reads if u.lower().lstrip().startswith("file")], reads
+    assert r.rc == 1
+
+
+@pytest.mark.parametrize("mode, dryrun", [("all", False), ("ids", False), ("drift", False),
+                                          ("verify", False), ("all", True)])
+def test_an_item_link_to_a_local_file_refuses_an_http_catalogue(
+        env, api, http_bucket, reads, mode, dryrun):
+    """Issue #19, the larger site: a collection served over http linking an item as
+    `file:///...` had that file read wherever a run fetched it (`all`, `drift`, `verify`, and
+    `ids` when the ids file names it), and upserted by `all`, `drift` or such an `ids` -- a
+    local file served by the API. Now refused in every mode, a dryrun and an `ids` that does
+    not name it included, before any item is fetched or anything is written."""
+    local = env / "elsewhere" / "a9.json"
+    local.parent.mkdir()
+    local.write_text(json.dumps(_item("a9")))
+    items = _items(2)
+
+    def before(bucket):
+        _relative_links(bucket)
+        path = bucket / "collection.json"
+        coll = json.loads(path.read_text())
+        coll["links"].append({"rel": "item", "href": local.as_uri(),
+                              "type": "application/json"})
+        path.write_text(json.dumps(coll))
+
+    # `ids` names an item the link list holds legitimately: the whole run is refused all the
+    # same, since a link list carrying a local file is not one to read from. A dryrun is
+    # refused too, before it probes the host.
+    ids = None
+    if mode == "ids":
+        ids = env / "ids.txt"
+        ids.write_text("a0\n")
+    _in_sync(api, items)
+    r = _run(env, mode, api.url, items=items, before=before, bucket_url=http_bucket,
+             transport=None if mode == "verify" else True, ids_file=ids, dryrun=dryrun)
+    assert r.rc != 0, r.all
+    assert "Traceback" not in r.err, r.err
+    assert "scheme" in r.err and local.as_uri() in r.err, r.err
+    assert r.writes == 0 and r.loads == [] and r.probes == 0, (r.writes, r.loads, r.probes)
+    assert not [u for u in reads if u.startswith("file")], reads
+
+
+def test_an_http_catalogue_with_relative_item_links_still_verifies(env, api, http_bucket):
+    """The guard's other side: a catalogue served over http, linking its items relative to
+    itself, is read exactly as before. (A relative receipt over http is item `a1` in the
+    receipt test above.)"""
+    items = _items(2)
+    _in_sync(api, items)
+    r = _run(env, "verify", api.url, items=items, transport=None,
+             before=_relative_links, bucket_url=http_bucket)
+    assert r.rc == 0, r.all

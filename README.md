@@ -152,8 +152,9 @@ already holds.
 `collection_state.txt` to `--out-dir`, and `queryables_missing.txt` and
 `queryables_changed.txt` when queryables are declared. `register` refuses before writing wherever it can:
 a collection id that does not match the published `collection.json`, an item link
-duplicated or pointing at a body that names another id, a body that could not be fetched,
-an item that fails the audit, an unreachable host.
+duplicated, outside the collection's scheme (http and https count as one) or pointing at a
+body that names another id, a body that could not be fetched, an item that fails the audit,
+an unreachable host.
 
 `ids` mode checks only the ids it registered. If `collection.json` changed, run `verify`
 after it: pgstac serves items hydrated against their collection, so a collection change can
@@ -168,6 +169,11 @@ re-compare the whole catalogue after writing for that reason.
 - Items are linked from `collection.json` with `rel: item`, and an item's id is its file
   name without `.json`, with `%20` read as a space. Child catalogues are refused, not
   skipped.
+- An item link is read only over the scheme the collection is served over, and a receipt
+  only over its item's: http and https mix, and `file://` is read only from a catalogue
+  that is itself `file://`. Where the catalogue declares receipts, `verify` reports an item
+  whose published and served bodies differ, and whose receipt is linked anywhere else,
+  `inconsistent`; any other item's receipt is never fetched.
 - The STAC host has bash and a `pypgstac` that can reach the database.
 - Where queryables are declared, the API has the filter extension enabled. A 404 for an
   existing collection's queryables is reported as the extension missing, never as "none
