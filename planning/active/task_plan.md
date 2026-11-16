@@ -143,9 +143,9 @@ run with a traceback.
 
 ## Validation
 
-- [ ] Tests pass (`uv run pytest`, with doctests)
-- [ ] `/code-check` clean (once over the branch with `/code-check branch`)
-- [ ] PWF checkboxes match landed work
+- [x] Tests pass (`uv run pytest`, with doctests)
+- [x] `/code-check` clean (once over the branch with `/code-check branch`)
+- [x] PWF checkboxes match landed work
 - [ ] `/planning-archive` on completion
 
 How each change is proved: every defect in the issue, plus the string-`roles` case, gets a
