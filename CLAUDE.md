@@ -1302,6 +1302,9 @@ Keep the pair only if both files' mtime and size held across the copy.
 ### jsonlite writes an empty name as the element's position
 Write a JSON object with an empty key as text, not through `toJSON()`.
 
+### Probing a TMB objective can break `vcov()` on the fit
+Compute `vcov()` and `SE()` before probing a TMB objective, or save and restore `env$last.par.best` and `env$value.best` around the probe.
+
 # Code Check — Shell
 Tool-level traps in bash, sed, git and `gh`, and in the host toolchain those commands depend on.
 
@@ -1519,6 +1522,9 @@ Translate before counting: `tr '\r' '\n' < log | grep -c '^upload:'`.
 
 ### `a && b || c` runs `c` when any step before the `||` fails
 Give each setup step its own `|| exit 1` and branch with `if`.
+
+### An Actions `run:` step with no `shell:` has no `pipefail`
+Set `defaults: run: shell: bash` on the job, since a Linux step with no `shell:` runs `bash -e {0}`.
 
 # Code Check Conventions
 Structured checklist for reviewing diffs before commit.
@@ -1998,7 +2004,7 @@ Skip planning for single-file edits, quick fixes, or tasks with obvious next ste
 
    **Do not wait for it.** Spawn, then start the lowest-risk phase. Background agents have repeatedly returned late — in one case after the entire issue had shipped — so treating the review as a precondition stalls the work for as long as the agent takes (see `agent-operations.md` §2). Fold findings in whenever they land: pre-baseline they edit the plan; mid-implementation they become follow-up commits — unless the finding is a stored-data fork of the kind `agent-operations.md` §4 reserves for the user. If you genuinely cannot proceed without the result, run it with `run_in_background: false` so the blocking is explicit.
 
-   **On a park the review runs before the baseline, so keep it a review of the plan:** read it against the issue, its comments and the code it names. One cheap probe (a grep, a listing) may settle a design fork; a question needing more becomes a checkbox in the phase that measures it.
+   **On a park the review runs at the resume, beside Phase 1.** Keep it a review of the plan: read it against the issue, its comments and the code it names. One cheap probe (a grep, a listing) may settle a design fork; a question needing more becomes a checkbox in the phase that measures it.
 
    Verify before acting, in both directions. Findings have been confidently wrong (a "BLOCKER" disproved by a 30-second probe) and confidently right about things nobody suspected. Reproduce the claim first.
 
